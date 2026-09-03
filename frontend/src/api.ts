@@ -1,4 +1,5 @@
 import i18n from './i18n'
+import { translateBackendText } from './i18n/backendText'
 
 export type WeightExt = {
   ext: string
@@ -757,11 +758,33 @@ export function formatApiError(e: unknown, timeoutMessage?: string): string {
   if (!text) return i18n.t('common.requestFailed')
   try {
     const parsed = JSON.parse(text) as { detail?: unknown }
-    if (typeof parsed?.detail === 'string' && parsed.detail.trim()) return parsed.detail
+    const detail = extractDetail(parsed?.detail)
+    if (detail) return detail
   } catch {
     /* keep raw */
   }
-  return text
+  return translateBackendText(text)
+}
+
+/** FastAPI puts a string in `detail` for HTTPException and an array of
+ *  `{loc, msg}` for request-validation (422) errors. Returns display-ready
+ *  (already localized) text, or '' when there is nothing usable. */
+export function extractDetail(detail: unknown): string {
+  if (typeof detail === 'string') {
+    return detail.trim() ? translateBackendText(detail.trim()) : ''
+  }
+  if (Array.isArray(detail)) {
+    return detail
+      .map((d) => {
+        const msg = typeof d?.msg === 'string' ? (d.msg as string) : ''
+        // pydantic prefixes custom ValueError text with "Value error, "
+        return msg.replace(/^Value error,\s*/, '')
+      })
+      .filter(Boolean)
+      .map((m) => translateBackendText(m))
+      .join('; ')
+  }
+  return ''
 }
 
 export function formatProjectsListError(e: unknown, hasCached: boolean): string {
@@ -839,7 +862,8 @@ function errorFromResponse(status: number, text: string, statusText: string): Er
   const raw = text || statusText
   try {
     const parsed = JSON.parse(raw) as { detail?: unknown }
-    if (typeof parsed?.detail === 'string') return new Error(parsed.detail)
+    const detail = extractDetail(parsed?.detail)
+    if (detail) return new Error(detail)
   } catch {
     /* keep raw body */
   }

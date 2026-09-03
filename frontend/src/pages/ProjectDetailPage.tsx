@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import i18n from '../i18n'
+import { translateBackendText } from '../i18n/backendText'
 import { api, formatApiError, withAccessTokenParam, type CustomAuditMode, type LogEvent, type Project, type Vuln } from '../api'
 import { AuditModeSelect } from '../components/AuditModeSelect'
 import { BountyScopeButton } from '../components/BountyScopeDialog'
@@ -859,7 +860,9 @@ export default function ProjectDetailPage() {
                 <span className="text-xs text-amber-300">{t('projectDetail.codeIntelStale')}</span>
               ) : null}
               {project.code_intel_status === 'degraded' && project.code_intel_error ? (
-                <span className="text-xs text-red-300">{project.code_intel_error}</span>
+                <span className="text-xs text-red-300">
+                  {translateBackendText(project.code_intel_error)}
+                </span>
               ) : null}
             </div>
           ) : (

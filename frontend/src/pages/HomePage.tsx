@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ChevronLeftIcon, ChevronRightIcon, Loader2Icon, PlusIcon, SearchIcon, XIcon } from 'lucide-react'
 import { api, formatProjectsListError, type Project, type ProjectRunStatusCounts } from '../api'
+import { translateBackendText } from '../i18n/backendText'
 import { CreateProjectDialog } from '../components/CreateProjectDialog'
 import { DeleteProjectButton } from '../components/DeleteProjectButton'
 import { GithubLink } from '../components/GithubLink'
@@ -367,7 +368,9 @@ export default function HomePage() {
                 <span>{formatTokenUsage(p)}</span>
               </div>
               <WeightExtBadges exts={p.weight_exts} />
-              {p.error ? <p className="text-xs text-red-300">{p.error}</p> : null}
+              {p.error ? (
+                <p className="text-xs text-red-300">{translateBackendText(p.error)}</p>
+              ) : null}
             </CardContent>
           </Card>
           )

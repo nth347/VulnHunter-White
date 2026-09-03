@@ -12,6 +12,7 @@ const CJK = /[一-鿿]/
 const ALLOW = new Set([
   'src/i18n/locales/zh.json',
   'src/i18n/index.ts',
+  'src/i18n/backendText.ts', // dictionary of backend-emitted Chinese strings -> English
   'src/lib/vulnGroups.ts',
   'src/lib/utils.ts',
   'src/pages/ProjectDetailPage.tsx',

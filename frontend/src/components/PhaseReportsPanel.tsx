@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api, formatApiError, type PhaseReport, type PhaseReportDetail, type PhaseReportList } from '../api'
 import i18n from '../i18n'
+import { translateBackendText } from '../i18n/backendText'
 import { formatDateTime } from '../lib/utils'
 import { startVisibilityPoll } from '../lib/visibilityPoll'
 import { Badge } from '@/components/ui/badge'
@@ -50,6 +51,14 @@ function roundHint(r: { kind: string; round: number | null }): string {
 function reportsOf(groups: { phase: string; reports: PhaseReport[] }[], phase: string): PhaseReport[] {
   return groups.find((g) => g.phase === phase)?.reports ?? []
 }
+
+// The backend supplies the *_label fields in Chinese; translate by id, fall back to the backend text.
+const phaseLabelOf = (r: { phase: string; phase_label: string }) =>
+  i18n.t(`phaseReports.phase.${r.phase}`, { defaultValue: r.phase_label })
+const subLabelOf = (r: { phase: string; subphase: string; subphase_label: string }) =>
+  i18n.t(`phaseReports.sub.${r.phase}.${r.subphase}`, { defaultValue: r.subphase_label })
+const kindLabelOf = (r: { kind: string; kind_label: string }) =>
+  i18n.t(`phaseReports.kind.${r.kind}`, { defaultValue: r.kind_label })
 
 export default function PhaseReportsPanel({
   projectId,
@@ -189,11 +198,11 @@ export default function PhaseReportsPanel({
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="truncate font-medium">{r.title}</div>
-                  <Badge variant={KIND_VARIANT[r.kind] || 'outline'}>{r.kind_label}</Badge>
+                  <div className="truncate font-medium">{translateBackendText(r.title)}</div>
+                  <Badge variant={KIND_VARIANT[r.kind] || 'outline'}>{kindLabelOf(r)}</Badge>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {r.subphase_label}
+                  {subLabelOf(r)}
                   {roundHint(r)}
                   {` · ${formatDateTime(r.mtime)}`}
                 </div>
@@ -229,9 +238,9 @@ export default function PhaseReportsPanel({
           {detail ? (
             <div className="space-y-3">
               <div>
-                <h2 className="text-lg font-semibold">{detail.title}</h2>
+                <h2 className="text-lg font-semibold">{translateBackendText(detail.title)}</h2>
                 <div className="mt-1 text-xs text-slate-400">
-                  {detail.phase_label} · {detail.subphase_label} · {detail.kind_label}
+                  {phaseLabelOf(detail)} · {subLabelOf(detail)} · {kindLabelOf(detail)}
                   {roundHint(detail)}
                   {` · ${formatDateTime(detail.mtime)}`}
                 </div>

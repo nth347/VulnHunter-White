@@ -10,6 +10,9 @@ const PHASE_IDS = ['recon', 'code_intel', 'worker', 'reviewer', 'verifier', 'att
 const phaseLabel = (id: string) => i18n.t(`phaseFlow.phase.${id}.label`)
 const phaseHint = (id: string) => i18n.t(`phaseFlow.phase.${id}.hint`)
 const branchHint = (id: string) => i18n.t(`phaseFlow.branchHint.${id}`)
+// The backend labels recon sub-phases in Chinese; translate by id, keep the backend text as fallback.
+const reconStepLabel = (id: string, fallback: string) =>
+  i18n.t(`auditFlow.recon.step.${id}`, { defaultValue: fallback })
 
 type Tone = 'neutral' | 'success' | 'info'
 
@@ -332,17 +335,20 @@ export default function PhaseFlow({
 
   function branchOf(id: string): BranchItem[] {
     if (id === 'recon') {
-      return subs.map((item) => ({
-        id: item.id,
-        node: (
-          <FlowTip hint={branchHint(item.id) || t('phaseFlow.subStageOf', { label: item.label })} side="right">
-            <Badge variant={badgeVariant(subphaseTone(item, subs, state))}>
-              {item.label}
-              {item.done ? ' ✓' : ''}
-            </Badge>
-          </FlowTip>
-        ),
-      }))
+      return subs.map((item) => {
+        const label = reconStepLabel(item.id, item.label)
+        return {
+          id: item.id,
+          node: (
+            <FlowTip hint={branchHint(item.id) || t('phaseFlow.subStageOf', { label })} side="right">
+              <Badge variant={badgeVariant(subphaseTone(item, subs, state))}>
+                {label}
+                {item.done ? ' ✓' : ''}
+              </Badge>
+            </FlowTip>
+          ),
+        }
+      })
     }
     if (id === 'worker') {
       const items: BranchItem[] = []

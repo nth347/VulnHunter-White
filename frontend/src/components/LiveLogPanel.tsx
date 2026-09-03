@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { LogEvent } from '../api'
 import i18n from '../i18n'
+import { translateBackendText } from '../i18n/backendText'
 
 type Props = {
   events: LogEvent[]
@@ -174,10 +175,10 @@ function LogLine({ ev }: { ev: LogEvent }) {
       (cached > 0 ? ` / cache ${cached}` : '') +
       ')'
   } else if (k === 'error') {
-    body = ev.text || ''
+    body = translateBackendText(ev.text || '')
   } else if (k === 'system') {
     tag = ev.source || 'system'
-    body = ev.text || ''
+    body = translateBackendText(ev.text || '')
   } else {
     body = ev.text || JSON.stringify(ev)
   }

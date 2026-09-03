@@ -10,10 +10,11 @@
 
 - 前端接入 i18next：中文为源语言，新增英文界面，顶栏可切换，选择记在 `localStorage` 并同步 `<html lang>`。切换语言时对路由子树重挂载，使 `lib/utils` 等处的非响应式 `i18n.t()` 也刷新。
 - 全部页面与组件文案改为 `t()` 词条；`frontend/src/i18n/locales/{zh,en}.json` 为词条源（键完全对齐）。`npm run check:i18n` 校验键对齐并拦截新的硬编码中文。
+- 新增 `frontend/src/i18n/backendText.ts`：把后端产出的中文（实时日志系统/错误消息、`HTTPException` 与校验报错、阶段报告固定标题、`project.error`、侦察子阶段名与阶段报告标签）在英文界面下按已知串/正则映射为英文。`zh` 界面与 LLM 生成的正文不受影响。接入点：`api.ts` 错误解析、`LiveLogPanel`、`PhaseReportsPanel`、`PhaseFlow`、`HomePage`/`ProjectDetailPage`。
 
 ### 说明
 
-- 后端产出的阶段报告、实时日志系统消息、`HTTPException` 文案，以及 LLM 生成的漏洞报告仍为中文，不随界面语言变化（属后续工作）。
+- 后端仍以中文产出；上面的映射在前端渲染时按已知字符串翻译。未收录的后端串（少见诊断、LLM 生成的漏洞报告正文）在英文界面下仍显示中文。
 
 ## V1.1.0 - 2026-09-02
 

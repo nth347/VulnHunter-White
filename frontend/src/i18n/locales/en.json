@@ -515,6 +515,7 @@
     "loadEarlier": "Load {{n}} earlier",
     "emptyReport": "_Empty report_",
     "selectHint": "Select a report on the left to view it",
+    "kind": { "doc": "Doc", "round": "Audit", "summary": "Summary", "rescue": "Rescue" },
     "phase": {
       "recon": "Recon",
       "worker": "Mining",

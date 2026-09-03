@@ -515,6 +515,7 @@
     "loadEarlier": "加载更早 {{n}} 份",
     "emptyReport": "_空报告_",
     "selectHint": "选择左侧报告查看正文",
+    "kind": { "doc": "文档", "round": "审计", "summary": "摘要", "rescue": "抢救" },
     "phase": {
       "recon": "侦察",
       "worker": "挖掘",
