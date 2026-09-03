@@ -1,0 +1,277 @@
+{
+  "common": {
+    "loading": "Loading…",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "saving": "Saving…",
+    "delete": "Delete",
+    "deleting": "Deleting…",
+    "close": "Close",
+    "logout": "Sign out",
+    "project": "Project",
+    "all": "All",
+    "none": "—",
+    "yes": "Yes",
+    "no": "No",
+    "requestFailed": "Request failed",
+    "requestTimeout": "Request timed out, please try again.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "refresh": "Refresh",
+    "back": "Back",
+    "language": "Language",
+    "clearSearch": "Clear search",
+    "prevPage": "Previous",
+    "nextPage": "Next"
+  },
+  "nav": {
+    "projects": "Projects",
+    "discover": "Discover repos",
+    "vulns": "Findings",
+    "consent": "Verification consent",
+    "containers": "Containers",
+    "settings": "Settings"
+  },
+  "home": {
+    "createProject": "Create project",
+    "subtitle": "Import a GitHub repo or a source zip to start a white-box audit.",
+    "searchPlaceholder": "Search by project name, repo, mode, model, status…",
+    "searchAria": "Search projects",
+    "filterAria": "Filter by run status",
+    "loadingList": "Loading projects…",
+    "globalModel": "Global model",
+    "countConfirmed": "Confirmed {{n}}",
+    "countPending": "Pending {{n}}",
+    "countFalsePositive": "False positive {{n}}",
+    "noMatch": "No matching projects",
+    "empty": "No projects yet. Click \"Create project\" to import a GitHub repo or a source zip.",
+    "pageInfo": "Page {{page}} / {{count}}, {{total}} total"
+  },
+  "createProject": {
+    "title": "Create project",
+    "description": "Import a GitHub repo or a source zip. Choose the audit target, bounty/full/custom mode, code-graph stage, mining paths and verification method; project model, token cap and phase hints are under Advanced options.",
+    "fromGithub": "Create from GitHub",
+    "uploadZip": "Upload zip",
+    "uploadTimeout": "Source zip upload timed out. Check the size and retry, or import from GitHub instead.",
+    "pickCustomFirst": "Pick a custom audit mode first (create one in Settings)."
+  },
+  "enum": {
+    "attackSurface": {
+      "frontend": "Front-facing",
+      "backendAdmin": "Admin panel · Admin",
+      "backendUser": "Admin panel · User",
+      "backend": "Admin panel"
+    },
+    "submissionTier": {
+      "cveCandidate": "CVE-worthy",
+      "lowImpact": "Low impact, hard to exploit",
+      "duplicateGrouped": "Duplicate (same root cause)",
+      "untiered": "Untiered"
+    },
+    "exposureMode": {
+      "indirectConsumer": "Indirect consumer",
+      "direct": "Direct exposure"
+    },
+    "trackingStatus": {
+      "submitted": "Submitted",
+      "ignored": "Ignored",
+      "unmarked": "Unmarked"
+    },
+    "evidenceLevel": {
+      "harness": "Local verification",
+      "dynamic": "Dynamic verification",
+      "mcp": "Dynamic verification · MCP"
+    },
+    "vulnStatus": {
+      "pendingReview": "Pending review",
+      "falsePositive": "False positive",
+      "returned": "Returned",
+      "merged": "Merged",
+      "fixing": "Fixing",
+      "staticOnly": "static only",
+      "confirmedPrefix": "Confirmed",
+      "fpTimeout": "False positive - review timeout"
+    },
+    "miningPath": {
+      "heuristic": "Heuristic mining",
+      "heuristicLite": "Heuristic (lite)",
+      "fast": "Fast scan",
+      "bypass": "Historical-vuln bypass",
+      "unconstrained": "Unconstrained scan"
+    },
+    "configPremise": {
+      "default": "Default config",
+      "specific": "Specific config"
+    },
+    "verifierStatus": {
+      "pending": "Verifying online",
+      "awaitingUser": "Awaiting confirmation",
+      "verified": "Reproduced online",
+      "failed": "Not reproduced online",
+      "skipped": "Online verification skipped"
+    },
+    "verifierTargetStatus": {
+      "success": "Success",
+      "fail": "Failed",
+      "untested": "Untested"
+    },
+    "auditMode": {
+      "bounty": {
+        "label": "Bounty mode",
+        "short": "Only high-impact bugs exploitable by default",
+        "hint": "Records only high-impact classes exploitable by default (RCE, injection, arbitrary file operations, broken access control, stored XSS, 1-click CSRF, source-code hardcoded secrets with server-side impact, etc.). Low-impact items such as CORS, reflected XSS, plain CSRF and missing rate limiting are not recorded; user-changeable passwords in config files and front-end transport-obfuscation AES / publicly shipped keys do not count. Exploitation must hold under the default config or the application's own config options; mark each submission as default or specific config — a risk toggle the vendor already warns about is not \"specific config\"."
+      },
+      "full": {
+        "label": "Full mode",
+        "short": "Also records low-impact, hard-to-exploit items",
+        "hint": "Beyond high-impact bugs, also records hard-to-exploit items that still demonstrate a real difference (CORS, reflected XSS, missing rate limiting, security headers, plain CSRF, etc.), tagged by the Reviewer as low-impact / hard to exploit."
+      },
+      "custom": {
+        "label": "Custom mode",
+        "short": "Scope decided by a named prompt from Settings",
+        "hint": "Vulnerability scope is decided entirely by the selected custom prompt (snapshotted into the project), with no bounty-mode hard gate in code. Create a custom audit mode in Settings first."
+      }
+    },
+    "targetKind": {
+      "web": {
+        "label": "Web app",
+        "short": "Mostly HTTP / non-HTTP entry points",
+        "hint": "Audited as a deployable application: HTTP plus WebSocket / RPC / MQ entry points are treated as sources.",
+        "tag": "Web"
+      },
+      "library": {
+        "label": "Library",
+        "short": "Maven / pip / npm packages",
+        "hint": "Audited as a component: public APIs / parsers are the caller-controlled entry points. Defaults to local verification with the Verifier off at creation.",
+        "tag": "Library"
+      },
+      "mixed": {
+        "label": "Mixed",
+        "short": "Library core + demo app",
+        "hint": "Prioritizes the library core; demo/sample/examples are down-weighted. Defaults to local verification with the Verifier off at creation.",
+        "tag": "Mixed"
+      }
+    },
+    "projectRunStatus": {
+      "running": "Running",
+      "paused": "Paused",
+      "stopped": "Stopped",
+      "completed": "Completed"
+    },
+    "projectStatus": {
+      "pending": "Not started",
+      "ingesting": "Importing",
+      "recon": "Recon",
+      "auditing": "Mining",
+      "reviewing": "Reviewing",
+      "paused": "Paused",
+      "completed": "Completed",
+      "cancelled": "Stopped",
+      "error": "Error"
+    },
+    "severity": {
+      "critical": "Critical",
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low",
+      "pending": "Unrated",
+      "none": "None"
+    },
+    "vulnType": {
+      "rce": "RCE",
+      "ssti": "SSTI",
+      "deserialization": "Deserialization",
+      "jndi_injection": "JNDI injection",
+      "jdbc_attack": "JDBC attack",
+      "file_read": "Arbitrary file read",
+      "file_upload": "Arbitrary file upload",
+      "file_delete": "Arbitrary file delete",
+      "auth_bypass": "Auth bypass",
+      "sqli": "SQL injection",
+      "xxe": "XXE",
+      "path_traversal": "Path traversal",
+      "ssrf": "SSRF",
+      "privilege_escalation": "Broken access control",
+      "dos": "DoS",
+      "xss": "XSS",
+      "stored_xss": "Stored XSS",
+      "csrf": "CSRF",
+      "hardcoded_secret": "Hardcoded secret",
+      "info_disclosure": "Info disclosure",
+      "other": "Other"
+    }
+  },
+  "fmt": {
+    "exposureModeTooltip": {
+      "indirectProven": "Indirect consumer: the component has no direct HTTP/RPC entry point, so it cannot be exploited by sending requests to it alone.\nFull exploitation depends on an upstream application passing attacker input into the sink (e.g. a SELECT injection point via WallFilter).\nThe full upstream→component exploit chain has been proven at a real business HTTP/API entry point.\nSee \"### Trigger conditions\" in the report for details.",
+      "indirectUnproven": "Indirect consumer: the component has no direct HTTP/RPC entry point, so it cannot be exploited by sending requests to it alone.\nFull exploitation depends on an upstream application passing attacker input into the sink (e.g. a SELECT injection point via WallFilter).\nThe full upstream chain has not been proven at a real business entry point; a harness or unit test calling the component API directly does not count.\nScoring and value tiering already reflect the indirect-consumer constraint (usually lower than a directly remotely exploitable web bug).\nSee \"### Trigger conditions\" in the report for details.",
+      "direct": "Direct exposure: an attacker can reach the vulnerable sink directly through a user-controlled entry point (HTTP/RPC, etc.), without relying on an upstream application to pass input."
+    },
+    "harnessTier": {
+      "l1": "L1: local verification (sink level). A mock harness calls the vulnerable sink function directly to prove the root cause is exploitable — no lab environment needed.",
+      "l2": "L2: local verification (module level). A mock harness calls module-level functions, covering multiple paths — deeper than L1.",
+      "l3": "L3: integration verification. Starts the service in a sandbox and runs poc.py to verify the full entry→sink path — equivalent to a live lab test."
+    },
+    "projectRef": "Project #{{id}}",
+    "projectRefNamed": "Project #{{id}} {{name}}",
+    "auditModeCustomNamed": "Custom ({{name}})",
+    "auditModeCustomHint": "Vulnerability scope currently follows the project's snapshot of custom mode \"{{name}}\"; no bounty hard gate. Takes effect on the next round after resuming.",
+    "fileProgress": "Audited {{audited}} / weighted {{weighted}} / skipped {{skipped}} / total {{total}}",
+    "sinkProgress": "Fast scan {{done}}/{{queued}}",
+    "bypassProgress": "Historical-vuln bypass {{done}}/{{queued}}",
+    "liteEntryProgress": "Lite entry points {{audited}}/{{total}}",
+    "unconstrainedDone": "Unconstrained scan complete",
+    "tokenUsage": "In {{input}} / out {{output}} / cache {{cacheRate}}",
+    "tokenUsageWithCap": "{{used}} / cap {{cap}}"
+  },
+  "auditModeSelect": {
+    "pickCustom": "Pick a custom mode",
+    "noCustom": "None yet",
+    "addCustomFirst": "Add a custom audit mode in Settings first."
+  },
+  "targetKindSelect": {
+    "label": "Audit target"
+  },
+  "bountyScope": {
+    "trigger": "Scope",
+    "title": "Bounty mode scope",
+    "description": "Only records issues that are exploitable by default and cause real impact. Full reference below.",
+    "colType": "Type",
+    "colIncluded": "Recorded",
+    "colNote": "Notes",
+    "included": "Recorded",
+    "excluded": "Not recorded",
+    "premise": "Exploitation must hold under the default config, or by changing only the application's own config options. Mark each submission as default or specific config; a risk toggle the vendor already warns about is not \"specific config\". Planting files, changing non-application config, or chaining a second independent bug are not allowed. Full mode additionally records items from the \"not recorded\" list above that still demonstrate a real difference, tagged by the Reviewer as low-impact / hard to exploit.",
+    "rows": {
+      "rce": { "type": "RCE", "note": "Command injection, code execution, etc." },
+      "ssti": { "type": "SSTI", "note": "" },
+      "deser_jndi": { "type": "Deserialization / JNDI", "note": "" },
+      "sqli": { "type": "SQL injection", "note": "" },
+      "xxe": { "type": "XML injection / XXE", "note": "" },
+      "file_op": { "type": "Arbitrary file operations", "note": "Read / write / delete / modify / copy / archive traversal, etc." },
+      "file_upload": { "type": "File upload", "note": "" },
+      "file_include": { "type": "File inclusion / directory traversal", "note": "" },
+      "ssrf_internal": { "type": "SSRF that reaches internal networks", "note": "Internal network, cloud metadata, or sensitive local ports" },
+      "info_disclosure": { "type": "Sensitive information disclosure", "note": "" },
+      "auth_bypass": { "type": "Authentication bypass", "note": "" },
+      "privilege_escalation": { "type": "Broken access control", "note": "" },
+      "dos": { "type": "DoS", "note": "" },
+      "stored_xss": { "type": "Stored XSS", "note": "Must be persisted and execute in another user's browser; do not label reflected XSS as stored" },
+      "csrf_1click": { "type": "1-click CSRF", "note": "Victim opens a malicious page and immediately triggers RCE or another high-impact action; do not label plain CSRF (profile edits, logout) as 1-click" },
+      "hardcoded_secret": { "type": "Hardcoded secret in source", "note": "Must be a server-side secret: JWT/HMAC signing, API signing secret, private key, third-party API key, ciphertext inside a protected store/backup, etc.; must enable unauthorized impact" },
+      "other_impact": { "type": "Other real impact", "note": "Must demonstrate code execution, sensitive data disclosure, unauthorized read/write/delete, or arbitrary file operations" },
+      "ssrf_public": { "type": "Public-only SSRF", "note": "Cannot reach internal network / metadata / sensitive local ports" },
+      "reflected_xss": { "type": "Reflected XSS / DOM XSS / Self-XSS", "note": "" },
+      "plain_csrf": { "type": "Plain CSRF / just missing a token", "note": "Low-impact state changes such as renaming, logout, likes, posts; or requires multiple clicks / confirmation" },
+      "cors_headers": { "type": "CORS / missing security headers", "note": "Includes ACAO reflection, CSP, X-Frame-Options, etc." },
+      "open_redirect": { "type": "Open redirect", "note": "Unless it can be escalated to auth hijack, token theft, or other real impact" },
+      "rate_limit": { "type": "Missing rate limit / captcha brute force", "note": "Not recorded without further impact" },
+      "weak_random": { "type": "Weak randomness / predictable token", "note": "Unless it directly causes an auth bypass" },
+      "frontend_aes": { "type": "Front-end transport-obfuscation AES", "note": "Key is in front-end JS or deliberately shipped publicly; decrypting a field the front end already decrypts / an intercepted login packet is not a CVE" },
+      "config_default_password": { "type": "Default password in a config file", "note": "User-changeable passwords or keys in application.yml, .env, compose, docs" },
+      "hardening_only": { "type": "Config-hardening advice only", "note": "Informational scan item" }
+    }
+  }
+}

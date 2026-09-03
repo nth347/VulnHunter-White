@@ -30,6 +30,7 @@ import {
   formatTargetKind,
   formatTargetKindHint,
   formatTokens,
+  projectRunBucket,
   projectStatusBadgeVariant,
   tokenBudgetReached,
 } from '../lib/utils'
@@ -597,7 +598,7 @@ export default function ProjectDetailPage() {
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-3 text-sm text-slate-300">
           <Badge variant={projectStatusBadgeVariant(project.status, project.project_paused)}>
-            {formatProjectRunStatus(project.status, project.project_paused) === '运行中'
+            {projectRunBucket(project.status, project.project_paused) === 'running'
               ? formatProjectStatus(project.status)
               : formatProjectRunStatus(project.status, project.project_paused)}
           </Badge>

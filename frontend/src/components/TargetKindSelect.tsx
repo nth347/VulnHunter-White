@@ -1,6 +1,7 @@
+import { useTranslation } from 'react-i18next'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  TARGET_KIND_OPTIONS,
+  targetKindOptions,
   cn,
   formatTargetKind,
   formatTargetKindHint,
@@ -21,12 +22,13 @@ export function TargetKindSelect({
   disabled?: boolean
   className?: string
 }) {
+  const { t } = useTranslation()
   const kind = normalizeTargetKind(value)
 
   return (
     <div className={cn('min-w-0', className)}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="text-sm text-muted-foreground">审计对象</span>
+        <span className="text-sm text-muted-foreground">{t('targetKindSelect.label')}</span>
         <Select
           value={kind}
           disabled={disabled}
@@ -40,7 +42,7 @@ export function TargetKindSelect({
             <SelectValue>{formatTargetKind(kind)}</SelectValue>
           </SelectTrigger>
           <SelectContent className="w-auto min-w-72 max-w-80" alignItemWithTrigger={false} align="start">
-            {TARGET_KIND_OPTIONS.map((opt) => (
+            {targetKindOptions().map((opt) => (
               <SelectItem key={opt.value} value={opt.value} className="items-start py-2">
                 <span className="flex max-w-72 flex-col gap-0.5 whitespace-normal">
                   <span>{opt.label}</span>

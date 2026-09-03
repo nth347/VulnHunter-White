@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ChevronLeftIcon, ChevronRightIcon, Loader2Icon, PlusIcon, SearchIcon, XIcon } from 'lucide-react'
 import { api, formatProjectsListError, type Project, type ProjectRunStatusCounts } from '../api'
@@ -23,7 +24,7 @@ import {
   rememberProjectRun,
   writeJsonCache,
 } from '../lib/listCache'
-import { formatAuditMode, formatDateTime, formatMiningPaths, formatMiningProgress, formatProjectRunStatus, formatTargetKind, formatTokenUsage, projectRunBucket } from '../lib/utils'
+import { formatAuditMode, formatDateTime, formatMiningPaths, formatMiningProgress, formatProjectRunStatus, formatTargetKind, formatTokenUsage, projectRunBucket, projectRunTone } from '../lib/utils'
 import { startVisibilityPoll } from '../lib/visibilityPoll'
 
 const PAGE_SIZE = 5
@@ -36,6 +37,7 @@ const EMPTY_STATUS_COUNTS: ProjectRunStatusCounts = {
 }
 
 function CreateProjectButton({ onClick }: { onClick: () => void }) {
+  const { t } = useTranslation()
   return (
     <Button
       size="lg"
@@ -43,21 +45,19 @@ function CreateProjectButton({ onClick }: { onClick: () => void }) {
       onClick={onClick}
     >
       <PlusIcon className="size-5" />
-      创建项目
+      {t('home.createProject')}
     </Button>
   )
 }
 
 type RunStatusFilter = 'all' | 'running' | 'paused' | 'completed'
 
-const RUN_STATUS_FILTERS: { key: RunStatusFilter; label: string }[] = [
-  { key: 'all', label: '全部' },
-  { key: 'running', label: '运行中' },
-  { key: 'paused', label: '已暂停' },
-  { key: 'completed', label: '已完成' },
-]
+const RUN_STATUS_FILTER_KEYS: RunStatusFilter[] = ['all', 'running', 'paused', 'completed']
 
 export default function HomePage() {
+  const { t } = useTranslation()
+  const runStatusFilterLabel = (key: RunStatusFilter) =>
+    key === 'all' ? t('common.all') : t(`enum.projectRunStatus.${key}`)
   const [projects, setProjects] = useState<Project[]>([])
   const [total, setTotal] = useState(0)
   const [statusCounts, setStatusCounts] = useState<ProjectRunStatusCounts>(EMPTY_STATUS_COUNTS)
@@ -202,8 +202,8 @@ export default function HomePage() {
     <div className="w-full space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold">审计项目</h1>
-          <p className="mt-1 text-sm text-slate-400">导入 GitHub 仓库或源码 zip，启动白盒审计。</p>
+          <h1 className="text-2xl font-semibold">{t('nav.projects')}</h1>
+          <p className="mt-1 text-sm text-slate-400">{t('home.subtitle')}</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <LlmThreadUsageBar />
@@ -230,14 +230,14 @@ export default function HomePage() {
               setPage(0)
               setSearchInput(e.target.value)
             }}
-            placeholder="搜索项目名称、仓库、模式、模型、状态…"
-            aria-label="搜索审计项目"
+            placeholder={t('home.searchPlaceholder')}
+            aria-label={t('home.searchAria')}
           />
           {searchInput ? (
             <button
               type="button"
               className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
-              aria-label="清除搜索"
+              aria-label={t('common.clearSearch')}
               onClick={() => {
                 setPage(0)
                 setSearchInput('')
@@ -247,8 +247,8 @@ export default function HomePage() {
             </button>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="按运行状态筛选">
-          {RUN_STATUS_FILTERS.map(({ key, label }) => (
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t('home.filterAria')}>
+          {RUN_STATUS_FILTER_KEYS.map((key) => (
             <Button
               key={key}
               variant={statusFilter === key ? 'default' : 'outline'}
@@ -260,7 +260,7 @@ export default function HomePage() {
                 setLoading(true)
               }}
             >
-              {label} {statusCounts[key]}
+              {runStatusFilterLabel(key)} {statusCounts[key]}
             </Button>
           ))}
         </div>
@@ -273,13 +273,12 @@ export default function HomePage() {
           <Card className="w-full">
             <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
               <Loader2Icon className="size-8 animate-spin" aria-hidden />
-              <span className="text-sm">加载项目列表…</span>
+              <span className="text-sm">{t('home.loadingList')}</span>
             </CardContent>
           </Card>
         ) : null}
         {!loading
           ? projects.map((p) => {
-          const runStatus = formatProjectRunStatus(p.status, p.project_paused)
           return (
           <Card key={p.id} className="w-full">
             <CardHeader>
@@ -294,7 +293,7 @@ export default function HomePage() {
                   <span>·</span>
                   <span>{formatAuditMode(p.audit_mode, p.custom_audit_mode_name)}</span>
                   <span>·</span>
-                  <span>{p.llm_model || '全局模型'}</span>
+                  <span>{p.llm_model || t('home.globalModel')}</span>
                   <span>·</span>
                   <span>{formatMiningPaths(p)}</span>
                   <span>·</span>
@@ -310,18 +309,8 @@ export default function HomePage() {
               <CardAction>
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   <GithubLink project={p} variant="button" />
-                  <Badge
-                    variant={
-                      runStatus === '已完成'
-                        ? 'success'
-                        : runStatus === '已停止'
-                          ? 'destructive'
-                          : runStatus === '已暂停'
-                            ? 'warning'
-                            : 'info'
-                    }
-                  >
-                    {runStatus}
+                  <Badge variant={projectRunTone(p.status, p.project_paused)}>
+                    {formatProjectRunStatus(p.status, p.project_paused)}
                   </Badge>
                   <ProjectRunButtons project={p} />
                   <DeleteProjectButton
@@ -371,9 +360,9 @@ export default function HomePage() {
                 unconstrainedDone={p.unconstrained_done}
               />
               <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                <span>确认 {p.vuln_confirmed}</span>
-                <span>待审 {p.vuln_pending}</span>
-                <span>误报 {p.vuln_false_positive}</span>
+                <span>{t('home.countConfirmed', { n: p.vuln_confirmed })}</span>
+                <span>{t('home.countPending', { n: p.vuln_pending })}</span>
+                <span>{t('home.countFalsePositive', { n: p.vuln_false_positive })}</span>
                 <span>{formatMiningProgress(p)}</span>
                 <span>{formatTokenUsage(p)}</span>
               </div>
@@ -388,10 +377,10 @@ export default function HomePage() {
           <Card className="w-full">
             <CardContent className="flex flex-col items-start gap-3 py-8 text-sm text-muted-foreground">
               {searchInput.trim() || statusFilter !== 'all' ? (
-                '无匹配项目'
+                t('home.noMatch')
               ) : (
                 <>
-                  <p>暂无项目。点击「创建项目」导入 GitHub 仓库或源码 zip。</p>
+                  <p>{t('home.empty')}</p>
                   <CreateProjectButton onClick={() => setCreateOpen(true)} />
                 </>
               )}
@@ -402,28 +391,26 @@ export default function HomePage() {
 
       {total > PAGE_SIZE ? (
         <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-          <span>
-            第 {page + 1} / {pageCount} 页，共 {total} 项
-          </span>
+          <span>{t('home.pageInfo', { page: page + 1, count: pageCount, total })}</span>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
               disabled={loading || page <= 0}
               onClick={() => setPage((p) => Math.max(0, p - 1))}
-              aria-label="上一页"
+              aria-label={t('common.prevPage')}
             >
               <ChevronLeftIcon className="size-4" />
-              上一页
+              {t('common.prevPage')}
             </Button>
             <Button
               variant="outline"
               size="sm"
               disabled={loading || page + 1 >= pageCount}
               onClick={() => setPage((p) => p + 1)}
-              aria-label="下一页"
+              aria-label={t('common.nextPage')}
             >
-              下一页
+              {t('common.nextPage')}
               <ChevronRightIcon className="size-4" />
             </Button>
           </div>

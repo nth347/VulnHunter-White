@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react'
+import { useTranslation } from 'react-i18next'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import AppLayout from './components/AppLayout'
 import AuthGate from './components/AuthGate'
@@ -12,16 +13,19 @@ const ContainersPage = lazy(() => import('./pages/ContainersPage'))
 const DiscoverPage = lazy(() => import('./pages/DiscoverPage'))
 
 function RouteFallback() {
+  const { t } = useTranslation()
   return (
     <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
-      加载中…
+      {t('common.loading')}
     </div>
   )
 }
 
 export default function App() {
+  // Re-key the tree on locale change so non-reactive i18n.t() calls in lib/utils refresh too.
+  const { i18n } = useTranslation()
   return (
-    <BrowserRouter>
+    <BrowserRouter key={i18n.language}>
       <AuthGate>
         <Suspense fallback={<RouteFallback />}>
           <Routes>

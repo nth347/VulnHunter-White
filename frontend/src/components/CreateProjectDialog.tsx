@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, formatApiError, type CustomAuditMode } from '../api'
+import i18n from '../i18n'
 import { AuditModeSelect } from './AuditModeSelect'
 import { AttackChainToggle } from './AttackChainToggle'
 import { AuditFlowPreview } from './AuditFlowPreview'
@@ -25,7 +27,7 @@ import { Label } from '@/components/ui/label'
 import { type AuditMode, type TargetKind } from '@/lib/utils'
 
 function formatUploadError(e: unknown): string {
-  return formatApiError(e, '源码 zip 上传超时，请检查体积后重试，或改用 GitHub 导入')
+  return formatApiError(e, i18n.t('createProject.uploadTimeout'))
 }
 
 type Props = {
@@ -45,6 +47,7 @@ export function CreateProjectDialog({
   initialUrl = '',
   initialTargetKind,
 }: Props) {
+  const { t } = useTranslation()
   const [url, setUrl] = useState('')
   const [auditMode, setAuditMode] = useState<AuditMode>('bounty')
   const [targetKind, setTargetKind] = useState<TargetKind>('web')
@@ -147,7 +150,7 @@ export function CreateProjectDialog({
   async function createGithub() {
     if (!url.trim()) return
     if (auditMode === 'custom' && customModeId == null) {
-      setError('请先选择自定义审计模式（可在设置页创建）')
+      setError(t('createProject.pickCustomFirst'))
       return
     }
     let opts
@@ -174,7 +177,7 @@ export function CreateProjectDialog({
   async function onZip(file: File | null) {
     if (!file) return
     if (auditMode === 'custom' && customModeId == null) {
-      setError('请先选择自定义审计模式（可在设置页创建）')
+      setError(t('createProject.pickCustomFirst'))
       return
     }
     let opts
@@ -214,10 +217,8 @@ export function CreateProjectDialog({
         showCloseButton={!busy}
       >
         <DialogHeader className="shrink-0 border-b border-border px-5 py-4 pr-12">
-          <DialogTitle>创建项目</DialogTitle>
-          <DialogDescription>
-            导入 GitHub 仓库或源码 zip。可选择审计对象、赏金/全量/自定义模式、代码库阶段、挖掘路径与验证方式；项目模型、Token 上限与阶段提示在高级选项中。
-          </DialogDescription>
+          <DialogTitle>{t('createProject.title')}</DialogTitle>
+          <DialogDescription>{t('createProject.description')}</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <div className="grid gap-4 xl:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] xl:items-start">
@@ -316,10 +317,10 @@ export function CreateProjectDialog({
               }}
             />
             <Button disabled={busy} onClick={() => void createGithub()}>
-              从 GitHub 创建
+              {t('createProject.fromGithub')}
             </Button>
             <Label className="inline-flex h-8 cursor-pointer items-center justify-center rounded-lg border border-input px-3 text-sm font-medium hover:bg-muted">
-              上传 Zip
+              {t('createProject.uploadZip')}
               <Input
                 type="file"
                 accept=".zip"

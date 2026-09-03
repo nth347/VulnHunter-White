@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
@@ -7,17 +8,19 @@ import { api } from '../api'
 import { startVisibilityPoll } from '../lib/visibilityPoll'
 import { useAuth } from './AuthGate'
 import BrandLogo from './BrandLogo'
+import LanguageToggle from './LanguageToggle'
 
-const links = [
-  { to: '/', label: '审计项目' },
-  { to: '/discover', label: '发现仓库' },
-  { to: '/vulns', label: '漏洞产出' },
-  { to: '/verifier-consent', label: '验证确认' },
-  { to: '/containers', label: '容器管理' },
-  { to: '/settings', label: '设置' },
-]
+const LINKS = [
+  { to: '/', key: 'nav.projects' },
+  { to: '/discover', key: 'nav.discover' },
+  { to: '/vulns', key: 'nav.vulns' },
+  { to: '/verifier-consent', key: 'nav.consent' },
+  { to: '/containers', key: 'nav.containers' },
+  { to: '/settings', key: 'nav.settings' },
+] as const
 
 export default function AppLayout() {
+  const { t } = useTranslation()
   const [consentCount, setConsentCount] = useState(0)
   const { required, lock } = useAuth()
 
@@ -40,7 +43,7 @@ export default function AppLayout() {
             <BrandLogo />
           </Link>
           <nav className="flex gap-1">
-            {links.map((l) => (
+            {LINKS.map((l) => (
               <NavLink
                 key={l.to}
                 to={l.to}
@@ -53,7 +56,7 @@ export default function AppLayout() {
                 }
               >
                 <span className="inline-flex items-center gap-1.5">
-                  {l.label}
+                  {t(l.key)}
                   {l.to === '/verifier-consent' && consentCount > 0 ? (
                     <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-200">
                       {consentCount > 99 ? '99+' : consentCount}
@@ -63,11 +66,14 @@ export default function AppLayout() {
               </NavLink>
             ))}
           </nav>
-          {required ? (
-            <Button type="button" variant="ghost" size="sm" className="ml-auto" onClick={lock}>
-              退出
-            </Button>
-          ) : null}
+          <div className="ml-auto flex items-center gap-3">
+            <LanguageToggle />
+            {required ? (
+              <Button type="button" variant="ghost" size="sm" onClick={lock}>
+                {t('common.logout')}
+              </Button>
+            ) : null}
+          </div>
         </div>
         <Separator />
       </header>

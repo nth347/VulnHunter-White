@@ -1,6 +1,10 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
+import i18n, { currentLocale } from '../i18n'
+
+const t = (key: string, options?: Record<string, unknown>) => i18n.t(key, options ?? {})
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
@@ -9,11 +13,11 @@ export function formatAttackSurface(
   attackSurface: string | null | undefined,
   requiredAccount: string | null | undefined,
 ): string | null {
-  if (attackSurface === 'frontend') return '前台'
+  if (attackSurface === 'frontend') return t('enum.attackSurface.frontend')
   if (attackSurface === 'backend') {
-    if (requiredAccount === 'admin') return '后台 · 管理员'
-    if (requiredAccount === 'user') return '后台 · 普通权限'
-    return '后台'
+    if (requiredAccount === 'admin') return t('enum.attackSurface.backendAdmin')
+    if (requiredAccount === 'user') return t('enum.attackSurface.backendUser')
+    return t('enum.attackSurface.backend')
   }
   return null
 }
@@ -21,24 +25,24 @@ export function formatAttackSurface(
 export function formatSubmissionTier(value: string | null | undefined): string {
   switch (value) {
     case 'cve_candidate':
-      return '有 CVE 价值'
+      return t('enum.submissionTier.cveCandidate')
     case 'low_impact':
     case 'advisory_only':
     case 'hardening':
-      return '低危害难利用'
+      return t('enum.submissionTier.lowImpact')
     case 'duplicate_grouped':
-      return '同根因重复'
+      return t('enum.submissionTier.duplicateGrouped')
     default:
-      return '未分层'
+      return t('enum.submissionTier.untiered')
   }
 }
 
 export function formatExposureMode(value: string | null | undefined): string | null {
   switch (value) {
     case 'indirect_consumer':
-      return '间接消费型'
+      return t('enum.exposureMode.indirectConsumer')
     case 'direct':
-      return '直接暴露'
+      return t('enum.exposureMode.direct')
     default:
       return null
   }
@@ -52,21 +56,10 @@ export function exposureModeTooltip(
   switch (mode) {
     case 'indirect_consumer':
       return upstreamChainProven
-        ? [
-            '间接消费型：组件本身无直接 HTTP/RPC 入口，不能单独向该组件发请求完成利用。',
-            '完整利用依赖上游业务应用把攻击者输入传入 sink（例如经 WallFilter 的 SELECT 注入点）。',
-            '已在真实业务 HTTP/API 入口证明完整上游→组件利用链。',
-            '详情见报告「### 触发条件」。',
-          ].join('\n')
-        : [
-            '间接消费型：组件本身无直接 HTTP/RPC 入口，不能单独向该组件发请求完成利用。',
-            '完整利用依赖上游业务应用把攻击者输入传入 sink（例如经 WallFilter 的 SELECT 注入点）。',
-            '未在真实业务入口证明完整上游链；harness/单测直调组件 API 不算。',
-            '评分与价值分层已按间接消费型约束（通常低于可直接远程打穿的 Web 洞）。',
-            '详情见报告「### 触发条件」。',
-          ].join('\n')
+        ? t('fmt.exposureModeTooltip.indirectProven')
+        : t('fmt.exposureModeTooltip.indirectUnproven')
     case 'direct':
-      return '直接暴露：攻击者可通过用户可控入口（HTTP/RPC 等）直接触达漏洞 sink，无需依赖上游应用传入输入。'
+      return t('fmt.exposureModeTooltip.direct')
     default:
       return null
   }
@@ -75,11 +68,11 @@ export function exposureModeTooltip(
 export function formatTrackingStatus(value: string | null | undefined): string {
   switch (value) {
     case 'submitted':
-      return '已提交'
+      return t('enum.trackingStatus.submitted')
     case 'ignored':
-      return '已忽略'
+      return t('enum.trackingStatus.ignored')
     default:
-      return '未标记'
+      return t('enum.trackingStatus.unmarked')
   }
 }
 
@@ -97,8 +90,7 @@ export function harnessVerificationTier(
   return null
 }
 
-/** Returns the L1/L2/L3 tooltip text for confirmed vulns with harness/dynamic evidence.
- * L1: mock harness 直调 sink；L2: mock harness 调模块层；L3: 集成验证起服务并跑 poc.py。 */
+/** Returns the L1/L2/L3 tooltip text for confirmed vulns with harness/dynamic evidence. */
 export function harnessTierTooltip(
   evidenceLevel?: string | null,
   harnessDepth?: string | null,
@@ -106,12 +98,10 @@ export function harnessTierTooltip(
   const tier = harnessVerificationTier(evidenceLevel, harnessDepth)
   const evidence = (evidenceLevel || '').trim().toLowerCase()
   if (evidence === 'harness') {
-    if (tier === 'L2')
-      return 'L2：局部验证（模块层）。mock harness 调用模块层函数，覆盖多条路径，验证深度优于 L1。'
-    return 'L1：局部验证（sink 层）。mock harness 直调漏洞 sink 函数，验证根因可利用，无需靶场环境。'
+    if (tier === 'L2') return t('fmt.harnessTier.l2')
+    return t('fmt.harnessTier.l1')
   }
-  if (evidence === 'dynamic' && tier === 'L3')
-    return 'L3：集成验证。在沙箱起服务并运行 poc.py，验证完整入口→sink 链路，与靶场动态等效。'
+  if (evidence === 'dynamic' && tier === 'L3') return t('fmt.harnessTier.l3')
   return null
 }
 
@@ -122,28 +112,27 @@ export function formatEvidenceLevel(
   const tier = harnessVerificationTier(value, harnessDepth)
   switch (value) {
     case 'harness':
-      return tier ? `局部验证-${tier}` : '局部验证'
+      return tier ? `${t('enum.evidenceLevel.harness')}-${tier}` : t('enum.evidenceLevel.harness')
     case 'dynamic':
-      return tier === 'L3' ? '动态验证-L3' : '动态验证'
+      return tier === 'L3' ? `${t('enum.evidenceLevel.dynamic')}-L3` : t('enum.evidenceLevel.dynamic')
     case 'mcp':
-      return '动态验证 · MCP'
+      return t('enum.evidenceLevel.mcp')
     default:
       return null
   }
 }
 
-const VULN_STATUS_LABEL: Record<string, string> = {
-  pending_review: '待审',
-  false_positive: '误报',
-  returned: '已打回',
-  merged: '已并入',
-  fixing: '修复中',
+const VULN_STATUS_KEY: Record<string, string> = {
+  pending_review: 'enum.vulnStatus.pendingReview',
+  false_positive: 'enum.vulnStatus.falsePositive',
+  returned: 'enum.vulnStatus.returned',
+  merged: 'enum.vulnStatus.merged',
+  fixing: 'enum.vulnStatus.fixing',
 }
 
 export const FP_KIND_TIMEOUT = 'timeout'
 
-/** Confirmed vulns fold evidence into one badge: 已确认-仅静态 / 局部验证 / 动态验证.
- * Timeout give-ups show 误报-审核超时; reviewer-judged FPs stay 误报. */
+/** Confirmed vulns fold evidence into one badge; timeout give-ups get their own label. */
 export function formatVulnStatus(
   status: string | null | undefined,
   evidenceLevel?: string | null,
@@ -152,25 +141,26 @@ export function formatVulnStatus(
 ): string {
   const s = (status || '').trim()
   if (s === 'confirmed' || s === 'static_only') {
-    const evidence = formatEvidenceLevel(evidenceLevel, harnessDepth)
-    return evidence ? `已确认-${evidence}` : '已确认-仅静态'
+    const evidence = formatEvidenceLevel(evidenceLevel, harnessDepth) || t('enum.vulnStatus.staticOnly')
+    return `${t('enum.vulnStatus.confirmedPrefix')}-${evidence}`
   }
   if (s === 'false_positive' && (fpKind || '').trim() === FP_KIND_TIMEOUT) {
-    return '误报-审核超时'
+    return t('enum.vulnStatus.fpTimeout')
   }
-  return VULN_STATUS_LABEL[s] || s
+  const key = VULN_STATUS_KEY[s]
+  return key ? t(key) : s
 }
 
 export function formatMiningPath(value: string | null | undefined): string | null {
   switch ((value || '').trim().toLowerCase()) {
     case 'heuristic':
-      return '启发式挖掘'
+      return t('enum.miningPath.heuristic')
     case 'fast':
-      return '快速扫描'
+      return t('enum.miningPath.fast')
     case 'bypass':
-      return '历史漏洞绕过'
+      return t('enum.miningPath.bypass')
     case 'unconstrained':
-      return '无约束扫描'
+      return t('enum.miningPath.unconstrained')
     default:
       return null
   }
@@ -179,9 +169,9 @@ export function formatMiningPath(value: string | null | undefined): string | nul
 export function formatConfigPremise(value: string | null | undefined): string | null {
   switch ((value || '').trim().toLowerCase()) {
     case 'default':
-      return '默认配置'
+      return t('enum.configPremise.default')
     case 'specific':
-      return '特定配置'
+      return t('enum.configPremise.specific')
     default:
       return null
   }
@@ -189,24 +179,30 @@ export function formatConfigPremise(value: string | null | undefined): string | 
 
 export function formatProjectRef(projectId: number, projectName?: string | null): string {
   const name = (projectName || '').trim()
-  if (!name || name === `项目 ${projectId}` || name === `项目 #${projectId}`) {
-    return `项目 #${projectId}`
+  const generic = [
+    `项目 ${projectId}`,
+    `项目 #${projectId}`,
+    `Project ${projectId}`,
+    `Project #${projectId}`,
+  ]
+  if (!name || generic.includes(name)) {
+    return t('fmt.projectRef', { id: projectId })
   }
-  return `项目 #${projectId} ${name}`
+  return t('fmt.projectRefNamed', { id: projectId, name })
 }
 
 export function formatVerifierStatus(value: string | null | undefined): string | null {
   switch (value) {
     case 'pending':
-      return '互联网验证中'
+      return t('enum.verifierStatus.pending')
     case 'awaiting_user':
-      return '待用户确认'
+      return t('enum.verifierStatus.awaitingUser')
     case 'verified':
-      return '互联网已复现'
+      return t('enum.verifierStatus.verified')
     case 'failed':
-      return '互联网未复现'
+      return t('enum.verifierStatus.failed')
     case 'skipped':
-      return '互联网验证跳过'
+      return t('enum.verifierStatus.skipped')
     default:
       return null
   }
@@ -215,82 +211,68 @@ export function formatVerifierStatus(value: string | null | undefined): string |
 export function formatVerifierTargetStatus(value: string | null | undefined): string {
   switch (value) {
     case 'success':
-      return '成功'
+      return t('enum.verifierTargetStatus.success')
     case 'fail':
-      return '失败'
+      return t('enum.verifierTargetStatus.fail')
     case 'untested':
-      return '未测'
+      return t('enum.verifierTargetStatus.untested')
     default:
-      return value?.trim() || '未测'
+      return value?.trim() || t('enum.verifierTargetStatus.untested')
   }
 }
 
-export const AUDIT_MODE_OPTIONS = [
-  {
-    value: 'bounty' as const,
-    label: '赏金模式',
-    short: '只报默认可利用的高危害漏洞',
-    hint:
-      '只收录默认可利用的高危害类型（RCE、注入、任意文件操作、越权、存储型 XSS、1-click CSRF、有服务端机密危害的源码硬编码密钥等）。CORS、反射 XSS、普通 CSRF、缺速率限制等低危害项不入库；配置文件里用户可改的口令、前端传输混淆 AES/公开下发密钥不算。利用须在默认配置或应用自身配置下成立；提交时标明默认配置或特定配置，官方已警示的风险开关不算特定配置。',
-  },
-  {
-    value: 'full' as const,
-    label: '全量模式',
-    short: '同时收录低危害难利用项',
-    hint:
-      '除高危害外，也收录难以利用但仍能打出差异的项（CORS、反射 XSS、缺速率限制、安全头、普通 CSRF 等），由 Reviewer 标为低危害难利用。',
-  },
-  {
-    value: 'custom' as const,
-    label: '自定义模式',
-    short: '按设置页命名提示词判定范围',
-    hint:
-      '漏洞收录完全按所选自定义提示词（项目内快照）判定，无赏金模式代码硬闸门。请先在设置页创建自定义审计模式。',
-  },
-] as const
+export const AUDIT_MODE_VALUES = ['bounty', 'full', 'custom'] as const
+export type AuditMode = (typeof AUDIT_MODE_VALUES)[number]
 
-export type AuditMode = (typeof AUDIT_MODE_OPTIONS)[number]['value']
+/** Localized {label, short, hint} for an audit mode; used to render the mode picker. */
+export function auditModeOption(value: AuditMode): { value: AuditMode; label: string; short: string; hint: string } {
+  return {
+    value,
+    label: t(`enum.auditMode.${value}.label`),
+    short: t(`enum.auditMode.${value}.short`),
+    hint: t(`enum.auditMode.${value}.hint`),
+  }
+}
 
-export const TARGET_KIND_OPTIONS = [
-  {
-    value: 'web' as const,
-    label: 'Web 应用',
-    short: 'HTTP / 非 HTTP 入口为主',
-    hint: '按可部署应用审计：HTTP 与 WebSocket / RPC / MQ 等入口为 source。',
-  },
-  {
-    value: 'library' as const,
-    label: '组件库',
-    short: 'Maven / pip / npm 等库',
-    hint: '按组件审计：公开 API / 解析器为调用方可控入口；创建时默认局部验证、关闭 Verifier。',
-  },
-  {
-    value: 'mixed' as const,
-    label: '混合',
-    short: '库核心 + demo 应用',
-    hint: '优先挖库核心；demo/sample/examples 降权。创建时默认局部验证、关闭 Verifier。',
-  },
-] as const
+export function auditModeOptions(): { value: AuditMode; label: string; short: string; hint: string }[] {
+  return AUDIT_MODE_VALUES.map(auditModeOption)
+}
 
-export type TargetKind = (typeof TARGET_KIND_OPTIONS)[number]['value']
+export const TARGET_KIND_VALUES = ['web', 'library', 'mixed'] as const
+export type TargetKind = (typeof TARGET_KIND_VALUES)[number]
+
+export function targetKindOption(value: TargetKind): { value: TargetKind; label: string; short: string; hint: string } {
+  return {
+    value,
+    label: t(`enum.targetKind.${value}.label`),
+    short: t(`enum.targetKind.${value}.short`),
+    hint: t(`enum.targetKind.${value}.hint`),
+  }
+}
+
+export function targetKindOptions(): { value: TargetKind; label: string; short: string; hint: string }[] {
+  return TARGET_KIND_VALUES.map(targetKindOption)
+}
 
 export function formatTargetKind(value: string | null | undefined): string {
-  return TARGET_KIND_OPTIONS.find((o) => o.value === value)?.label ?? TARGET_KIND_OPTIONS[0].label
+  const v = normalizeTargetKind(value)
+  return t(`enum.targetKind.${v}.label`)
 }
 
 export function formatTargetKindShort(value: string | null | undefined): string {
-  if (value === 'library') return '组件'
-  if (value === 'mixed') return '混合'
-  return 'Web'
+  if (value === 'library') return t('enum.targetKind.library.tag')
+  if (value === 'mixed') return t('enum.targetKind.mixed.tag')
+  return t('enum.targetKind.web.tag')
 }
 
 export function formatVulnProjectName(name: string, kind?: string | null): string {
-  const label = (name || '').trim() || '项目'
+  const label = (name || '').trim() || t('common.project')
   return `${label}(${formatTargetKindShort(kind)})`
 }
 
 export function formatTargetKindHint(value: string | null | undefined): string {
-  return TARGET_KIND_OPTIONS.find((o) => o.value === value)?.hint ?? TARGET_KIND_OPTIONS[0].hint
+  const v = normalizeTargetKind(value)
+  return t(`enum.targetKind.${v}.hint`)
 }
 
 export function normalizeTargetKind(value: string | null | undefined): TargetKind {
@@ -298,38 +280,44 @@ export function normalizeTargetKind(value: string | null | undefined): TargetKin
   return 'web'
 }
 
+/** Bounty-scope table rows: {key, included}; the type/note text lives in i18n `bountyScope.rows.<key>`. */
 export const BOUNTY_SCOPE_ROWS = [
-  { type: 'RCE', included: true, note: '命令注入、代码执行等' },
-  { type: 'SSTI', included: true, note: '' },
-  { type: '反序列化 / JNDI', included: true, note: '' },
-  { type: 'SQL 注入', included: true, note: '' },
-  { type: 'XML 注入 / XXE', included: true, note: '' },
-  { type: '任意文件操作', included: true, note: '读 / 写 / 删 / 改 / 复制 / 解压穿越等' },
-  { type: '文件上传', included: true, note: '' },
-  { type: '文件包含 / 目录遍历', included: true, note: '' },
-  { type: '能打内网的 SSRF', included: true, note: '内网、云元数据或本机敏感口' },
-  { type: '敏感信息泄露', included: true, note: '' },
-  { type: '认证绕过', included: true, note: '' },
-  { type: '越权', included: true, note: '' },
-  { type: 'DoS', included: true, note: '' },
-  { type: '存储型 XSS', included: true, note: '须持久化后在其他用户浏览器执行；不要把反射 XSS 写成存储型' },
-  { type: '1-click CSRF', included: true, note: '受害者打开恶意页面后立即触发 RCE 或其他高危操作；不要把改资料/登出等普通 CSRF 写成 1-click' },
-  { type: '源码硬编码密钥', included: true, note: '须为服务端机密：JWT/HMAC 签名、接口签名 secret、私钥、第三方 API Key、保护库内/备份密文等；能造成未授权危害' },
-  { type: '其他实际危害', included: true, note: '须证明代码执行、敏感数据泄露、越权读写删或任意文件操作等' },
-  { type: '仅公网 SSRF', included: false, note: '打不到内网 / 元数据 / 本机敏感口' },
-  { type: '反射 XSS / DOM XSS / Self-XSS', included: false, note: '' },
-  { type: '普通 CSRF / 仅缺 token', included: false, note: '改昵称、登出、点赞、发帖等低危状态变更；或需多次点击/二次确认' },
-  { type: 'CORS / 安全头缺失', included: false, note: '含 ACAO 反射、CSP、X-Frame-Options 等' },
-  { type: '开放重定向', included: false, note: '除非能升级为鉴权劫持、token 盗取等实际危害' },
-  { type: '缺速率限制 / 验证码爆破', included: false, note: '无进一步危害时不收录' },
-  { type: '弱随机 / 可预测 token', included: false, note: '除非直接导致认证绕过' },
-  { type: '前端传输混淆 AES', included: false, note: '密钥在前端 JS 或故意公开下发；解开前端本就会解的字段 / 已拦截登录包不算 CVE' },
-  { type: '配置文件默认口令', included: false, note: 'application.yml、.env、compose、文档里用户可改的口令或密钥' },
-  { type: '纯配置加固建议', included: false, note: '信息性扫描项' },
+  { key: 'rce', included: true },
+  { key: 'ssti', included: true },
+  { key: 'deser_jndi', included: true },
+  { key: 'sqli', included: true },
+  { key: 'xxe', included: true },
+  { key: 'file_op', included: true },
+  { key: 'file_upload', included: true },
+  { key: 'file_include', included: true },
+  { key: 'ssrf_internal', included: true },
+  { key: 'info_disclosure', included: true },
+  { key: 'auth_bypass', included: true },
+  { key: 'privilege_escalation', included: true },
+  { key: 'dos', included: true },
+  { key: 'stored_xss', included: true },
+  { key: 'csrf_1click', included: true },
+  { key: 'hardcoded_secret', included: true },
+  { key: 'other_impact', included: true },
+  { key: 'ssrf_public', included: false },
+  { key: 'reflected_xss', included: false },
+  { key: 'plain_csrf', included: false },
+  { key: 'cors_headers', included: false },
+  { key: 'open_redirect', included: false },
+  { key: 'rate_limit', included: false },
+  { key: 'weak_random', included: false },
+  { key: 'frontend_aes', included: false },
+  { key: 'config_default_password', included: false },
+  { key: 'hardening_only', included: false },
 ] as const
 
-export const BOUNTY_SCOPE_PREMISE =
-  '利用须在默认配置，或只改应用自身配置选项下成立。提交时标明默认配置或特定配置；官方已警示的风险开关不算特定配置。禁止种文件、改非应用配置、组合第二个独立漏洞。全量模式额外收录上表「不收录」中仍能打出差异的项，由 Reviewer 标为低危害难利用。'
+export function bountyScopeRowText(key: string): { type: string; note: string } {
+  return { type: t(`bountyScope.rows.${key}.type`), note: t(`bountyScope.rows.${key}.note`) }
+}
+
+export function bountyScopePremise(): string {
+  return t('bountyScope.premise')
+}
 
 export function formatAuditMode(
   value: string | null | undefined,
@@ -337,9 +325,10 @@ export function formatAuditMode(
 ): string {
   if (value === 'custom') {
     const name = (customName || '').trim()
-    return name ? `自定义（${name}）` : '自定义模式'
+    return name ? t('fmt.auditModeCustomNamed', { name }) : t('enum.auditMode.custom.label')
   }
-  return AUDIT_MODE_OPTIONS.find((o) => o.value === value)?.label ?? AUDIT_MODE_OPTIONS[0].label
+  const v: AuditMode = value === 'full' ? 'full' : value === 'custom' ? 'custom' : 'bounty'
+  return t(`enum.auditMode.${v}.label`)
 }
 
 export function formatAuditModeHint(
@@ -348,11 +337,10 @@ export function formatAuditModeHint(
 ): string {
   if (value === 'custom') {
     const name = (customName || '').trim()
-    return name
-      ? `当前按自定义模式「${name}」的项目快照提示词判定漏洞范围；无赏金硬闸门。续跑后下一轮生效。`
-      : AUDIT_MODE_OPTIONS.find((o) => o.value === 'custom')!.hint
+    return name ? t('fmt.auditModeCustomHint', { name }) : t('enum.auditMode.custom.hint')
   }
-  return AUDIT_MODE_OPTIONS.find((o) => o.value === value)?.hint ?? AUDIT_MODE_OPTIONS[0].hint
+  const v: AuditMode = value === 'full' ? 'full' : 'bounty'
+  return t(`enum.auditMode.${v}.hint`)
 }
 
 export function projectRunBucket(
@@ -368,48 +356,48 @@ export function projectRunBucket(
 export function formatProjectRunStatus(
   status: string | null | undefined,
   projectPaused?: boolean,
-): '运行中' | '已暂停' | '已停止' | '已完成' {
-  const bucket = projectRunBucket(status, projectPaused)
-  if (bucket === 'completed') return '已完成'
-  if (bucket === 'paused') return '已暂停'
-  if (bucket === 'stopped') return '已停止'
-  return '运行中'
+): string {
+  return t(`enum.projectRunStatus.${projectRunBucket(status, projectPaused)}`)
+}
+
+/** Badge tone for a project run bucket. */
+export function projectRunTone(
+  status: string | null | undefined,
+  projectPaused?: boolean,
+): 'info' | 'success' | 'warning' | 'destructive' {
+  switch (projectRunBucket(status, projectPaused)) {
+    case 'completed':
+      return 'success'
+    case 'paused':
+      return 'warning'
+    case 'stopped':
+      return 'destructive'
+    default:
+      return 'info'
+  }
 }
 
 export function formatProjectStatus(status: string | null | undefined): string {
-  switch (status) {
-    case 'pending':
-      return '待开始'
-    case 'ingesting':
-      return '导入中'
-    case 'recon':
-      return '侦察中'
-    case 'auditing':
-      return '挖掘中'
-    case 'reviewing':
-      return '审核中'
-    case 'paused':
-      return '已暂停'
-    case 'completed':
-      return '已完成'
-    case 'cancelled':
-      return '已停止'
-    case 'error':
-      return '出错'
-    default:
-      return status?.trim() || '—'
+  const keys: Record<string, string> = {
+    pending: 'enum.projectStatus.pending',
+    ingesting: 'enum.projectStatus.ingesting',
+    recon: 'enum.projectStatus.recon',
+    auditing: 'enum.projectStatus.auditing',
+    reviewing: 'enum.projectStatus.reviewing',
+    paused: 'enum.projectStatus.paused',
+    completed: 'enum.projectStatus.completed',
+    cancelled: 'enum.projectStatus.cancelled',
+    error: 'enum.projectStatus.error',
   }
+  const key = keys[status || '']
+  return key ? t(key) : status?.trim() || '—'
 }
 
 export function projectStatusBadgeVariant(
   status: string | null | undefined,
   projectPaused?: boolean,
 ): 'info' | 'success' | 'warning' | 'destructive' {
-  const run = formatProjectRunStatus(status, projectPaused)
-  if (run === '已完成') return 'success'
-  if (run === '已暂停') return 'warning'
-  if (run === '已停止') return 'destructive'
-  return 'info'
+  return projectRunTone(status, projectPaused)
 }
 
 export function formatDateTime(value: string | null | undefined): string {
@@ -420,54 +408,63 @@ export function formatDateTime(value: string | null | undefined): string {
   }
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
+  // Backend timestamps are UTC and the product is China-hosted; keep the wall clock in Shanghai
+  // and only vary the display format by locale.
+  const locale = currentLocale() === 'en' ? 'en-GB' : 'zh-CN'
+  return d.toLocaleString(locale, { timeZone: 'Asia/Shanghai' })
 }
 
-export const VULN_TYPE_OPTIONS = [
-  ['rce', 'RCE'],
-  ['ssti', 'SSTI'],
-  ['deserialization', '反序列化'],
-  ['jndi_injection', 'JNDI注入'],
-  ['jdbc_attack', 'JDBC攻击'],
-  ['file_read', '任意文件读取'],
-  ['file_upload', '任意文件上传'],
-  ['file_delete', '任意文件删除'],
-  ['auth_bypass', '认证绕过'],
-  ['sqli', 'SQL注入'],
-  ['xxe', 'XXE'],
-  ['path_traversal', '路径穿越'],
-  ['ssrf', 'SSRF'],
-  ['privilege_escalation', '越权'],
-  ['dos', 'DoS'],
-  ['xss', 'XSS'],
-  ['stored_xss', '存储型XSS'],
-  ['csrf', 'CSRF'],
-  ['hardcoded_secret', '硬编码密钥'],
-  ['info_disclosure', '信息泄露'],
-  ['other', '其他'],
+/** Vuln-type ids in picker order; labels resolve through i18n `enum.vulnType.<id>`. */
+export const VULN_TYPE_IDS = [
+  'rce',
+  'ssti',
+  'deserialization',
+  'jndi_injection',
+  'jdbc_attack',
+  'file_read',
+  'file_upload',
+  'file_delete',
+  'auth_bypass',
+  'sqli',
+  'xxe',
+  'path_traversal',
+  'ssrf',
+  'privilege_escalation',
+  'dos',
+  'xss',
+  'stored_xss',
+  'csrf',
+  'hardcoded_secret',
+  'info_disclosure',
+  'other',
 ] as const
 
 export function formatVulnType(value: string | null | undefined): string {
   const key = (value || '').trim()
   if (!key) return ''
-  const hit = VULN_TYPE_OPTIONS.find(([id]) => id === key)
-  return hit ? hit[1] : key
+  const hit = (VULN_TYPE_IDS as readonly string[]).includes(key)
+  return hit ? t(`enum.vulnType.${key}`) : key
+}
+
+/** [id, label] pairs for the vuln-type dropdown. */
+export function vulnTypeOptions(): { id: string; label: string }[] {
+  return VULN_TYPE_IDS.map((id) => ({ id, label: t(`enum.vulnType.${id}`) }))
 }
 
 export function formatSeverity(value: string | null | undefined): string {
   switch (value) {
     case 'critical':
-      return '严重'
+      return t('enum.severity.critical')
     case 'high':
-      return '高危'
+      return t('enum.severity.high')
     case 'medium':
-      return '中危'
+      return t('enum.severity.medium')
     case 'low':
-      return '低危'
+      return t('enum.severity.low')
     case 'pending':
-      return '待评分'
+      return t('enum.severity.pending')
     case 'none':
-      return '无'
+      return t('enum.severity.none')
     default:
       return value || ''
   }
@@ -511,21 +508,26 @@ export function formatFileProgress(p: {
   files_skipped?: number | null
   files_total?: number | null
 }): string {
-  return `已审计 ${p.files_audited ?? 0} / 已定权 ${p.files_weighted ?? 0} / 已跳过 ${p.files_skipped ?? 0} / 共 ${p.files_total ?? 0}`
+  return t('fmt.fileProgress', {
+    audited: p.files_audited ?? 0,
+    weighted: p.files_weighted ?? 0,
+    skipped: p.files_skipped ?? 0,
+    total: p.files_total ?? 0,
+  })
 }
 
 export function formatSinkProgress(p: {
   sinks_done?: number | null
   sinks_queued?: number | null
 }): string {
-  return `快速扫描 ${p.sinks_done ?? 0}/${p.sinks_queued ?? 0}`
+  return t('fmt.sinkProgress', { done: p.sinks_done ?? 0, queued: p.sinks_queued ?? 0 })
 }
 
 export function formatBypassProgress(p: {
   bypass_done?: number | null
   bypass_queued?: number | null
 }): string {
-  return `历史漏洞绕过 ${p.bypass_done ?? 0}/${p.bypass_queued ?? 0}`
+  return t('fmt.bypassProgress', { done: p.bypass_done ?? 0, queued: p.bypass_queued ?? 0 })
 }
 
 export function formatMiningPaths(p: {
@@ -541,11 +543,11 @@ export function formatMiningPaths(p: {
   const bypassOn = p.bypass_enabled === true
   const unconstrainedOn = p.unconstrained_enabled === true
   const parts: string[] = []
-  if (heuristicOn) parts.push(liteOn ? '启发式轻量' : '启发式挖掘')
-  if (fastOn) parts.push('快速扫描')
-  if (bypassOn) parts.push('历史漏洞绕过')
-  if (unconstrainedOn) parts.push('无约束扫描')
-  return parts.join(' + ') || '启发式挖掘'
+  if (heuristicOn) parts.push(liteOn ? t('enum.miningPath.heuristicLite') : t('enum.miningPath.heuristic'))
+  if (fastOn) parts.push(t('enum.miningPath.fast'))
+  if (bypassOn) parts.push(t('enum.miningPath.bypass'))
+  if (unconstrainedOn) parts.push(t('enum.miningPath.unconstrained'))
+  return parts.join(' + ') || t('enum.miningPath.heuristic')
 }
 
 export function formatMiningProgress(p: {
@@ -573,14 +575,19 @@ export function formatMiningProgress(p: {
   const unconstrainedOn = p.unconstrained_enabled === true
   const parts: string[] = []
   if (heuristicOn && liteOn) {
-    parts.push(`轻量入口 ${p.files_weight100_audited ?? 0}/${p.files_weight100 ?? 0}`)
+    parts.push(
+      t('fmt.liteEntryProgress', {
+        audited: p.files_weight100_audited ?? 0,
+        total: p.files_weight100 ?? 0,
+      }),
+    )
   } else if (heuristicOn) {
     parts.push(formatFileProgress(p))
   }
   if (fastOn) parts.push(formatSinkProgress(p))
   if (bypassOn) parts.push(formatBypassProgress(p))
   if (unconstrainedOn) {
-    parts.push(p.unconstrained_done ? '无约束扫描 已达成' : '无约束扫描')
+    parts.push(p.unconstrained_done ? t('fmt.unconstrainedDone') : t('enum.miningPath.unconstrained'))
   }
   return parts.join(' · ')
 }
@@ -618,8 +625,12 @@ export function formatTokenUsage(p: {
   const output = p.tokens_output ?? 0
   const cached = p.tokens_cached ?? 0
   const cap = p.max_token_usage ?? 0
-  const used = `输入 ${formatTokens(input)} / 输出 ${formatTokens(output)} / 缓存率 ${formatCacheRate(cached, input)}`
-  if (cap > 0) return `${used} / 上限 ${formatTokens(cap)}`
+  const used = t('fmt.tokenUsage', {
+    input: formatTokens(input),
+    output: formatTokens(output),
+    cacheRate: formatCacheRate(cached, input),
+  })
+  if (cap > 0) return t('fmt.tokenUsageWithCap', { used, cap: formatTokens(cap) })
   return used
 }
 

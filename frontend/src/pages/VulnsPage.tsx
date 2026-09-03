@@ -11,7 +11,7 @@ import VulnCalendar from '../components/VulnCalendar'
 import VulnDetailDialog from '../components/VulnDetailDialog'
 import VulnGroupList from '../components/VulnGroupList'
 import { filterVulnGroups, groupVulnsByRootCause, vulnMatchesQuery, type VulnTierFilter } from '../lib/vulnGroups'
-import { formatVulnType, saveBlob, VULN_TYPE_OPTIONS } from '../lib/utils'
+import { formatVulnType, saveBlob, vulnTypeOptions } from '../lib/utils'
 import { readJsonCache, writeJsonCache } from '../lib/listCache'
 import { startVisibilityPoll } from '../lib/visibilityPoll'
 
@@ -309,7 +309,7 @@ export default function VulnsPage() {
           </SelectTrigger>
           <SelectContent alignItemWithTrigger={false} align="start" className="w-(--anchor-width)">
             <SelectItem value="all">全部类型</SelectItem>
-            {VULN_TYPE_OPTIONS.map(([id, label]) => (
+            {vulnTypeOptions().map(({ id, label }) => (
               <SelectItem key={id} value={id}>
                 {label}
               </SelectItem>
