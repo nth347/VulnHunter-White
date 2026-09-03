@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import i18n from '../i18n'
 import { api, formatApiError, withAccessTokenParam, type CustomAuditMode, type LogEvent, type Project, type Vuln } from '../api'
 import { AuditModeSelect } from '../components/AuditModeSelect'
 import { BountyScopeButton } from '../components/BountyScopeDialog'
@@ -47,22 +49,22 @@ const PhaseReportsPanel = lazy(() => import('../components/PhaseReportsPanel'))
 
 const LOG_PAGE = 100
 const PHASE_TABS = [
-  ['recon', '侦察'],
-  ['code-intel', '代码库'],
-  ['worker', '挖掘'],
-  ['reviewer', '审核'],
-  ['verifier', '验证'],
-  ['attack_chain', '攻击链'],
+  ['recon', 'phaseFlow.phase.recon.label'],
+  ['code-intel', 'phaseFlow.phase.code_intel.label'],
+  ['worker', 'phaseFlow.phase.worker.label'],
+  ['reviewer', 'phaseFlow.phase.reviewer.label'],
+  ['verifier', 'phaseFlow.phase.verifier.label'],
+  ['attack_chain', 'phaseFlow.phase.attack_chain.label'],
 ] as const
 const REVIEWER_LOG_TABS = [
-  ['reviewer-lab', '环境搭建'],
-  ['reviewer-review', '审核'],
+  ['reviewer-lab', 'phaseFlow.badge.labSetup'],
+  ['reviewer-review', 'phaseFlow.phase.reviewer.label'],
 ] as const
 const RECON_LOG_TABS = [
-  ['recon-map', '地图/鉴权', 'map'],
-  ['recon-source-ext', '扩展名', 'source_ext'],
-  ['recon-old-vuln', '历史漏洞', 'old_vulns'],
-  ['recon-mark', '盖章', 'mark'],
+  ['recon-map', 'phaseReports.sub.recon.map', 'map'],
+  ['recon-source-ext', 'phaseReports.sub.recon.source_ext', 'source_ext'],
+  ['recon-old-vuln', 'phaseReports.sub.recon.old_vulns', 'old_vulns'],
+  ['recon-mark', 'phaseReports.sub.recon.mark', 'mark'],
 ] as const
 
 function workerLogTabs(project: {
@@ -72,17 +74,18 @@ function workerLogTabs(project: {
   unconstrained_enabled?: boolean
 }) {
   const tabs: [string, string][] = []
-  if (project.heuristic_enabled !== false) tabs.push(['mine', '启发式'])
-  if (project.fast_enabled === true) tabs.push(['fast', '快速扫描'])
-  if (project.bypass_enabled === true) tabs.push(['bypass', '历史漏洞绕过'])
-  if (project.unconstrained_enabled === true) tabs.push(['unconstrained', '无约束扫描'])
-  tabs.push(['fix', '修复'])
+  if (project.heuristic_enabled !== false) tabs.push(['mine', 'phaseReports.sub.worker.mine'])
+  if (project.fast_enabled === true) tabs.push(['fast', 'phaseReports.sub.worker.fast'])
+  if (project.bypass_enabled === true) tabs.push(['bypass', 'phaseReports.sub.worker.bypass'])
+  if (project.unconstrained_enabled === true) tabs.push(['unconstrained', 'phaseReports.sub.worker.unconstrained'])
+  tabs.push(['fix', 'phaseReports.sub.worker.fix'])
   return tabs
 }
 
 function isSessionStart(ev: LogEvent): boolean {
   if (ev.session_start) return true
-  return ev.kind === 'system' && (ev.text || '').includes('新开对话')
+  // Backend still emits this system message in Chinese; match both while backend strings are localized.
+  return ev.kind === 'system' && /新开对话|New conversation/.test(ev.text || '')
 }
 
 function controlPhaseOf(logPhase: string): 'recon' | 'code-intel' | 'worker' | 'reviewer' | 'verifier' | 'attack_chain' {
@@ -127,6 +130,7 @@ function cachedProject(id: number) {
 }
 
 export default function ProjectDetailPage() {
+  const { t } = useTranslation()
   const { id } = useParams()
   const navigate = useNavigate()
   const projectId = Number(id)
@@ -247,7 +251,9 @@ export default function ProjectDetailPage() {
         if (!etagRef.current) {
           const timedOut =
             err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError')
-          setLoadError(timedOut ? '项目详情加载超时，请稍后重试。' : '项目详情加载失败，请稍后重试。')
+          setLoadError(
+            timedOut ? i18n.t('projectDetail.loadTimeout') : i18n.t('projectDetail.loadFailed'),
+          )
         }
       }
     }
@@ -447,7 +453,7 @@ export default function ProjectDetailPage() {
   if (!project) {
     return (
       <div className="text-slate-400">
-        {loadError ? <p className="text-sm text-red-300">{loadError}</p> : '加载中…'}
+        {loadError ? <p className="text-sm text-red-300">{loadError}</p> : t('common.loading')}
       </div>
     )
   }
@@ -457,7 +463,7 @@ export default function ProjectDetailPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <Link to="/" className="text-sm text-slate-400 hover:underline">
-            ← 返回
+            {t('projectDetail.back')}
           </Link>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold">{project.name}</h1>
@@ -520,7 +526,7 @@ export default function ProjectDetailPage() {
             <Button
               variant="outline"
               disabled={runBusy || project.status === 'completed'}
-              title={project.status === 'completed' ? '已完成项目不可暂停' : undefined}
+              title={project.status === 'completed' ? t('runButtons.pauseCompleted') : undefined}
               onClick={() => {
                 setActionError('')
                 const prev = project
@@ -540,15 +546,13 @@ export default function ProjectDetailPage() {
                   .finally(() => setRunBusy(false))
               }}
             >
-              全部暂停
+              {t('projectDetail.pauseAll')}
             </Button>
             <Button
               variant="outline"
               disabled={runBusy || tokenBudgetReached(project)}
               title={
-                tokenBudgetReached(project)
-                  ? '已达到 Token 上限，请在项目配置中提高上限后再续跑'
-                  : undefined
+                tokenBudgetReached(project) ? t('projectDetail.budgetBlockedResume') : undefined
               }
               onClick={() => {
                 setActionError('')
@@ -575,11 +579,11 @@ export default function ProjectDetailPage() {
                   .finally(() => setRunBusy(false))
               }}
             >
-              全部续跑
+              {t('projectDetail.resumeAll')}
             </Button>
             <ResetProgressButton project={project} onReset={applyProject} />
             <Button variant="destructive" onClick={() => api.cancel(projectId)}>
-              停止
+              {t('projectDetail.stop')}
             </Button>
             <DeleteProjectButton
               projectId={projectId}
@@ -654,54 +658,57 @@ export default function ProjectDetailPage() {
             {formatTargetKind(project.target_kind)}
           </Badge>
           <Badge variant="outline">{formatMiningPaths(project)}</Badge>
-          <Badge variant="outline" title={project.llm_model ? '项目模型' : '使用设置页全局模型'}>
-            {project.llm_model || '全局模型'}
+          <Badge
+            variant="outline"
+            title={project.llm_model ? t('projectModel.label') : t('projectDetail.globalModelTitle')}
+          >
+            {project.llm_model || t('home.globalModel')}
           </Badge>
           <span>
             tokens {formatTokens(project.tokens_input + project.tokens_output)}
-            {project.max_token_usage > 0 ? ` / 上限 ${formatTokens(project.max_token_usage)}` : ''}
+            {project.max_token_usage > 0
+              ? ` / ${t('projectDetail.tokenCap', { cap: formatTokens(project.max_token_usage) })}`
+              : ''}
           </span>
           <span>{formatMiningProgress(project)}</span>
           <span>
-            洞 确认{project.vuln_confirmed} / 待审{project.vuln_pending} / 误报{project.vuln_false_positive}
+            {t('projectDetail.vulnCounts', {
+              confirmed: project.vuln_confirmed,
+              pending: project.vuln_pending,
+              fp: project.vuln_false_positive,
+            })}
           </span>
         </div>
         <WeightExtBadges exts={project.weight_exts} />
         <p className="max-w-3xl text-xs leading-relaxed text-muted-foreground">
           {formatTargetKindHint(project.target_kind)}{' '}
           {formatAuditModeHint(project.audit_mode, project.custom_audit_mode_name)}
-          {project.fast_enabled
-            ? ' 快速扫描覆盖 SAST Sink（命令执行、注入、反序列化等）；缺鉴权、IDOR、业务逻辑仍靠启发式。'
-            : ''}
-          {project.bypass_enabled
-            ? ' 历史漏洞绕过以收集到的历史漏洞文档为输入，每轮尝试绕过一条。'
-            : ''}
-          {project.unconstrained_enabled
-            ? ' 无约束扫描只注入代码地图与鉴权，始终走赏金闸门；Reviewer 判定前台洞达成 RCE 效果后结束该路径。'
-            : ''}
+          {project.fast_enabled ? ` ${t('projectDetail.blurb.fast')}` : ''}
+          {project.bypass_enabled ? ` ${t('projectDetail.blurb.bypass')}` : ''}
+          {project.unconstrained_enabled ? ` ${t('projectDetail.blurb.unconstrained')}` : ''}
           {project.code_intel_enabled === true
-            ? ' 已开启代码库：与侦察并列建调用图，失败则降级用 Read/Grep。'
-            : ' 未开启代码库：不建调用图以节省磁盘，挖掘只等侦察完成。'}
+            ? ` ${t('projectDetail.blurb.codeIntelOn')}`
+            : ` ${t('projectDetail.blurb.codeIntelOff')}`}
           {project.status === 'paused' || project.project_paused || project.status === 'completed'
-            ? ' 暂停或完成后可更改挖掘模式；挖掘路径与代码库请到项目配置中修改。续跑后按新规则生效。'
+            ? ` ${t('projectDetail.blurb.editable')}`
             : ''}
         </p>
       </div>
 
       <div className="flex gap-2">
         <Button variant={tab === 'logs' ? 'default' : 'outline'} onClick={() => setTab('logs')}>
-          阶段日志
+          {t('projectDetail.tabLogs')}
         </Button>
         <Button variant={tab === 'reports' ? 'default' : 'outline'} onClick={() => setTab('reports')}>
-          阶段报告
+          {t('projectDetail.tabReports')}
         </Button>
         <Button variant={tab === 'vulns' ? 'default' : 'outline'} onClick={() => setTab('vulns')}>
-          本项目漏洞
+          {t('projectDetail.tabVulns')}
         </Button>
       </div>
 
       {tab === 'reports' ? (
-        <Suspense fallback={<div className="text-sm text-muted-foreground">加载报告…</div>}>
+        <Suspense fallback={<div className="text-sm text-muted-foreground">{t('vulnDetail.loadingReport')}</div>}>
           <PhaseReportsPanel projectId={projectId} initialPhase={controlPhaseOf(phaseFilter)} />
         </Suspense>
       ) : null}
@@ -711,17 +718,17 @@ export default function ProjectDetailPage() {
           <CardContent className="p-3">
           <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
             <div className="vh-phase-tabs">
-              {PHASE_TABS.map(([k, label]) => (
+              {PHASE_TABS.map(([k, labelKey]) => (
                 <div key={k} className="vh-phase-branch">
                   <Button
                     variant={controlPhaseOf(phaseFilter) === k ? 'default' : 'outline'}
                     onClick={() => selectPhase(k)}
                   >
-                    {label}
+                    {t(labelKey)}
                   </Button>
                   {k === 'recon' ? (
                     <div className="vh-phase-subs">
-                      {RECON_LOG_TABS.map(([sk, slabel, subId]) => {
+                      {RECON_LOG_TABS.map(([sk, slabelKey, subId]) => {
                         const done = Boolean(project.recon_subphases?.find((s) => s.id === subId)?.done)
                         return (
                           <Button
@@ -730,7 +737,7 @@ export default function ProjectDetailPage() {
                             variant={phaseFilter === sk ? 'default' : 'outline'}
                             onClick={() => selectPhase(sk)}
                           >
-                            {slabel}
+                            {t(slabelKey)}
                             {done ? ' ✓' : ' ○'}
                           </Button>
                         )
@@ -739,14 +746,14 @@ export default function ProjectDetailPage() {
                   ) : null}
                   {k === 'worker' ? (
                     <div className="vh-phase-subs">
-                      {workerLogTabs(project).map(([sk, slabel]) => (
+                      {workerLogTabs(project).map(([sk, slabelKey]) => (
                         <Button
                           key={sk}
                           className="h-6 px-2 text-[11px]"
                           variant={phaseFilter === sk ? 'default' : 'outline'}
                           onClick={() => selectPhase(sk)}
                         >
-                          {slabel}
+                          {t(slabelKey)}
                         </Button>
                       ))}
                     </div>
@@ -756,14 +763,14 @@ export default function ProjectDetailPage() {
                       {(normalizeDynamicVerifyMode(project.dynamic_verify_mode, project.dynamic_verify_enabled) === 'lab'
                         ? REVIEWER_LOG_TABS
                         : REVIEWER_LOG_TABS.filter(([sk]) => sk !== 'reviewer-lab')
-                      ).map(([sk, slabel]) => (
+                      ).map(([sk, slabelKey]) => (
                         <Button
                           key={sk}
                           className="h-6 px-2 text-[11px]"
                           variant={phaseFilter === sk ? 'default' : 'outline'}
                           onClick={() => selectPhase(sk)}
                         >
-                          {slabel}
+                          {t(slabelKey)}
                           {sk === 'reviewer-lab' ? (project.lab_setup_done ? ' ✓' : ' ○') : ''}
                         </Button>
                       ))}
@@ -795,9 +802,7 @@ export default function ProjectDetailPage() {
           {phaseFilter === 'code-intel' || phaseFilter === 'code_intel' ? (
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {project.code_intel_enabled !== true ? (
-                <span className="text-xs text-muted-foreground">
-                  未开启代码库，不建调用图。可在项目暂停或完成后于项目配置中开启。
-                </span>
+                <span className="text-xs text-muted-foreground">{t('projectDetail.codeIntelOffHint')}</span>
               ) : null}
               <Button
                 size="sm"
@@ -821,7 +826,7 @@ export default function ProjectDetailPage() {
                     .finally(() => setCiBusy(false))
                 }}
               >
-                {ciBusy ? '处理中…' : '重建代码库'}
+                {ciBusy ? t('projectDetail.processing') : t('projectDetail.rebuildCodeIntel')}
               </Button>
               <Button
                 size="sm"
@@ -831,7 +836,7 @@ export default function ProjectDetailPage() {
                   project.code_intel_enabled !== true ||
                   (project.code_intel_status !== 'ready' && project.code_intel_status !== 'stale')
                 }
-                title="查看调用图。若 CodeGraph 带官方图浏览器则另开本机页面，否则用内置查询。"
+                title={t('projectDetail.openGraphTitle')}
                 onClick={() => {
                   setActionError('')
                   setCiBusy(true)
@@ -848,10 +853,10 @@ export default function ProjectDetailPage() {
                     .finally(() => setCiBusy(false))
                 }}
               >
-                打开图浏览器（测试）
+                {t('projectDetail.openGraph')}
               </Button>
               {project.code_intel_status === 'stale' ? (
-                <span className="text-xs text-amber-300">源码已变化，索引过期，不会自动重建</span>
+                <span className="text-xs text-amber-300">{t('projectDetail.codeIntelStale')}</span>
               ) : null}
               {project.code_intel_status === 'degraded' && project.code_intel_error ? (
                 <span className="text-xs text-red-300">{project.code_intel_error}</span>
@@ -880,7 +885,7 @@ export default function ProjectDetailPage() {
             <VulnGroupList
               vulns={vulns}
               activeId={detailVulnId}
-              emptyText={vulnsLoading ? '加载漏洞…' : '暂无漏洞'}
+              emptyText={vulnsLoading ? t('projectDetail.loadingVulns') : t('projectDetail.noVulns')}
               onSelectVuln={setDetailVulnId}
               projectKindById={new Map([[project.id, project.target_kind]])}
             />

@@ -62,6 +62,37 @@
     "uploadTimeout": "Source zip upload timed out. Check the size and retry, or import from GitHub instead.",
     "pickCustomFirst": "Pick a custom audit mode first (create one in Settings)."
   },
+  "projectDetail": {
+    "loadTimeout": "Loading project details timed out, please try again.",
+    "loadFailed": "Failed to load project details, please try again.",
+    "back": "← Back",
+    "pauseAll": "Pause all",
+    "resumeAll": "Resume all",
+    "stop": "Stop",
+    "budgetBlockedResume": "Token cap reached; raise the cap in project settings before resuming",
+    "globalModelTitle": "Uses the global model from Settings",
+    "tokenCap": "cap {{cap}}",
+    "vulnCounts": "Findings: {{confirmed}} confirmed / {{pending}} pending / {{fp}} FP",
+    "blurb": {
+      "fast": "Fast scan covers SAST sinks (command execution, injection, deserialization, etc.); missing auth, IDOR and business logic still rely on heuristic mining.",
+      "bypass": "Historical-vuln bypass takes the collected historical-vuln docs as input and tries to bypass one per round.",
+      "unconstrained": "Unconstrained scan injects only the code map and auth, always on the bounty gate; the path ends once the Reviewer judges a front-facing bug to have achieved RCE impact.",
+      "codeIntelOn": "Code graph on: builds a call graph alongside recon, degrading to Read/Grep on failure.",
+      "codeIntelOff": "Code graph off: no call graph is built (to save disk); mining just waits for recon.",
+      "editable": "When paused or completed you can change the mining mode; change mining paths and the code graph in project settings. New rules take effect after resuming."
+    },
+    "tabLogs": "Phase log",
+    "tabReports": "Phase reports",
+    "tabVulns": "Project findings",
+    "codeIntelOffHint": "Code graph is off, so no call graph is built. You can enable it in project settings once the project is paused or completed.",
+    "processing": "Processing…",
+    "rebuildCodeIntel": "Rebuild code graph",
+    "openGraphTitle": "View the call graph. If CodeGraph ships an official graph browser it opens a local page; otherwise the built-in query is used.",
+    "openGraph": "Open graph browser (beta)",
+    "codeIntelStale": "Source changed; the index is stale and won't rebuild automatically",
+    "loadingVulns": "Loading findings…",
+    "noVulns": "No findings"
+  },
   "projectSettings": {
     "button": "Project settings",
     "loading": "Loading project details",

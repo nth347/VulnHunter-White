@@ -62,6 +62,37 @@
     "uploadTimeout": "源码 zip 上传超时，请检查体积后重试，或改用 GitHub 导入",
     "pickCustomFirst": "请先选择自定义审计模式（可在设置页创建）"
   },
+  "projectDetail": {
+    "loadTimeout": "项目详情加载超时，请稍后重试。",
+    "loadFailed": "项目详情加载失败，请稍后重试。",
+    "back": "← 返回",
+    "pauseAll": "全部暂停",
+    "resumeAll": "全部续跑",
+    "stop": "停止",
+    "budgetBlockedResume": "已达到 Token 上限，请在项目配置中提高上限后再续跑",
+    "globalModelTitle": "使用设置页全局模型",
+    "tokenCap": "上限 {{cap}}",
+    "vulnCounts": "洞 确认{{confirmed}} / 待审{{pending}} / 误报{{fp}}",
+    "blurb": {
+      "fast": "快速扫描覆盖 SAST Sink（命令执行、注入、反序列化等）；缺鉴权、IDOR、业务逻辑仍靠启发式。",
+      "bypass": "历史漏洞绕过以收集到的历史漏洞文档为输入，每轮尝试绕过一条。",
+      "unconstrained": "无约束扫描只注入代码地图与鉴权，始终走赏金闸门；Reviewer 判定前台洞达成 RCE 效果后结束该路径。",
+      "codeIntelOn": "已开启代码库：与侦察并列建调用图，失败则降级用 Read/Grep。",
+      "codeIntelOff": "未开启代码库：不建调用图以节省磁盘，挖掘只等侦察完成。",
+      "editable": "暂停或完成后可更改挖掘模式；挖掘路径与代码库请到项目配置中修改。续跑后按新规则生效。"
+    },
+    "tabLogs": "阶段日志",
+    "tabReports": "阶段报告",
+    "tabVulns": "本项目漏洞",
+    "codeIntelOffHint": "未开启代码库，不建调用图。可在项目暂停或完成后于项目配置中开启。",
+    "processing": "处理中…",
+    "rebuildCodeIntel": "重建代码库",
+    "openGraphTitle": "查看调用图。若 CodeGraph 带官方图浏览器则另开本机页面，否则用内置查询。",
+    "openGraph": "打开图浏览器（测试）",
+    "codeIntelStale": "源码已变化，索引过期，不会自动重建",
+    "loadingVulns": "加载漏洞…",
+    "noVulns": "暂无漏洞"
+  },
   "projectSettings": {
     "button": "项目配置",
     "loading": "项目详情加载中",
