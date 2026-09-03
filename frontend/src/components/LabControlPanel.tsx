@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, formatApiError, type Project, type ProjectLab } from '../api'
 import { Button } from '@/components/ui/button'
+import i18n from '../i18n'
 import { startVisibilityPoll } from '../lib/visibilityPoll'
+
+const labTimeout = () => i18n.t('labPanel.timeout')
 
 type PortFieldKey = 'host' | 'jdwp' | 'inspect' | 'debugpy'
 
@@ -30,7 +34,7 @@ function PortField({
 }) {
   return (
     <span className="flex flex-wrap items-center gap-1">
-      <span className="text-slate-400">{label}：</span>
+      <span className="text-slate-400">{i18n.t('labPanel.fieldLabel', { label })}</span>
       {editing ? (
         <>
           <span className="text-xs text-slate-500">127.0.0.1:</span>
@@ -53,14 +57,14 @@ function PortField({
             onClick={onSave}
             disabled={busy}
           >
-            保存
+            {i18n.t('common.save')}
           </button>
           <button
             type="button"
             className="text-xs text-slate-400 hover:underline"
             onClick={onCancel}
           >
-            取消
+            {i18n.t('common.cancel')}
           </button>
         </>
       ) : (
@@ -71,9 +75,9 @@ function PortField({
               type="button"
               className="ml-1 text-xs text-slate-400 hover:text-sky-400 hover:underline"
               onClick={onEdit}
-              title={`修改 ${label} 端口`}
+              title={i18n.t('labPanel.editPortTitle', { label })}
             >
-              [改]
+              {i18n.t('labPanel.editShort')}
             </button>
           )}
         </>
@@ -87,6 +91,7 @@ type LabControlPanelProps = {
 }
 
 export function LabControlPanel({ project }: LabControlPanelProps) {
+  const { t } = useTranslation()
   const [lab, setLab] = useState<ProjectLab | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -100,7 +105,7 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
       setLab(next)
       setError(next.error || '')
     } catch (e) {
-      setError(formatApiError(e, '靶场操作超时，启动或停止容器可能需要几分钟。'))
+      setError(formatApiError(e, labTimeout()))
     }
   }
 
@@ -126,11 +131,11 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
       const next = action === 'start' ? await api.startLab(project.id) : await api.stopLab(project.id)
       setLab(next)
       if (next.port_changes?.length) {
-        setNote(`已自动换端口：${next.port_changes.join('；')}`)
+        setNote(t('labPanel.portsRemapped', { list: next.port_changes.join(t('labPanel.listSep')) }))
       }
       setError(next.error || '')
     } catch (e) {
-      setError(formatApiError(e, '靶场操作超时，启动或停止容器可能需要几分钟。'))
+      setError(formatApiError(e, labTimeout()))
       void refresh()
     } finally {
       setBusy(false)
@@ -141,7 +146,7 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
     if (!editingField || busy) return
     const port = Number(portInput)
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      setError('端口须为 1–65535 的整数')
+      setError(t('labPanel.portRange'))
       return
     }
     setBusy(true)
@@ -159,7 +164,7 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
       setLab(next)
       setEditingField(null)
     } catch (e) {
-      setError(formatApiError(e, '靶场操作超时，启动或停止容器可能需要几分钟。'))
+      setError(formatApiError(e, labTimeout()))
     } finally {
       setBusy(false)
     }
@@ -171,7 +176,7 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
   return (
     <div className="rounded-lg border border-slate-700/80 bg-slate-900/40 px-4 py-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm font-medium text-slate-200">Docker 靶场</div>
+        <div className="text-sm font-medium text-slate-200">{t('labPanel.title')}</div>
         <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
@@ -179,14 +184,14 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
             disabled={busy || !hasEnv || lab?.status === 'running'}
             title={
               !hasEnv
-                ? '尚无 env 产物，请先在阶段日志「环境搭建」完成搭建'
+                ? t('labPanel.startTitleNoEnv')
                 : lab?.status === 'running'
-                  ? '靶场已在运行'
-                  : '一键启动 Docker 靶场（端口冲突时自动换端口）'
+                  ? t('labPanel.startTitleRunning')
+                  : t('labPanel.startTitle')
             }
             onClick={() => void runAction('start')}
           >
-            启动靶场
+            {t('labPanel.start')}
           </Button>
           <Button
             size="sm"
@@ -194,22 +199,21 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
             disabled={busy || !lab?.can_stop}
             onClick={() => void runAction('stop')}
           >
-            停止
+            {t('labPanel.stop')}
           </Button>
         </div>
       </div>
 
       {!hasEnv ? (
-        <p className="text-sm text-slate-400">
-          尚无靶场产物。请先在阶段日志的「环境搭建」中完成搭建，再使用一键启动。
-        </p>
+        <p className="text-sm text-slate-400">{t('labPanel.noEnvBody')}</p>
       ) : (
         <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
           <span>
-            状态：<span className="font-medium text-slate-100">{lab?.status || 'absent'}</span>
+            {t('labPanel.status')}
+            <span className="font-medium text-slate-100">{lab?.status || 'absent'}</span>
           </span>
           <PortField
-            label="地址"
+            label={t('labPanel.address')}
             display={lab?.target_url || null}
             editing={editingField === 'host'}
             portInput={portInput}
@@ -280,7 +284,7 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
 
       {lab?.port_conflicts && lab.port_conflicts.length > 0 && lab.status !== 'running' && (
         <p className="mt-2 text-xs text-amber-400/90">
-          端口占用：{lab.port_conflicts.join(', ')}（启动时将自动更换，也可手动改端口）
+          {t('labPanel.portConflicts', { list: lab.port_conflicts.join(', ') })}
         </p>
       )}
       {note && <p className="mt-2 text-xs text-emerald-400/90">{note}</p>}

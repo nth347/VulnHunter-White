@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, formatApiError, type ConversationState } from '../api'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -28,6 +29,7 @@ export function ConversationComposer({
   projectStatus,
   onSent,
 }: ConversationComposerProps) {
+  const { t } = useTranslation()
   const [state, setState] = useState<ConversationState | null>(null)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
@@ -55,7 +57,7 @@ export function ConversationComposer({
   async function submit(action: 'steer' | 'continue' | 'new') {
     if (busy || blocked) return
     if (action === 'steer' && !message.trim()) {
-      setError('请输入引导内容')
+      setError(t('composer.enterSteer'))
       return
     }
     setBusy(true)
@@ -85,19 +87,15 @@ export function ConversationComposer({
   return (
     <div className="mt-3 space-y-2 border-t border-border pt-3">
       {viewingHistory ? (
-        <p className="text-xs text-muted-foreground">正在查看历史轮次；输入将作用于该小阶段最新一轮。</p>
+        <p className="text-xs text-muted-foreground">{t('composer.viewingHistory')}</p>
       ) : null}
       {blocked ? (
-        <p className="text-xs text-muted-foreground">当前项目状态不可操作对话。</p>
+        <p className="text-xs text-muted-foreground">{t('composer.blocked')}</p>
       ) : null}
       <Textarea
         value={message}
         onChange={(e) => setMessage(e.target.value)}
-        placeholder={
-          running
-            ? '输入引导，将在下一轮模型调用前注入（类似 Cursor 跟进）…'
-            : '可选：接续或新开时附带说明…'
-        }
+        placeholder={running ? t('composer.placeholderRunning') : t('composer.placeholderIdle')}
         rows={3}
         disabled={busy || blocked}
         onKeyDown={(e) => {
@@ -117,7 +115,7 @@ export function ConversationComposer({
               disabled={busy || blocked || !canSteer || !message.trim()}
               onClick={() => void submit('steer')}
             >
-              {busy ? '发送中…' : '发送引导'}
+              {busy ? t('composer.sending') : t('composer.sendSteer')}
             </Button>
             <Button
               type="button"
@@ -126,7 +124,7 @@ export function ConversationComposer({
               disabled={busy || blocked || !canNew}
               onClick={() => setConfirmNew(true)}
             >
-              新开
+              {t('composer.new')}
             </Button>
           </>
         ) : (
@@ -137,7 +135,7 @@ export function ConversationComposer({
               disabled={busy || blocked || !canContinue}
               onClick={() => void submit('continue')}
             >
-              {busy ? '处理中…' : '接续'}
+              {busy ? t('composer.processing') : t('composer.continue')}
             </Button>
             <Button
               type="button"
@@ -146,29 +144,27 @@ export function ConversationComposer({
               disabled={busy || blocked || !canNew}
               onClick={() => void submit('new')}
             >
-              新开
+              {t('composer.new')}
             </Button>
           </>
         )}
         <span className="text-[11px] text-muted-foreground">
-          {running ? '进行中 · Ctrl+Enter 发送引导' : '空闲 · 接续保留上下文，新开放弃检查点'}
+          {running ? t('composer.hintRunning') : t('composer.hintIdle')}
         </span>
       </div>
 
       <Dialog open={confirmNew} onOpenChange={(o) => !busy && setConfirmNew(o)}>
         <DialogContent className="sm:max-w-lg" showCloseButton={!busy}>
           <DialogHeader>
-            <DialogTitle>新开一轮对话？</DialogTitle>
-            <DialogDescription>
-              将打断当前进行中的对话、放弃可恢复检查点，并按你填写的说明新开一轮。此操作不可撤销。
-            </DialogDescription>
+            <DialogTitle>{t('composer.newDialogTitle')}</DialogTitle>
+            <DialogDescription>{t('composer.newDialogDescription')}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button type="button" variant="outline" disabled={busy} onClick={() => setConfirmNew(false)}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button type="button" disabled={busy} onClick={() => void submit('new')}>
-              {busy ? '启动中…' : '确认新开'}
+              {busy ? t('composer.starting') : t('composer.confirmNew')}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, formatApiError, type CodeIntelSymbol } from '../api'
 import { Button } from '@/components/ui/button'
 import {
@@ -57,6 +58,7 @@ export function CodeGraphExplorer({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -85,7 +87,7 @@ export function CodeGraphExplorer({
       .then((out) => {
         if (!out.ok) {
           setHits([])
-          setError(out.error || '查询失败')
+          setError(out.error || t('codeGraph.queryFailed'))
           return
         }
         setHits(out.items || [])
@@ -104,13 +106,13 @@ export function CodeGraphExplorer({
     ])
       .then(([from, to]) => {
         if (!from.ok) {
-          setError(from.error || '查询调用方失败')
+          setError(from.error || t('codeGraph.callersFailed'))
           setCallers([])
         } else {
           setCallers(from.callers || [])
         }
         if (!to.ok) {
-          setError((prev) => prev || to.error || '查询被调失败')
+          setError((prev) => prev || to.error || t('codeGraph.calleesFailed'))
           setCallees([])
         } else {
           setCallees(to.callees || [])
@@ -124,10 +126,8 @@ export function CodeGraphExplorer({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[min(90vh,44rem)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
         <DialogHeader className="shrink-0 border-b border-border px-5 py-4 pr-12">
-          <DialogTitle>调用图浏览</DialogTitle>
-          <DialogDescription>
-            当前 CodeGraph 发行版没有官方图浏览器，这里用同一套索引查符号和调用关系。
-          </DialogDescription>
+          <DialogTitle>{t('codeGraph.title')}</DialogTitle>
+          <DialogDescription>{t('codeGraph.description')}</DialogDescription>
         </DialogHeader>
         <div className="flex min-h-0 flex-1 flex-col gap-3 px-5 py-3">
           <form
@@ -140,45 +140,46 @@ export function CodeGraphExplorer({
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="符号名，例如 login / Runtime.exec"
+              placeholder={t('codeGraph.searchPlaceholder')}
               disabled={busy}
             />
             <Button type="submit" size="sm" disabled={busy || !query.trim()}>
-              {busy ? '查询…' : '查询'}
+              {busy ? t('codeGraph.querying') : t('codeGraph.query')}
             </Button>
           </form>
           {error ? <p className="text-xs text-red-300">{error}</p> : null}
           <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-3">
             <section className="flex min-h-0 flex-col rounded-lg border border-border/80">
               <h3 className="shrink-0 border-b border-border px-2 py-1.5 text-xs text-muted-foreground">
-                符号 {hits.length ? `(${hits.length})` : ''}
+                {t('codeGraph.symbols')} {hits.length ? `(${hits.length})` : ''}
               </h3>
-              <SymbolList items={hits} empty="输入符号名后查询" onPick={inspect} />
+              <SymbolList items={hits} empty={t('codeGraph.symbolsEmpty')} onPick={inspect} />
             </section>
             <section className="flex min-h-0 flex-col rounded-lg border border-border/80">
               <h3 className="shrink-0 border-b border-border px-2 py-1.5 text-xs text-muted-foreground">
-                调用方 {selected ? `(${callers.length})` : ''}
+                {t('codeGraph.callers')} {selected ? `(${callers.length})` : ''}
               </h3>
               <SymbolList
                 items={callers}
-                empty={selected ? '没有调用方' : '先选一个符号'}
+                empty={selected ? t('codeGraph.noCallers') : t('codeGraph.pickSymbol')}
                 onPick={inspect}
               />
             </section>
             <section className="flex min-h-0 flex-col rounded-lg border border-border/80">
               <h3 className="shrink-0 border-b border-border px-2 py-1.5 text-xs text-muted-foreground">
-                被调 {selected ? `(${callees.length})` : ''}
+                {t('codeGraph.callees')} {selected ? `(${callees.length})` : ''}
               </h3>
               <SymbolList
                 items={callees}
-                empty={selected ? '没有被调' : '先选一个符号'}
+                empty={selected ? t('codeGraph.noCallees') : t('codeGraph.pickSymbol')}
                 onPick={inspect}
               />
             </section>
           </div>
           {selected ? (
             <p className="shrink-0 truncate font-mono text-[11px] text-muted-foreground">
-              当前：{selected.name}
+              {t('codeGraph.current')}
+              {selected.name}
               {loc(selected) ? ` · ${loc(selected)}` : ''}
             </p>
           ) : null}
