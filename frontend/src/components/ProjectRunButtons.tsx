@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { PauseIcon, PlayIcon } from 'lucide-react'
 import { api, formatApiError, type Project } from '../api'
 import { applyProjectRunToListCaches } from '../lib/listCache'
@@ -28,6 +29,7 @@ function applyFresh(project: Project) {
 }
 
 export function ProjectRunButtons({ project, size = 'sm' }: { project: Project; size?: 'default' | 'sm' }) {
+  const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const bucket = projectRunBucket(project.status, project.project_paused)
@@ -37,16 +39,16 @@ export function ProjectRunButtons({ project, size = 'sm' }: { project: Project; 
 
   const pauseTitle =
     bucket === 'completed'
-      ? '已完成项目不可暂停'
+      ? t('runButtons.pauseCompleted')
       : bucket === 'paused'
-        ? '项目已暂停'
+        ? t('runButtons.alreadyPaused')
         : bucket === 'stopped'
-          ? '已停止项目无需暂停'
+          ? t('runButtons.pauseStopped')
           : undefined
   const startTitle = budgetBlocked
-    ? '已达到 Token 上限，请在项目配置中提高上限后再启动'
+    ? t('runButtons.budgetBlocked')
     : bucket === 'running'
-      ? '项目已在运行'
+      ? t('runButtons.alreadyRunning')
       : undefined
 
   function runAction(kind: 'pause' | 'resume') {
@@ -74,7 +76,7 @@ export function ProjectRunButtons({ project, size = 'sm' }: { project: Project; 
         size={size}
         disabled={!canPause}
         title={pauseTitle}
-        aria-label="暂停项目"
+        aria-label={t('runButtons.pause')}
         onClick={(e) => {
           e.preventDefault()
           e.stopPropagation()
@@ -83,7 +85,7 @@ export function ProjectRunButtons({ project, size = 'sm' }: { project: Project; 
         }}
       >
         <PauseIcon />
-        暂停
+        {t('runButtons.pause')}
       </Button>
       <Button
         type="button"
@@ -91,7 +93,7 @@ export function ProjectRunButtons({ project, size = 'sm' }: { project: Project; 
         size={size}
         disabled={!canStart}
         title={startTitle}
-        aria-label="启动项目"
+        aria-label={t('runButtons.start')}
         onClick={(e) => {
           e.preventDefault()
           e.stopPropagation()
@@ -100,7 +102,7 @@ export function ProjectRunButtons({ project, size = 'sm' }: { project: Project; 
         }}
       >
         <PlayIcon />
-        启动
+        {t('runButtons.start')}
       </Button>
       {error ? (
         <span className="max-w-40 truncate text-xs text-red-300" title={error}>

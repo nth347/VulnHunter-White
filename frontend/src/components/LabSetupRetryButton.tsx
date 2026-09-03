@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, formatApiError, type Project } from '../api'
 import { Button } from '@/components/ui/button'
 import {
@@ -17,6 +18,7 @@ type LabSetupRetryButtonProps = {
 }
 
 export function LabSetupRetryButton({ project, onStarted }: LabSetupRetryButtonProps) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -53,13 +55,13 @@ export function LabSetupRetryButton({ project, onStarted }: LabSetupRetryButtonP
         type="button"
         variant="outline"
         disabled={busy}
-        title="环境搭建重试用尽后，强制再跑一轮 Docker 靶场搭建"
+        title={t('labRetry.title')}
         onClick={() => {
           setError('')
           setOpen(true)
         }}
       >
-        续跑环境搭建
+        {t('labRetry.button')}
       </Button>
       <Dialog
         open={open}
@@ -69,22 +71,20 @@ export function LabSetupRetryButton({ project, onStarted }: LabSetupRetryButtonP
       >
         <DialogContent className="sm:max-w-lg" showCloseButton={!busy}>
           <DialogHeader>
-            <DialogTitle>续跑 Docker 靶场搭建？</DialogTitle>
+            <DialogTitle>{t('labRetry.dialogTitle')}</DialogTitle>
             <DialogDescription className="whitespace-pre-wrap leading-relaxed">
-              上轮环境搭建因超时/重试用尽已结束，后续审核将仅静态验证。确认后将重置搭建状态并新开一轮
-              「审核 → 环境搭建」对话；可选填写说明，指示 Agent 优先尝试的方向（例如已有 compose
-              路径、端口、依赖镜像等）。不会清空 env/ 已有产物。
+              {t('labRetry.dialogDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <label className="text-sm text-muted-foreground" htmlFor="lab-retry-message">
-              续跑说明（可选）
+              {t('labRetry.noteLabel')}
             </label>
             <Textarea
               id="lab-retry-message"
               value={userMessage}
               onChange={(e) => setUserMessage(e.target.value)}
-              placeholder="例如：优先用 src/docker-compose.yml，MySQL 用 3307 端口，应用监听 8080…"
+              placeholder={t('labRetry.notePlaceholder')}
               rows={4}
               disabled={busy}
             />
@@ -92,10 +92,10 @@ export function LabSetupRetryButton({ project, onStarted }: LabSetupRetryButtonP
           {error ? <p className="text-sm text-red-300">{error}</p> : null}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={busy} onClick={close}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button type="button" disabled={busy} onClick={() => void confirm()}>
-              {busy ? '启动中…' : '开始续跑'}
+              {busy ? t('labRetry.starting') : t('labRetry.start')}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn, exposureModeTooltip, formatExposureMode } from '@/lib/utils'
@@ -13,6 +14,7 @@ export default function ExposureModeBadge({
   upstreamChainProven,
   nested,
 }: ExposureModeBadgeProps) {
+  const { t } = useTranslation()
   const label = formatExposureMode(exposureMode)
   const tip = exposureModeTooltip(exposureMode, upstreamChainProven)
   if (!label) return null
@@ -24,7 +26,7 @@ export default function ExposureModeBadge({
       variant="outline"
     >
       {label}
-      {showChainProven ? ' · 链已证' : ''}
+      {showChainProven ? ` · ${t('exposureBadge.chainProven')}` : ''}
     </Badge>
   )
 

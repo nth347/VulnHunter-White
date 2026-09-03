@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { LockIcon } from 'lucide-react'
+import i18n from '../i18n'
 import { api, formatApiError, getAccessToken, setAccessToken, subscribeAuth } from '../api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -24,6 +26,7 @@ export function useAuth() {
 }
 
 export default function AuthGate({ children }: { children: ReactNode }) {
+  const { t } = useTranslation()
   const [ready, setReady] = useState(false)
   const [required, setRequired] = useState(false)
   const [unlocked, setUnlocked] = useState(false)
@@ -61,7 +64,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       const timedOut =
         err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError')
       setBackendError(
-        timedOut ? '连接后端超时，请确认服务已启动且未卡住。' : '无法连接后端，请确认服务已启动。',
+        timedOut ? i18n.t('auth.backendTimeout') : i18n.t('auth.backendUnreachable'),
       )
       setReady(true)
     }
@@ -86,7 +89,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     e.preventDefault()
     const value = token.trim()
     if (!value) {
-      setError('请输入访问令牌')
+      setError(t('auth.enterToken'))
       return
     }
     setBusy(true)
@@ -108,7 +111,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   if (!ready) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
-        加载中…
+        {t('common.loading')}
       </div>
     )
   }
@@ -121,19 +124,19 @@ export default function AuthGate({ children }: { children: ReactNode }) {
             <BrandLogo className="text-lg font-semibold tracking-tight" />
             <div className="flex items-center gap-2">
               <LockIcon className="size-5 text-muted-foreground" />
-              <h1 className="text-lg font-semibold">访问令牌</h1>
+              <h1 className="text-lg font-semibold">{t('auth.title')}</h1>
             </div>
             <p className="text-sm text-muted-foreground">
-              {backendError || '输入访问令牌后才能查看数据或调用功能。令牌可在 .env 的 VULNHUNTER_ACCESS_TOKEN 中配置，也可在设置页修改。'}
+              {backendError || t('auth.description')}
             </p>
             {backendError ? (
               <Button type="button" onClick={() => void checkAuth()}>
-                重试
+                {t('common.retry')}
               </Button>
             ) : (
               <form className="space-y-3" onSubmit={(e) => void onSubmit(e)}>
                 <div className="space-y-1.5">
-                  <Label htmlFor="access-token">令牌</Label>
+                  <Label htmlFor="access-token">{t('auth.tokenLabel')}</Label>
                   <Input
                     id="access-token"
                     type="password"
@@ -141,12 +144,12 @@ export default function AuthGate({ children }: { children: ReactNode }) {
                     autoComplete="current-password"
                     value={token}
                     onChange={(e) => setToken(e.target.value)}
-                    placeholder="访问令牌"
+                    placeholder={t('auth.tokenPlaceholder')}
                   />
                 </div>
                 {error ? <div className="text-sm text-red-300">{error}</div> : null}
                 <Button type="submit" disabled={busy} className="w-full">
-                  {busy ? '校验中…' : '进入'}
+                  {busy ? t('auth.verifying') : t('auth.enter')}
                 </Button>
               </form>
             )}

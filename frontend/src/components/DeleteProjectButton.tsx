@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, formatApiError } from '../api'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -27,6 +28,7 @@ export function DeleteProjectButton({
   variant = 'destructive',
   size = 'default',
 }: DeleteProjectButtonProps) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [acked, setAcked] = useState(false)
@@ -55,7 +57,7 @@ export function DeleteProjectButton({
       setAcked(false)
       onDeleted?.()
     } catch (e) {
-      setError(formatApiError(e, '删除项目超时，工作区较大时请稍后重试。'))
+      setError(formatApiError(e, t('deleteProject.timeout')))
     } finally {
       setBusy(false)
     }
@@ -69,7 +71,7 @@ export function DeleteProjectButton({
         size={size}
         onClick={openDialog}
       >
-        删除
+        {t('common.delete')}
       </Button>
       <Dialog
         open={open}
@@ -80,10 +82,8 @@ export function DeleteProjectButton({
       >
         <DialogContent className="sm:max-w-lg" showCloseButton={!busy}>
           <DialogHeader>
-            <DialogTitle>确认删除项目</DialogTitle>
-            <DialogDescription>
-              将永久删除「{projectName}」及其源码工作区、阶段日志和漏洞报告，此操作不可恢复。请再次确认。
-            </DialogDescription>
+            <DialogTitle>{t('deleteProject.title')}</DialogTitle>
+            <DialogDescription>{t('deleteProject.description', { name: projectName })}</DialogDescription>
           </DialogHeader>
           <Label className="items-start font-normal">
             <Checkbox
@@ -92,14 +92,12 @@ export function DeleteProjectButton({
               disabled={busy}
               onCheckedChange={(checked) => setAcked(checked === true)}
             />
-            <span className="min-w-0 text-sm leading-relaxed">
-              我已了解，确认永久删除该项目及其全部数据
-            </span>
+            <span className="min-w-0 text-sm leading-relaxed">{t('deleteProject.ack')}</span>
           </Label>
           {error ? <p className="text-sm text-red-300">{error}</p> : null}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={busy} onClick={close}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button
               type="button"
@@ -107,7 +105,7 @@ export function DeleteProjectButton({
               disabled={busy || !acked}
               onClick={() => void confirmDelete()}
             >
-              {busy ? '删除中…' : '确认删除'}
+              {busy ? t('common.deleting') : t('deleteProject.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -105,6 +105,54 @@
       "workerHint": "mining hint"
     }
   },
+  "auth": {
+    "title": "Access token",
+    "description": "You must enter an access token before you can view data or use any feature. Configure the token via VULNHUNTER_ACCESS_TOKEN in .env, or change it on the Settings page.",
+    "tokenLabel": "Token",
+    "tokenPlaceholder": "Access token",
+    "verifying": "Verifying…",
+    "enter": "Enter",
+    "enterToken": "Please enter an access token",
+    "backendTimeout": "Connection to the backend timed out; make sure the service is started and not stuck.",
+    "backendUnreachable": "Cannot reach the backend; make sure the service is started."
+  },
+  "runButtons": {
+    "pause": "Pause",
+    "start": "Start",
+    "pauseCompleted": "A completed project cannot be paused",
+    "alreadyPaused": "Project is already paused",
+    "pauseStopped": "A stopped project does not need pausing",
+    "budgetBlocked": "Token cap reached; raise the cap in project settings before starting",
+    "alreadyRunning": "Project is already running"
+  },
+  "deleteProject": {
+    "title": "Delete project?",
+    "description": "This permanently deletes \"{{name}}\" along with its source workspace, phase logs and vulnerability reports. This cannot be undone. Please confirm.",
+    "ack": "I understand and confirm permanent deletion of this project and all its data",
+    "confirm": "Delete",
+    "timeout": "Deleting the project timed out; try again later if the workspace is large."
+  },
+  "resetProgress": {
+    "button": "Reset progress",
+    "titleAllowed": "Reset heuristic mining progress; keeps fast scan, historical-vuln bypass, unconstrained scan, findings and recon docs",
+    "titleBlocked": "Pause everything first, then reset mining progress",
+    "title": "Reset heuristic mining progress?",
+    "description": "This clears \"{{name}}\"'s heuristic audited-file marks, heuristic round reports and Worker checkpoints. The fast-scan sink queue, historical-vuln bypass progress, unconstrained-scan progress, Semgrep artifacts and frozen list are kept. Findings, recon docs, weight/skip marks and lab setup are kept. The project stays paused after the reset. Please confirm.",
+    "ack": "I understand and confirm clearing heuristic mining progress (fast scan, historical-vuln bypass, unconstrained scan, findings and recon docs are unaffected)",
+    "confirm": "Reset",
+    "resetting": "Resetting…",
+    "timeout": "Resetting progress timed out, please try again."
+  },
+  "labRetry": {
+    "button": "Retry lab setup",
+    "title": "Force another Docker lab setup round after retries are exhausted",
+    "dialogTitle": "Retry Docker lab setup?",
+    "dialogDescription": "The last lab setup ended after a timeout / exhausted retries, so further review would be static-only. Confirming resets the setup state and opens a fresh \"review → lab setup\" conversation; you may optionally add a note directing the Agent's first attempts (e.g. an existing compose path, ports, dependency images). Existing env/ artifacts are not cleared.",
+    "noteLabel": "Retry note (optional)",
+    "notePlaceholder": "e.g. prefer src/docker-compose.yml, MySQL on port 3307, app listening on 8080…",
+    "start": "Start",
+    "starting": "Starting…"
+  },
   "toggles": {
     "attackChain": {
       "label": "Attack-chain linking",
@@ -187,6 +235,66 @@
     "tooLong": "{{label}} is too long; max {{max}} characters",
     "clear": "Clear"
   },
+  "githubLink": {
+    "openTitle": "Open {{label}} on GitHub"
+  },
+  "exposureBadge": {
+    "chainProven": "chain proven"
+  },
+  "vulnSignals": {
+    "allAttributes": "View all attributes"
+  },
+  "attackSurfaceBadge": {
+    "frontend": "Front-facing vulnerability: reachable publicly or without logging in.",
+    "backendAdmin": "Admin-panel vulnerability: requires admin privileges to exploit.",
+    "backendUser": "Admin-panel vulnerability: requires an ordinary in-app account (low-privilege user) to exploit.",
+    "backend": "Admin-panel vulnerability: requires a suitable in-app account to exploit."
+  },
+  "weightExt": {
+    "label": "Weighted extensions",
+    "agentAdded": "Added by Agent · {{count}} files",
+    "default": "Default source extension · {{count}} files"
+  },
+  "vulnTags": {
+    "subItem": "Sub-item",
+    "subItemTip": "A sub-report within a merged same-root-cause group; see the main report or expand the group for details.",
+    "tierTip": "{{tier}}: value tier assigned when the Reviewer confirmed it.",
+    "verifierTip": "Verifier online re-test status. See the vulnerability details for the full target list.",
+    "upstreamProvenSuffix": " (upstream chain proven)",
+    "miningTooltip": {
+      "heuristic": "Produced by the heuristic Worker mining file by file after recon completes.",
+      "fast": "Produced by the fast-scan path (Semgrep → SinkTriage → Fast Worker).",
+      "bypass": "Produced by the historical-vuln bypass path attempting patch bypass or confirming an unfixed bug.",
+      "unconstrained": "Produced by the unconstrained-scan path. This path always uses the bounty gate; the Reviewer judges whether RCE-level impact was achieved."
+    },
+    "tierShort": {
+      "cveCandidate": "CVE-worthy",
+      "lowImpact": "Low impact",
+      "duplicate": "Same root cause"
+    },
+    "configTip": {
+      "specific": "Only triggerable after changing the application's own config options; excludes risk toggles the vendor already warns about."
+    },
+    "trackingTip": {
+      "submitted": "You marked this as submitted externally.",
+      "ignored": "You marked this as ignored; no further submission follow-up."
+    },
+    "attr": {
+      "status": "Status",
+      "severity": "Severity",
+      "tier": "Value tier",
+      "project": "Project",
+      "type": "Type",
+      "access": "Access required",
+      "exposure": "Exposure mode",
+      "miningPath": "Mining path",
+      "configPremise": "Config premise",
+      "evidence": "Verification method",
+      "tracking": "Submission tracking",
+      "verifier": "Online verification",
+      "tierReason": "Tier rationale"
+    }
+  },
   "enum": {
     "attackSurface": {
       "frontend": "Front-facing",
@@ -226,6 +334,7 @@
     },
     "miningPath": {
       "heuristic": "Heuristic mining",
+      "heuristicShort": "Heuristic",
       "heuristicLite": "Heuristic (lite)",
       "fast": "Fast scan",
       "bypass": "Historical-vuln bypass",
