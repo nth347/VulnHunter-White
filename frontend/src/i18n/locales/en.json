@@ -531,6 +531,138 @@
       "unconstrained": "Starts after recon, injecting only the code map and auth. If the code graph is on it also waits for that build. Always uses the bounty gate; ends once the Reviewer judges front-facing RCE impact."
     }
   },
+  "auditFlow": {
+    "ariaLabel": "Audit flow for the current selection",
+    "heading": "Audit flow for the current selection",
+    "footer": "After historical-vuln collection, heuristic mining, historical-vuln bypass and unconstrained scan can run alongside file weighting; fast scan waits for all four recon steps. Enabled mining paths run in parallel and alongside review: mining and review happen at the same time. Obvious false positives are dropped this round; the Reviewer fixes and confirms PoC and report packaging; a finding is returned to Fix only when the root-cause analysis was wrong. The project completes only after every enabled mining path finishes.",
+    "tag": { "bounty": "Bounty", "full": "Full", "codegraph": "CodeGraph", "off": "Off", "chain": "Linked" },
+    "scopeChip": {
+      "bounty": { "label": "High-impact only", "hint": "RCE, injection, arbitrary file operations, broken access control, stored XSS, 1-click CSRF, hardcoded secrets with server-side impact, etc." },
+      "full": { "label": "Includes low-impact", "hint": "CORS, reflected XSS, missing rate limiting, security headers, etc., tiered by the Reviewer." },
+      "unconstrained": { "hint": "This path always uses the bounty gate, regardless of the project's full / custom mode." }
+    },
+    "recon": {
+      "title": "Recon",
+      "body": "Maps structure and auth, fills in extensions, collects historical vulns and weights files. Heuristic mining, historical-vuln bypass and unconstrained scan start after historical-vuln collection; fast scan waits for all four steps (weighting included).",
+      "hint": "Recon runs first after import: code map, source extensions, historical vulns, file weighting. Heuristic mining does not wait for all weighting to finish.",
+      "step": { "map": "Code map/auth", "source_ext": "Extensions", "old_vulns": "Historical vulns", "mark": "File weighting" }
+    },
+    "heuristic": {
+      "title": "Heuristic",
+      "titleLite": "Heuristic lite",
+      "body": {
+        "liteBounty": "Focuses only on weight-100 entry points (HTTP / WebSocket / RPC / MQ), forward source→sink. Missing auth, IDOR and business logic rely on this. Records only high-impact bugs exploitable by default.",
+        "liteFull": "Focuses only on weight-100 entry points (HTTP / WebSocket / RPC / MQ), forward source→sink. Missing auth, IDOR and business logic rely on this. Also records low-impact items like CORS and reflected XSS.",
+        "fullBounty": "File weighting: entry points mined forward, Service / filters traced back or by control surface, low weights lightly scanned. Missing auth, IDOR and business logic rely on this. Records only high-impact bugs exploitable by default.",
+        "fullFull": "File weighting: entry points mined forward, Service / filters traced back or by control surface, low weights lightly scanned. Missing auth, IDOR and business logic rely on this. Also records low-impact items like CORS and reflected XSS."
+      },
+      "hint": {
+        "lite": "After historical-vuln collection, the heuristic Worker injects only weight-100 unaudited files; lower weights are not entry points and do not block completion. Can run alongside file weighting.",
+        "full": "After historical-vuln collection, the heuristic Worker mines high-weight unaudited files; can run alongside file weighting. Enabled mining paths run in parallel and mining completes only after all finish."
+      }
+    },
+    "fast": {
+      "title": "Fast scan",
+      "body": {
+        "Bounty": "Semgrep finds sinks; after a code filter and an Agent filter, each is traced back. Covers SAST sinks; missing auth / IDOR / business logic are out of scope. High-impact only.",
+        "Full": "Semgrep finds sinks; after a code filter and an Agent filter, each is traced back. Covers SAST sinks; missing auth / IDOR / business logic are out of scope. Also records low-impact items."
+      },
+      "hint": "After recon: Semgrep → code filter → sink triage → Fast Worker traces back each; runs alongside heuristic mining."
+    },
+    "bypass": {
+      "title": "Historical-vuln bypass",
+      "body": {
+        "Bounty": "Takes historical-vuln docs as input; each round tries to bypass one patch or confirm an unfixed bug is still exploitable. Records only high-impact bugs exploitable by default.",
+        "Full": "Takes historical-vuln docs as input; each round tries to bypass one patch or confirm an unfixed bug is still exploitable. Also records low-impact items."
+      },
+      "hint": "After historical-vuln collection, injects each doc in turn; runs alongside heuristic / fast scan."
+    },
+    "unconstrained": {
+      "title": "Unconstrained scan",
+      "body": "Injects only the code map and auth, dispatching no weighted files. A single fixed Worker, always on the bounty gate. The path ends once the Reviewer judges a front-facing bug to have achieved RCE impact; other front-facing bugs are still submitted.",
+      "hint": "Starts after historical-vuln collection, isolated from heuristic mining. The end condition is the Reviewer's judgment of RCE impact, not vuln_type."
+    },
+    "codeIntel": {
+      "title": "Code graph",
+      "bodyOn": "Runs alongside recon. CodeGraph builds a call graph for src/ so the Worker / Reviewer can query relations. On failure it degrades to Read/Grep.",
+      "bodyOff": "Off. No code database; mining just waits for recon, and the Worker / Reviewer use Read / Grep.",
+      "hintOn": "The index is written to src/.codegraph/ and can be large. Source changes only mark it stale; the user triggers a rebuild.",
+      "hintOff": "Off by default so not every project builds a graph and uses disk. When checked it runs alongside recon and mining waits for both.",
+      "chipSrc": "src/ only",
+      "chipSrcHint": "Does not index jar/class, leaving those for a later Jar Analyzer."
+    },
+    "reviewer": {
+      "title": "Review",
+      "tag": { "lab": "Live lab", "harness": "Local", "static": "Static" },
+      "body": {
+        "lab": "An isolated-environment round builds a Docker lab. The Reviewer fixes the PoC and reproduces it; do not return it to the Worker to fix the PoC.",
+        "labManual": "Prefers your provided lab, falling back to Docker if unreachable. The Reviewer fixes the PoC and reproduces it; do not return it to the Worker to fix the PoC.",
+        "harness": "No full-project lab. The Reviewer extracts the function, mocks dependencies, and runs a harness in a sandbox; a successful run is recorded as local verification.",
+        "static": "Static review only. If default exploitability can be proven, it is recorded as static_only with no lab."
+      },
+      "hint": {
+        "lab": "With live-lab mode on, the Reviewer builds the lab and closes out the HTTP PoC; debug MCP is used only when the PoC is unusable and needs rewriting. The lab provides only the default deployment.",
+        "harness": "Local verification and live-lab mode are mutually exclusive. No Docker or a failed mock does not cause a false positive.",
+        "static": "Dynamic verification off by default. When static evidence already proves default exploitability, the finding is recorded directly with no Docker."
+      },
+      "chip": {
+        "lab": "Lab setup",
+        "manualLab": "Manual lab first",
+        "manualLabHint": "Review prefers the manual lab address; falls back to a Docker lab if unreachable.",
+        "pocHint": "Runs the current HTTP PoC and container logs first. The Reviewer fixes the PoC until it reproduces; Java / Node / Python debug MCP is used only when it is missing, won't run, or fails and needs rewriting. Do not return it to the Worker to fix the PoC.",
+        "harness": "Sandbox harness",
+        "harnessHint": "RunCode executes in a one-shot sibling container; the script is written to harness.py. Do not copy mocks into poc.py; a pure library bug with no install surface may skip poc.py.",
+        "staticHint": "No lab; sufficient static evidence is enough to confirm and record."
+      }
+    },
+    "verifier": {
+      "title": "Verify",
+      "bodyOn": "After the Reviewer confirms a front-facing vulnerability, uses FOFA to search for matching targets; it first understands the exploit from the report and PoC, runs the original PoC where possible, and builds a payload from the report when none is usable. On failure it adjusts the exploit on the same chain and retries. 10 targets by default, stopping after 3 successes.",
+      "bodyOff": "Off. No internet targets are searched after confirmation.",
+      "hintOn": "When this batch of 10 falls short of 3 successes, it keeps the successes and searches the next round, up to 5 rounds (50 targets total). A matching query is shared within the project. Destructive bugs (arbitrary file deletion, DoS, SQL writes, etc.) are skipped. Requires a FOFA key.",
+      "hintOff": "Online verification off by default. Only when checked does it run a FOFA re-test after confirming a front-facing vulnerability.",
+      "chip": {
+        "frontend": "Front-facing only",
+        "frontendHint": "Admin-panel bugs do not go through online re-testing.",
+        "three": "3 successes",
+        "threeHint": "Each round of 10 ends after 3 successes; otherwise it keeps the successes and searches the next round, up to 5 rounds / 50 targets.",
+        "skip": "Skip destructive",
+        "skipHint": "Bugs that would disrupt a live service (arbitrary file deletion, DoS, SQL writes, etc.) are skipped automatically."
+      }
+    },
+    "attackChain": {
+      "title": "Attack chain",
+      "bodyOn": "After mining and review finish, tries multi-step chained exploitation of confirmed vulnerabilities to widen impact.",
+      "bodyOff": "Off. No attack-chain linking after review.",
+      "hintOn": "Considers only this project's confirmed output; skipped when fewer than 2 are confirmed. With a Docker lab, non-interactive chains are dynamically verified and the script saved; chains that need interaction (XSS, etc.) skip verification.",
+      "hintOff": "Attack-chain linking off by default. Only when checked does it try multi-bug linking after both mining and review finish.",
+      "chip": {
+        "confirmed": "Confirmed only",
+        "confirmedHint": "pending / false positive / merged sub-items do not participate.",
+        "min2": "At least 2",
+        "min2Hint": "Skipped when fewer than 2 confirmed bugs, so the LLM does not run for nothing."
+      }
+    },
+    "done": {
+      "title": "Done",
+      "body": "Recon, mining and review are finished, and the vulnerability report is produced.",
+      "bodyWithPost": "Recon, mining, review and the enabled post stages are all finished, and the vulnerability report is produced.",
+      "hint": "The pipeline is done. You can still change dynamic verification, online verification, attack-chain linking or the code graph in project settings, or reset mining progress and resume in a different mode."
+    },
+    "connector": { "submit": "submit vuln", "debt": "analysis debt / Fix", "skip": "skip" },
+    "summary": {
+      "template": "{{head}} → ({{mine}}) → Review ({{review}}) → {{tail}}",
+      "head": "Recon",
+      "headWithCi": "Recon ∥ Code graph",
+      "reviewLab": "live lab",
+      "reviewLabManual": "live lab (manual lab first)",
+      "reviewHarness": "local verification",
+      "reviewStatic": "static review",
+      "verifier": "online verification",
+      "attackChain": "attack chain",
+      "done": "Done"
+    }
+  },
   "liveLog": {
     "barLabel": "Phase log",
     "prevRound": "Previous round",
