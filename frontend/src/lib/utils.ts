@@ -224,7 +224,6 @@ export function formatVerifierTargetStatus(value: string | null | undefined): st
 export const AUDIT_MODE_VALUES = ['bounty', 'full', 'custom'] as const
 export type AuditMode = (typeof AUDIT_MODE_VALUES)[number]
 
-/** Localized {label, short, hint} for an audit mode; used to render the mode picker. */
 export function auditModeOption(value: AuditMode): { value: AuditMode; label: string; short: string; hint: string } {
   return {
     value,
@@ -280,7 +279,7 @@ export function normalizeTargetKind(value: string | null | undefined): TargetKin
   return 'web'
 }
 
-/** Bounty-scope table rows: {key, included}; the type/note text lives in i18n `bountyScope.rows.<key>`. */
+/** type/note text lives in i18n `bountyScope.rows.<key>`. */
 export const BOUNTY_SCOPE_ROWS = [
   { key: 'rce', included: true },
   { key: 'ssti', included: true },
@@ -360,7 +359,6 @@ export function formatProjectRunStatus(
   return t(`enum.projectRunStatus.${projectRunBucket(status, projectPaused)}`)
 }
 
-/** Badge tone for a project run bucket. */
 export function projectRunTone(
   status: string | null | undefined,
   projectPaused?: boolean,
@@ -408,13 +406,12 @@ export function formatDateTime(value: string | null | undefined): string {
   }
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return value
-  // Backend timestamps are UTC and the product is China-hosted; keep the wall clock in Shanghai
-  // and only vary the display format by locale.
+  // Backend timestamps are UTC; keep the wall clock in Shanghai and only vary the format by locale.
   const locale = currentLocale() === 'en' ? 'en-GB' : 'zh-CN'
   return d.toLocaleString(locale, { timeZone: 'Asia/Shanghai' })
 }
 
-/** Vuln-type ids in picker order; labels resolve through i18n `enum.vulnType.<id>`. */
+/** labels resolve through i18n `enum.vulnType.<id>` */
 export const VULN_TYPE_IDS = [
   'rce',
   'ssti',
@@ -446,7 +443,6 @@ export function formatVulnType(value: string | null | undefined): string {
   return hit ? t(`enum.vulnType.${key}`) : key
 }
 
-/** [id, label] pairs for the vuln-type dropdown. */
 export function vulnTypeOptions(): { id: string; label: string }[] {
   return VULN_TYPE_IDS.map((id) => ({ id, label: t(`enum.vulnType.${id}`) }))
 }

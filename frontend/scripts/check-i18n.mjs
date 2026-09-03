@@ -1,8 +1,6 @@
 #!/usr/bin/env node
-// Guards the i18n setup:
-//  1. zh.json and en.json must have exactly the same key set.
-//  2. No new hardcoded CJK string literals in src/ (comments and a small
-//     allowlist of files that intentionally match backend Chinese output are skipped).
+// Fails if zh.json / en.json key sets diverge, or if a CJK string literal appears
+// in src/ outside the allowlist below.
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 

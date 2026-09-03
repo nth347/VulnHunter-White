@@ -46,7 +46,6 @@ function formatSubmissionTierShort(value: string | null | undefined): string {
   }
 }
 
-/** Short mining-path label for inline tags (drops the "mining" suffix in zh). */
 function miningPathTagLabel(key: string): string {
   const full = formatMiningPath(key) || ''
   return key === 'heuristic' ? t('enum.miningPath.heuristicShort') : full

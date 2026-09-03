@@ -23,7 +23,6 @@ type OptionState = {
   reconHint: string
 }
 
-/** Keys of the advanced options that currently carry a value. */
 export function advancedOptionKeys({ llmModel, maxTokenUsage, workerHint, reconHint }: OptionState): string[] {
   const keys: string[] = []
   if (llmModel.trim()) keys.push('model')

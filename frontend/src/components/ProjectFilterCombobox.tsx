@@ -44,7 +44,6 @@ export default function ProjectFilterCombobox({
       allProjects,
       ...projects.map((p) => ({ id: p.id, name: p.name || i18n.t('fmt.projectRef', { id: p.id }) })),
     ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [projects],
   )
 
@@ -56,7 +55,6 @@ export default function ProjectFilterCombobox({
         name: i18n.t('fmt.projectRef', { id: projectId }),
       }
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, projectId])
 
   return (
