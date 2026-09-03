@@ -341,6 +341,56 @@
     "noCreatableBody": "Every discovered repo already has a project. Click \"Search\" to find more.",
     "noCreatedYet": "No project has been created from discovery results yet."
   },
+  "customModes": {
+    "template": "## Current mining mode: custom mode (overrides conflicting clauses above)\n\nThis project uses **custom mode**. Where it conflicts with the base prompt above, **this section wins**.\nThis section only constrains vulnerability scope and confirmation criteria; it does not change tool permissions.\n\n### Accepted types\n(list the vulnerability types to record and the criteria here)\n\n### Explicitly dropped\n(list the types not to submit/confirm here)\n",
+    "basedOn": "Based on {{label}}",
+    "created": "Custom audit mode created",
+    "saved": "Custom audit mode saved",
+    "deleteConfirm": "Delete custom mode \"{{name}}\"? Fails if a project still references it.",
+    "deleted": "Deleted \"{{name}}\"",
+    "sectionLabel": "Mining-mode prompts",
+    "sectionHint": "The built-in bounty/full prompts are read-only but can be copied into a custom mode. Custom modes are chosen when creating a project; the project stores a snapshot, so later library edits don't affect already-bound projects.",
+    "builtinTitle": "Built-in modes (read-only)",
+    "customTitle": "Custom modes",
+    "new": "New",
+    "customEmpty": "No custom modes yet. Copy from bounty/full, or create a blank template.",
+    "view": "View",
+    "copyToCustom": "Copy to custom",
+    "edit": "Edit",
+    "success": "Success",
+    "failure": "Failed",
+    "editorNewTitle": "New custom audit mode",
+    "editorEditTitle": "Edit custom audit mode",
+    "editorDescription": "Name and body must both be non-empty. When a project selects it, the body is snapshotted, so library edits don't affect existing projects.",
+    "nameLabel": "Name",
+    "namePlaceholder": "e.g. Injections and files only",
+    "bodyLabel": "Prompt body",
+    "readOnlyPreview": "Read-only preview"
+  },
+  "phaseReports": {
+    "roundOrdinal": "round {{n}}",
+    "attemptOrdinal": "attempt {{n}}",
+    "readTimeout": "Reading the phase report timed out, please try again.",
+    "noReports": "No reports match this filter",
+    "shownCount": "Showing the latest {{shown}} of {{total}} reports",
+    "loadEarlier": "Load {{n}} earlier",
+    "emptyReport": "_Empty report_",
+    "selectHint": "Select a report on the left to view it",
+    "phase": {
+      "recon": "Recon",
+      "worker": "Mining",
+      "reviewer": "Review",
+      "verifier": "Verify",
+      "attack_chain": "Attack chain"
+    },
+    "sub": {
+      "recon": { "all": "All", "map": "Map/auth", "source_ext": "Extensions", "old_vulns": "Historical vulns", "mark": "Marking" },
+      "worker": { "all": "All", "mine": "Heuristic", "fast": "Fast scan", "bypass": "Bypass", "unconstrained": "Unconstrained", "fix": "Fix" },
+      "reviewer": { "all": "All", "lab": "Lab setup", "reviewer": "Review" },
+      "verifier": { "all": "All", "verify": "Online verification" },
+      "attack_chain": { "all": "All", "chain": "Attack-chain linking" }
+    }
+  },
   "toggles": {
     "attackChain": {
       "label": "Attack-chain linking",

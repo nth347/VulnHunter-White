@@ -341,6 +341,56 @@
     "noCreatableBody": "已发现的仓库都创建过项目。可点「搜索」继续找新仓库。",
     "noCreatedYet": "还没有从发现结果创建过项目。"
   },
+  "customModes": {
+    "template": "## 当前挖掘模式：自定义模式（覆盖上文冲突条款）\n\n本项目为**自定义模式**。若与上文基座提示冲突，**以本节为准**。\n本节仅约束漏洞收录与确认标准，不改变工具权限。\n\n### 接收类型\n（在此填写要收录的漏洞类型与判定标准）\n\n### 明确丢弃\n（在此填写不要提交/确认的类型）\n",
+    "basedOn": "基于{{label}}",
+    "created": "已创建自定义审计模式",
+    "saved": "已保存自定义审计模式",
+    "deleteConfirm": "删除自定义模式「{{name}}」？仍被项目引用时会失败。",
+    "deleted": "已删除「{{name}}」",
+    "sectionLabel": "挖掘模式提示词",
+    "sectionHint": "内置赏金/全量提示词只读，可复制为自定义。自定义模式在创建项目时选用；写入项目的是快照，之后改库不影响已绑定项目。",
+    "builtinTitle": "内置模式（只读）",
+    "customTitle": "自定义模式",
+    "new": "新建",
+    "customEmpty": "暂无自定义模式。可从赏金/全量复制，或新建空白模板。",
+    "view": "查看",
+    "copyToCustom": "复制为自定义",
+    "edit": "编辑",
+    "success": "成功",
+    "failure": "失败",
+    "editorNewTitle": "新建自定义审计模式",
+    "editorEditTitle": "编辑自定义审计模式",
+    "editorDescription": "名称与正文均不能为空。项目选用后会快照正文，改库不影响已创建项目。",
+    "nameLabel": "名称",
+    "namePlaceholder": "例如：只挖注入与文件",
+    "bodyLabel": "提示词正文",
+    "readOnlyPreview": "只读预览"
+  },
+  "phaseReports": {
+    "roundOrdinal": "第 {{n}} 轮",
+    "attemptOrdinal": "第 {{n}} 次",
+    "readTimeout": "读取阶段报告超时，请稍后重试。",
+    "noReports": "暂无该筛选报告",
+    "shownCount": "已显示最近 {{shown}} / 共 {{total}} 份报告",
+    "loadEarlier": "加载更早 {{n}} 份",
+    "emptyReport": "_空报告_",
+    "selectHint": "选择左侧报告查看正文",
+    "phase": {
+      "recon": "侦察",
+      "worker": "挖掘",
+      "reviewer": "审核",
+      "verifier": "验证",
+      "attack_chain": "攻击链"
+    },
+    "sub": {
+      "recon": { "all": "全部", "map": "地图/鉴权", "source_ext": "扩展名", "old_vulns": "历史漏洞", "mark": "盖章" },
+      "worker": { "all": "全部", "mine": "启发式", "fast": "快速扫描", "bypass": "历史漏洞绕过", "unconstrained": "无约束扫描", "fix": "修复" },
+      "reviewer": { "all": "全部", "lab": "环境搭建", "reviewer": "审核" },
+      "verifier": { "all": "全部", "verify": "互联网验证" },
+      "attack_chain": { "all": "全部", "chain": "攻击链串联" }
+    }
+  },
   "toggles": {
     "attackChain": {
       "label": "攻击链串联",

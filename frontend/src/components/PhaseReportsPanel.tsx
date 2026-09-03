@@ -1,50 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api, formatApiError, type PhaseReport, type PhaseReportDetail, type PhaseReportList } from '../api'
+import i18n from '../i18n'
 import { formatDateTime } from '../lib/utils'
 import { startVisibilityPoll } from '../lib/visibilityPoll'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 
-const PHASES = [
-  ['recon', '侦察'],
-  ['worker', '挖掘'],
-  ['reviewer', '审核'],
-  ['verifier', '验证'],
-  ['attack_chain', '攻击链'],
-] as const
+const PHASE_KEYS = ['recon', 'worker', 'reviewer', 'verifier', 'attack_chain'] as const
 
-const SUB_TABS: Record<string, readonly [string, string][]> = {
-  recon: [
-    ['all', '全部'],
-    ['map', '地图/鉴权'],
-    ['source_ext', '扩展名'],
-    ['old_vulns', '历史漏洞'],
-    ['mark', '盖章'],
-  ],
-  worker: [
-    ['all', '全部'],
-    ['mine', '启发式'],
-    ['fast', '快速扫描'],
-    ['bypass', '历史漏洞绕过'],
-    ['unconstrained', '无约束扫描'],
-    ['fix', '修复'],
-  ],
-  reviewer: [
-    ['all', '全部'],
-    ['lab', '环境搭建'],
-    ['reviewer', '审核'],
-  ],
-  verifier: [
-    ['all', '全部'],
-    ['verify', '互联网验证'],
-  ],
-  attack_chain: [
-    ['all', '全部'],
-    ['chain', '攻击链串联'],
-  ],
+const SUB_TAB_KEYS: Record<string, readonly string[]> = {
+  recon: ['all', 'map', 'source_ext', 'old_vulns', 'mark'],
+  worker: ['all', 'mine', 'fast', 'bypass', 'unconstrained', 'fix'],
+  reviewer: ['all', 'lab', 'reviewer'],
+  verifier: ['all', 'verify'],
+  attack_chain: ['all', 'chain'],
 }
 
 const KIND_VARIANT: Record<string, 'info' | 'success' | 'warning' | 'outline'> = {
@@ -67,8 +40,11 @@ const EMPTY_REPORT_LIST: PhaseReportList = {
 
 function roundHint(r: { kind: string; round: number | null }): string {
   if (r.round == null) return ''
-  if (r.kind === 'round') return ` · 第 ${r.round} 轮`
-  return ` · 第 ${r.round} 次`
+  return ` · ${
+    r.kind === 'round'
+      ? i18n.t('phaseReports.roundOrdinal', { n: r.round })
+      : i18n.t('phaseReports.attemptOrdinal', { n: r.round })
+  }`
 }
 
 function reportsOf(groups: { phase: string; reports: PhaseReport[] }[], phase: string): PhaseReport[] {
@@ -82,6 +58,7 @@ export default function PhaseReportsPanel({
   projectId: number
   initialPhase?: string
 }) {
+  const { t } = useTranslation()
   const [phase, setPhase] = useState(
     initialPhase === 'reviewer'
       ? 'reviewer'
@@ -101,6 +78,7 @@ export default function PhaseReportsPanel({
   const [error, setError] = useState<string | null>(null)
 
   const groups = reportList.phases
+  const subTabs = SUB_TAB_KEYS[phase]
   const all = useMemo(() => reportsOf(groups, phase), [groups, phase])
   const filtered = useMemo(
     () => (sub === 'all' ? all : all.filter((r) => r.subphase === sub)),
@@ -165,7 +143,7 @@ export default function PhaseReportsPanel({
       .catch((e) => {
         if (!alive) return
         setDetail(null)
-        setError(formatApiError(e, '读取阶段报告超时，请稍后重试。'))
+        setError(formatApiError(e, t('phaseReports.readTimeout')))
       })
     return () => {
       alive = false
@@ -173,7 +151,6 @@ export default function PhaseReportsPanel({
   }, [projectId, selectedId])
 
   const counts = Object.fromEntries(groups.map((g) => [g.phase, g.count]))
-  const subTabs = SUB_TABS[phase]
   const activeListMatches =
     reportList.phase === phase && reportList.subphase === (sub === 'all' ? '' : sub)
   const selectedTotal = activeListMatches ? reportList.selected_count : filtered.length
@@ -182,18 +159,18 @@ export default function PhaseReportsPanel({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
-        {PHASES.map(([k, label]) => (
+        {PHASE_KEYS.map((k) => (
           <Button key={k} variant={phase === k ? 'default' : 'outline'} onClick={() => setPhase(k)}>
-            {label}
+            {t(`phaseReports.phase.${k}`)}
             {counts[k] ? ` ${counts[k]}` : ''}
           </Button>
         ))}
       </div>
       {subTabs ? (
         <div className="flex flex-wrap gap-2">
-          {subTabs.map(([k, label]) => (
+          {subTabs.map((k) => (
             <Button key={k} variant={sub === k ? 'default' : 'outline'} onClick={() => setSub(k)}>
-              {label}
+              {t(`phaseReports.sub.${phase}.${k}`)}
             </Button>
           ))}
         </div>
@@ -224,11 +201,13 @@ export default function PhaseReportsPanel({
               </div>
             </Button>
           ))}
-          {filtered.length === 0 ? <div className="p-4 text-sm text-muted-foreground">暂无该筛选报告</div> : null}
+          {filtered.length === 0 ? (
+            <div className="p-4 text-sm text-muted-foreground">{t('phaseReports.noReports')}</div>
+          ) : null}
           {selectedTotal > 0 ? (
             <div className="space-y-2 p-3 text-center text-xs text-muted-foreground">
               <div>
-                已显示最近 {filtered.length} / 共 {selectedTotal} 份报告
+                {t('phaseReports.shownCount', { shown: filtered.length, total: selectedTotal })}
               </div>
               {canLoadMore ? (
                 <Button
@@ -238,7 +217,7 @@ export default function PhaseReportsPanel({
                   className="w-full"
                   onClick={() => setVisibleLimit((n) => n + PAGE_SIZE)}
                 >
-                  加载更早 10 份
+                  {t('phaseReports.loadEarlier', { n: PAGE_SIZE })}
                 </Button>
               ) : null}
             </div>
@@ -258,11 +237,15 @@ export default function PhaseReportsPanel({
                 </div>
               </div>
               <div className="vh-md">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{detail.content || '_空报告_'}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {detail.content || t('phaseReports.emptyReport')}
+                </ReactMarkdown>
               </div>
             </div>
           ) : (
-            <div className="text-sm text-muted-foreground">{error ? '' : '选择左侧报告查看正文'}</div>
+            <div className="text-sm text-muted-foreground">
+              {error ? '' : t('phaseReports.selectHint')}
+            </div>
           )}
           </CardContent>
         </Card>
