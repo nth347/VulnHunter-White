@@ -391,6 +391,75 @@
       "attack_chain": { "all": "全部", "chain": "攻击链串联" }
     }
   },
+  "followUp": {
+    "modelTimeout": "模型响应超时，请稍后重试。",
+    "applied": "已应用报告修改",
+    "reviewerContext": "Reviewer 上下文",
+    "title": "报告对话",
+    "subtitle": "可追问报告，也可生成修订稿并在预览确认后写回漏洞报告文件。",
+    "loading": "加载中",
+    "noContextBadge": "暂无上下文",
+    "noContextBody": "暂无可追问的 Reviewer 上下文。询问模式需等待新审核轮次归档；修改报告仍可基于当前报告内容生成修订稿。",
+    "roleUser": "追问",
+    "roleAssistant": "Reviewer 答复",
+    "loadingReply": "加载答复…",
+    "thinking": "模型思考中…",
+    "modeAsk": "询问报告",
+    "modeRevise": "修改报告",
+    "placeholderAsk": "例如：这个漏洞的根因和可利用前提分别是什么？",
+    "placeholderAdvisory": "例如：补充 Impact 与 CVSS 说明，并保持英文 GitHub Advisory 格式。",
+    "placeholderCve": "例如：补全受影响版本，未知字段保持 VULNHUNTER_PENDING。",
+    "placeholderReport": "例如：补充危害与观察面，并保持中文报告章节完整。",
+    "revisionPreviewTitle": "{{kind}}修订稿预览",
+    "revisionPreviewHint": "请检查完整内容，确认后再写回文件。",
+    "withReviewerContext": "含 Reviewer 上下文",
+    "currentReportOnly": "仅基于当前报告",
+    "discardPreview": "丢弃预览",
+    "applying": "应用中…",
+    "applyChanges": "应用修改",
+    "asking": "追问中…",
+    "sendAsk": "发送追问",
+    "generating": "生成中…",
+    "generateRevision": "生成修订稿",
+    "reportKind": {
+      "report": "中文报告",
+      "advisory": "Advisory",
+      "cve": "CVE JSON"
+    }
+  },
+  "vulnsPage": {
+    "subtitle": "按项目、状态、价值分层与提交标记筛选；同根因报告折叠在危害最大的条目下。上方日历按产出日汇总确认与误报。",
+    "markSubmitted": "标记已提交",
+    "markIgnored": "标记已忽略",
+    "unmark": "取消标记",
+    "downloadCveOnly": "仅下载有 CVE 价值",
+    "batchDownload": "批量下载",
+    "searchPlaceholder": "搜索标题、路径、类型、编号、项目…",
+    "searchAria": "搜索漏洞",
+    "surfaceAll": "全部前后台",
+    "surfaceFrontend": "前台漏洞",
+    "surfaceBackend": "后台漏洞",
+    "allTypes": "全部类型",
+    "noMatch": "无匹配漏洞",
+    "pageInfo": "第 {{page}} / {{count}} 页，共 {{total}} 条",
+    "tier": {
+      "all": "全部分层",
+      "cve_candidate": "有 CVE 价值",
+      "low_impact": "低危害难利用"
+    },
+    "tracking": {
+      "all": "全部标记",
+      "none": "未标记",
+      "submitted": "已提交",
+      "ignored": "已忽略"
+    },
+    "status": {
+      "all": "全部",
+      "confirmed": "已确认",
+      "false_positive": "误报",
+      "pending_review": "待审"
+    }
+  },
   "toggles": {
     "attackChain": {
       "label": "攻击链串联",

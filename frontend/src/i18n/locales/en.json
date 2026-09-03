@@ -391,6 +391,75 @@
       "attack_chain": { "all": "All", "chain": "Attack-chain linking" }
     }
   },
+  "followUp": {
+    "modelTimeout": "Model response timed out, please try again.",
+    "applied": "Report changes applied",
+    "reviewerContext": "Reviewer context",
+    "title": "Report conversation",
+    "subtitle": "Ask questions about the report, or generate a revision and write it back to the report file after previewing.",
+    "loading": "Loading",
+    "noContextBadge": "No context",
+    "noContextBody": "No Reviewer context to question. Ask mode needs a new review round to be archived; revising the report can still generate a draft from the current report content.",
+    "roleUser": "Question",
+    "roleAssistant": "Reviewer reply",
+    "loadingReply": "Loading reply…",
+    "thinking": "Model is thinking…",
+    "modeAsk": "Ask about report",
+    "modeRevise": "Revise report",
+    "placeholderAsk": "e.g. What is the root cause of this vulnerability and what are the preconditions for exploiting it?",
+    "placeholderAdvisory": "e.g. Add Impact and CVSS notes, keeping the English GitHub Advisory format.",
+    "placeholderCve": "e.g. Fill in affected versions; keep unknown fields as VULNHUNTER_PENDING.",
+    "placeholderReport": "e.g. Add impact and observability, keeping the report sections complete.",
+    "revisionPreviewTitle": "{{kind}} revision preview",
+    "revisionPreviewHint": "Review the full content before writing it back to the file.",
+    "withReviewerContext": "Includes Reviewer context",
+    "currentReportOnly": "Based on current report only",
+    "discardPreview": "Discard preview",
+    "applying": "Applying…",
+    "applyChanges": "Apply changes",
+    "asking": "Asking…",
+    "sendAsk": "Send question",
+    "generating": "Generating…",
+    "generateRevision": "Generate revision",
+    "reportKind": {
+      "report": "Report",
+      "advisory": "Advisory",
+      "cve": "CVE JSON"
+    }
+  },
+  "vulnsPage": {
+    "subtitle": "Filter by project, status, value tier and submission mark; same-root-cause reports fold under the highest-impact item. The calendar above summarizes confirmed and false-positive findings by output day.",
+    "markSubmitted": "Mark submitted",
+    "markIgnored": "Mark ignored",
+    "unmark": "Clear mark",
+    "downloadCveOnly": "Download CVE-worthy only",
+    "batchDownload": "Bulk download",
+    "searchPlaceholder": "Search title, path, type, ID, project…",
+    "searchAria": "Search findings",
+    "surfaceAll": "All surfaces",
+    "surfaceFrontend": "Front-facing",
+    "surfaceBackend": "Admin-panel",
+    "allTypes": "All types",
+    "noMatch": "No matching findings",
+    "pageInfo": "Page {{page}} / {{count}}, {{total}} total",
+    "tier": {
+      "all": "All tiers",
+      "cve_candidate": "CVE-worthy",
+      "low_impact": "Low impact"
+    },
+    "tracking": {
+      "all": "All marks",
+      "none": "Unmarked",
+      "submitted": "Submitted",
+      "ignored": "Ignored"
+    },
+    "status": {
+      "all": "All",
+      "confirmed": "Confirmed",
+      "false_positive": "False positive",
+      "pending_review": "Pending"
+    }
+  },
   "toggles": {
     "attackChain": {
       "label": "Attack-chain linking",

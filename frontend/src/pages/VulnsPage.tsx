@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeftIcon, ChevronRightIcon, SearchIcon, XIcon } from 'lucide-react'
 import { api, type ProjectName, type Vuln, type VulnDetail, type VulnTrackingStatus } from '../api'
@@ -17,20 +18,12 @@ import { startVisibilityPoll } from '../lib/visibilityPoll'
 
 const PAGE_SIZE = 50
 
-const TIER_FILTER_LABEL: Record<VulnTierFilter, string> = {
-  all: '全部分层',
-  cve_candidate: '有 CVE 价值',
-  low_impact: '低危害难利用',
-}
-
-const TRACKING_FILTER_LABEL: Record<'all' | VulnTrackingStatus, string> = {
-  all: '全部标记',
-  none: '未标记',
-  submitted: '已提交',
-  ignored: '已忽略',
-}
+const TIER_FILTER_KEYS: VulnTierFilter[] = ['all', 'cve_candidate', 'low_impact']
+const TRACKING_FILTER_KEYS: Array<'all' | VulnTrackingStatus> = ['all', 'none', 'submitted', 'ignored']
+const STATUS_FILTER_KEYS = ['all', 'confirmed', 'false_positive', 'pending_review'] as const
 
 export default function VulnsPage() {
+  const { t } = useTranslation()
   const { id } = useParams()
   const navigate = useNavigate()
   const detailId = id ? Number(id) : null
@@ -142,7 +135,14 @@ export default function VulnsPage() {
     : undefined
 
   const surfaceFilterLabel =
-    surfaceFilter === 'frontend' ? '前台漏洞' : surfaceFilter === 'backend' ? '后台漏洞' : '全部前后台'
+    surfaceFilter === 'frontend'
+      ? t('vulnsPage.surfaceFrontend')
+      : surfaceFilter === 'backend'
+        ? t('vulnsPage.surfaceBackend')
+        : t('vulnsPage.surfaceAll')
+  const tierFilterLabel = (k: VulnTierFilter) => t(`vulnsPage.tier.${k}`)
+  const trackingFilterLabel = (k: 'all' | VulnTrackingStatus) => t(`vulnsPage.tracking.${k}`)
+  const statusFilterLabel = (k: string) => t(`vulnsPage.status.${k}`)
 
   async function downloadIds(ids: number[], filename: string) {
     if (!ids.length) return
@@ -223,10 +223,8 @@ export default function VulnsPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">漏洞产出</h1>
-          <p className="text-sm text-slate-400">
-            按项目、状态、价值分层与提交标记筛选；同根因报告折叠在危害最大的条目下。上方日历按产出日汇总确认与误报。
-          </p>
+          <h1 className="text-2xl font-semibold">{t('nav.vulns')}</h1>
+          <p className="text-sm text-slate-400">{t('vulnsPage.subtitle')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -234,26 +232,26 @@ export default function VulnsPage() {
             disabled={!selected.length || marking}
             onClick={() => markSelected('submitted')}
           >
-            标记已提交
+            {t('vulnsPage.markSubmitted')}
           </Button>
           <Button
             variant="outline"
             disabled={!selected.length || marking}
             onClick={() => markSelected('ignored')}
           >
-            标记已忽略
+            {t('vulnsPage.markIgnored')}
           </Button>
           <Button
             variant="outline"
             disabled={!selected.length || marking}
             onClick={() => markSelected('none')}
           >
-            取消标记
+            {t('vulnsPage.unmark')}
           </Button>
           <Button variant="outline" onClick={downloadCveCandidates} disabled={!selected.length && total === 0}>
-            仅下载有 CVE 价值
+            {t('vulnsPage.downloadCveOnly')}
           </Button>
-          <Button onClick={download}>批量下载</Button>
+          <Button onClick={download}>{t('vulnsPage.batchDownload')}</Button>
         </div>
       </div>
 
@@ -270,14 +268,14 @@ export default function VulnsPage() {
           className="pr-8 pl-8"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="搜索标题、路径、类型、编号、项目…"
-          aria-label="搜索漏洞"
+          placeholder={t('vulnsPage.searchPlaceholder')}
+          aria-label={t('vulnsPage.searchAria')}
         />
         {searchInput ? (
           <button
             type="button"
             className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
-            aria-label="清除搜索"
+            aria-label={t('common.clearSearch')}
             onClick={() => setSearchInput('')}
           >
             <XIcon className="size-4" />
@@ -292,9 +290,9 @@ export default function VulnsPage() {
             <SelectValue>{surfaceFilterLabel}</SelectValue>
           </SelectTrigger>
           <SelectContent alignItemWithTrigger={false} align="start" className="w-(--anchor-width)">
-            <SelectItem value="all">全部前后台</SelectItem>
-            <SelectItem value="frontend">前台漏洞</SelectItem>
-            <SelectItem value="backend">后台漏洞</SelectItem>
+            <SelectItem value="all">{t('vulnsPage.surfaceAll')}</SelectItem>
+            <SelectItem value="frontend">{t('vulnsPage.surfaceFrontend')}</SelectItem>
+            <SelectItem value="backend">{t('vulnsPage.surfaceBackend')}</SelectItem>
           </SelectContent>
         </Select>
         <Select
@@ -305,10 +303,12 @@ export default function VulnsPage() {
           }}
         >
           <SelectTrigger className="w-auto min-w-36">
-            <SelectValue>{typeFilter === 'all' ? '全部类型' : formatVulnType(typeFilter)}</SelectValue>
+            <SelectValue>
+              {typeFilter === 'all' ? t('vulnsPage.allTypes') : formatVulnType(typeFilter)}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent alignItemWithTrigger={false} align="start" className="w-(--anchor-width)">
-            <SelectItem value="all">全部类型</SelectItem>
+            <SelectItem value="all">{t('vulnsPage.allTypes')}</SelectItem>
             {vulnTypeOptions().map(({ id, label }) => (
               <SelectItem key={id} value={id}>
                 {label}
@@ -318,12 +318,12 @@ export default function VulnsPage() {
         </Select>
         <Select value={tierFilter} onValueChange={(value) => setTierFilter(value as VulnTierFilter)}>
           <SelectTrigger className="w-auto min-w-36">
-            <SelectValue>{TIER_FILTER_LABEL[tierFilter]}</SelectValue>
+            <SelectValue>{tierFilterLabel(tierFilter)}</SelectValue>
           </SelectTrigger>
           <SelectContent alignItemWithTrigger={false} align="start" className="w-(--anchor-width)">
-            {(Object.keys(TIER_FILTER_LABEL) as VulnTierFilter[]).map((k) => (
+            {TIER_FILTER_KEYS.map((k) => (
               <SelectItem key={k} value={k}>
-                {TIER_FILTER_LABEL[k]}
+                {tierFilterLabel(k)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -336,26 +336,19 @@ export default function VulnsPage() {
           }}
         >
           <SelectTrigger className="w-auto min-w-32">
-            <SelectValue>{TRACKING_FILTER_LABEL[trackingFilter]}</SelectValue>
+            <SelectValue>{trackingFilterLabel(trackingFilter)}</SelectValue>
           </SelectTrigger>
           <SelectContent alignItemWithTrigger={false} align="start" className="w-(--anchor-width)">
-            {(Object.keys(TRACKING_FILTER_LABEL) as Array<keyof typeof TRACKING_FILTER_LABEL>).map((k) => (
+            {TRACKING_FILTER_KEYS.map((k) => (
               <SelectItem key={k} value={k}>
-                {TRACKING_FILTER_LABEL[k]}
+                {trackingFilterLabel(k)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        {(
-          [
-            ['all', '全部'],
-            ['confirmed', '已确认'],
-            ['false_positive', '误报'],
-            ['pending_review', '待审'],
-          ] as const
-        ).map(([k, label]) => (
+        {STATUS_FILTER_KEYS.map((k) => (
           <Button key={k} variant={filter === k ? 'default' : 'outline'} onClick={() => setFilter(k)}>
-            {label}
+            {statusFilterLabel(k)}
           </Button>
         ))}
       </div>
@@ -367,7 +360,7 @@ export default function VulnsPage() {
           activeId={detailId}
           selectedIds={selected}
           expandAll={Boolean(search.trim())}
-          emptyText={search.trim() ? '无匹配漏洞' : '暂无数据'}
+          emptyText={search.trim() ? t('vulnsPage.noMatch') : t('vulnGroup.empty')}
           onToggleSelect={(vid, checked) =>
             setSelected((prev) => (checked ? [...prev, vid] : prev.filter((x) => x !== vid)))
           }
@@ -378,28 +371,26 @@ export default function VulnsPage() {
 
       {total > PAGE_SIZE ? (
         <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-          <span>
-            第 {page + 1} / {pageCount} 页，共 {total} 条
-          </span>
+          <span>{t('vulnsPage.pageInfo', { page: page + 1, count: pageCount, total })}</span>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
               disabled={page <= 0}
               onClick={() => setPage((p) => Math.max(0, p - 1))}
-              aria-label="上一页"
+              aria-label={t('common.prevPage')}
             >
               <ChevronLeftIcon className="size-4" />
-              上一页
+              {t('common.prevPage')}
             </Button>
             <Button
               variant="outline"
               size="sm"
               disabled={page + 1 >= pageCount}
               onClick={() => setPage((p) => p + 1)}
-              aria-label="下一页"
+              aria-label={t('common.nextPage')}
             >
-              下一页
+              {t('common.nextPage')}
               <ChevronRightIcon className="size-4" />
             </Button>
           </div>
