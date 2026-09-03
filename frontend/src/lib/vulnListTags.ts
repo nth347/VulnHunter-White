@@ -51,7 +51,7 @@ function miningPathTagLabel(key: string): string {
   return key === 'heuristic' ? t('enum.miningPath.heuristicShort') : full
 }
 
-/** Secondary inline tags — muted text, each with optional tooltip. */
+/** Secondary inline tags - muted text, each with optional tooltip. */
 export function vulnListSecondaryTags(v: Vuln, nested?: boolean): VulnListTag[] {
   const tags: VulnListTag[] = []
 
@@ -100,7 +100,7 @@ export function vulnListSecondaryTags(v: Vuln, nested?: boolean): VulnListTag[] 
   return tags
 }
 
-/** Full attribute list for the ··· hover panel — nothing omitted from list view. */
+/** Full attribute list for the ··· hover panel - nothing omitted from list view. */
 export function vulnListAttributeLines(v: Vuln, projectName?: string): VulnListAttributeLine[] {
   const lines: VulnListAttributeLine[] = [
     { label: t('vulnTags.attr.status'), value: formatVulnStatus(v.status, v.evidence_level, v.fp_kind, v.harness_depth) },

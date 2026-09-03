@@ -67,4 +67,4 @@ if (failed) {
   console.error('\ni18n check failed.')
   process.exit(1)
 }
-console.log(`i18n check ok — ${zk.size} keys, zh/en in sync, no stray CJK literals.`)
+console.log(`i18n check ok - ${zk.size} keys, zh/en in sync, no stray CJK literals.`)

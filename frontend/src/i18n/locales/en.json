@@ -192,13 +192,13 @@
     "uploading": "Uploading {{name}}",
     "messages": [
       "Sending the source archive to the server…",
-      "Large files can take a few minutes — don't close this window",
+      "Large files can take a few minutes - don't close this window",
       "Import and recon start automatically once the upload finishes",
       "Unpacking and indexing run in the background, please wait",
-      "The timer keeps running on slow networks — please be patient",
+      "The timer keeps running on slow networks - please be patient",
       "Transferring the archive, almost there…",
       "The server creates the audit project as soon as it receives the file",
-      "Transferring — don't refresh or close this window",
+      "Transferring - don't refresh or close this window",
       "The project list refreshes automatically when done",
       "If there's no response for a long time, check disk space and network"
     ]
@@ -423,14 +423,14 @@
       "staticShort": "static"
     },
     "hint": {
-      "queued": "Continuing the original review round, appending {{kind}} on top of the {{prior}} conclusion — this is not online verification.",
-      "integration": "Appends L3 integration verification (the integration sandbox starts the service and runs poc.py) to a locally verified finding — not online verification. On success, evidence is upgraded to dynamic verification.",
-      "harness": "Appends live-lab dynamic verification to a locally verified finding — not online verification. On completion, the evidence level updates from local to dynamic verification. The project must be in live-lab mode (switch it in project settings).",
-      "static": "Appends {{kind}} to a statically confirmed finding — not online verification. On completion, the evidence level updates from static_only."
+      "queued": "Continuing the original review round, appending {{kind}} on top of the {{prior}} conclusion - this is not online verification.",
+      "integration": "Appends L3 integration verification (the integration sandbox starts the service and runs poc.py) to a locally verified finding - not online verification. On success, evidence is upgraded to dynamic verification.",
+      "harness": "Appends live-lab dynamic verification to a locally verified finding - not online verification. On completion, the evidence level updates from local to dynamic verification. The project must be in live-lab mode (switch it in project settings).",
+      "static": "Appends {{kind}} to a statically confirmed finding - not online verification. On completion, the evidence level updates from static_only."
     },
     "awaitingConsent": "Online re-testing could cause harm; waiting for you to skip or give instructions on the Verification consent page.",
     "goConfirm": "Go confirm",
-    "verifySkipped": "No online re-test was done — possibly because you skipped it, FOFA had no samples, or the network was unavailable; see \"Online verification\" in the report below.",
+    "verifySkipped": "No online re-test was done - possibly because you skipped it, FOFA had no samples, or the network was unavailable; see \"Online verification\" in the report below.",
     "fofaTargets": "FOFA targets · {{total}} total ({{success}} success · {{fail}} fail · {{untested}} untested)",
     "col": { "status": "Status", "target": "Target", "title": "Title", "note": "Notes" },
     "reproEvidence": "Online reproduction evidence",
@@ -460,7 +460,7 @@
     "pocUsage": "PoC: python poc.py -u <target>; --proxy sets an HTTP proxy (blank = direct); for RCE add -c <command>, output is printed if any"
   },
   "discover": {
-    "subtitle": "Filters public GitHub Advisories for repos with commits in the past year and ≥ 1000 stars; roughly classifies them as web app / library / mixed by keyword, then a model reviews. Results accumulate — searching again only appends new repos; removed repos never return as candidates.",
+    "subtitle": "Filters public GitHub Advisories for repos with commits in the past year and ≥ 1000 stars; roughly classifies them as web app / library / mixed by keyword, then a model reviews. Results accumulate - searching again only appends new repos; removed repos never return as candidates.",
     "noDescription": "No description",
     "viewProject": "View project",
     "dismiss": "Remove",
@@ -872,7 +872,7 @@
     "hintTitleAnthropic": "Common Anthropic Messages endpoints",
     "hintTitleDomestic": "Common Chinese-model OpenAI-compatible endpoints",
     "hintDescAnthropic": "Put these into API Base URL; this project appends /messages. Set the default model to the model name or the platform access-point ID.",
-    "hintDescDomestic": "Put these into API Base URL; set the default model to the model name or the access-point ID from the console. Vendors may change model names — the official console is authoritative.",
+    "hintDescDomestic": "Put these into API Base URL; set the default model to the model name or the access-point ID from the console. Vendors may change model names - the official console is authoritative.",
     "accessToken": "Access token",
     "configured": "(configured)",
     "notConfigured": "(not configured)",
@@ -903,7 +903,7 @@
     "noModelSpecified": "no model specified",
     "addBaseUrl": "Add Base URL",
     "totalThreadLimit": "Total thread limit {{total}}",
-    "zhipuHint": "For Zhipu BigModel's general endpoint use https://open.bigmodel.cn/api/paas/v4; for the GLM Coding Plan use https://open.bigmodel.cn/api/coding/paas/v4 — don't use /api/v1.",
+    "zhipuHint": "For Zhipu BigModel's general endpoint use https://open.bigmodel.cn/api/paas/v4; for the GLM Coding Plan use https://open.bigmodel.cn/api/coding/paas/v4 - don't use /api/v1.",
     "fallbackModel": "Fallback model",
     "fallbackModelHint": "Used when an endpoint has no model; a project-level model still takes precedence over endpoint and fallback models.",
     "probeHintAnthropic": "Each endpoint can fetch / test and pick a model independently. Fetch uses GET /models; the connection test sends a tiny POST /messages.",
@@ -959,7 +959,7 @@
         { "name": "Anthropic official Claude", "endpoint": "https://api.anthropic.com/v1", "models": "claude-sonnet-4-5, claude-opus-4-1", "note": "Official Anthropic Messages API" },
         { "name": "Zhipu BigModel Anthropic", "endpoint": "https://open.bigmodel.cn/api/anthropic/v1", "models": "glm-5.1, glm-4.5, glm-4.5-air", "note": "This project appends /messages; if the official docs say /api/anthropic, keep /v1 here." },
         { "name": "Kimi Anthropic", "endpoint": "https://api.moonshot.cn/anthropic/v1", "models": "kimi-k3, kimi-k2-0711-preview, kimi-latest", "note": "This project appends /messages; the /anthropic in the Claude Code docs is written /anthropic/v1 here. kimi-k3 omits temperature automatically." },
-        { "name": "Kimi Coding Plan", "endpoint": "https://api.kimi.com/coding/v1", "models": "kimi-k3, kimi-k2.5, kimi-k2-0711-preview", "note": "A subscription Coding Key and a general-platform Key may not be interchangeable — follow the Kimi console. kimi-k3 / k2.5+ omit temperature automatically." },
+        { "name": "Kimi Coding Plan", "endpoint": "https://api.kimi.com/coding/v1", "models": "kimi-k3, kimi-k2.5, kimi-k2-0711-preview", "note": "A subscription Coding Key and a general-platform Key may not be interchangeable - follow the Kimi console. kimi-k3 / k2.5+ omit temperature automatically." },
         { "name": "Alibaba Cloud DashScope", "endpoint": "https://dashscope.aliyuncs.com/apps/anthropic/v1", "models": "qwen-max, qwen-plus, qwen-coder-plus", "note": "This project appends /messages; if using a workspace-specific domain, replace the host with {WorkspaceId}.cn-beijing.maas.aliyuncs.com." },
         { "name": "OpenModel aggregator", "endpoint": "https://api.openmodel.ai/v1", "models": "kimi-k2.5, qwen3-max, deepseek-v4-flash, MiniMax-M2.5", "note": "Aggregator platform; model names depend on the platform docs and your account permissions." }
       ]
@@ -1172,7 +1172,7 @@
       "bounty": {
         "label": "Bounty mode",
         "short": "Only high-impact bugs exploitable by default",
-        "hint": "Records only high-impact classes exploitable by default (RCE, injection, arbitrary file operations, broken access control, stored XSS, 1-click CSRF, source-code hardcoded secrets with server-side impact, etc.). Low-impact items such as CORS, reflected XSS, plain CSRF and missing rate limiting are not recorded; user-changeable passwords in config files and front-end transport-obfuscation AES / publicly shipped keys do not count. Exploitation must hold under the default config or the application's own config options; mark each submission as default or specific config — a risk toggle the vendor already warns about is not \"specific config\"."
+        "hint": "Records only high-impact classes exploitable by default (RCE, injection, arbitrary file operations, broken access control, stored XSS, 1-click CSRF, source-code hardcoded secrets with server-side impact, etc.). Low-impact items such as CORS, reflected XSS, plain CSRF and missing rate limiting are not recorded; user-changeable passwords in config files and front-end transport-obfuscation AES / publicly shipped keys do not count. Exploitation must hold under the default config or the application's own config options; mark each submission as default or specific config - a risk toggle the vendor already warns about is not \"specific config\"."
       },
       "full": {
         "label": "Full mode",
@@ -1261,9 +1261,9 @@
       "direct": "Direct exposure: an attacker can reach the vulnerable sink directly through a user-controlled entry point (HTTP/RPC, etc.), without relying on an upstream application to pass input."
     },
     "harnessTier": {
-      "l1": "L1: local verification (sink level). A mock harness calls the vulnerable sink function directly to prove the root cause is exploitable — no lab environment needed.",
-      "l2": "L2: local verification (module level). A mock harness calls module-level functions, covering multiple paths — deeper than L1.",
-      "l3": "L3: integration verification. Starts the service in a sandbox and runs poc.py to verify the full entry→sink path — equivalent to a live lab test."
+      "l1": "L1: local verification (sink level). A mock harness calls the vulnerable sink function directly to prove the root cause is exploitable - no lab environment needed.",
+      "l2": "L2: local verification (module level). A mock harness calls module-level functions, covering multiple paths - deeper than L1.",
+      "l3": "L3: integration verification. Starts the service in a sandbox and runs poc.py to verify the full entry→sink path - equivalent to a live lab test."
     },
     "projectRef": "Project #{{id}}",
     "projectRefNamed": "Project #{{id}} {{name}}",
