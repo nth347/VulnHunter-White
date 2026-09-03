@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Combobox } from '@base-ui/react/combobox'
 import { CheckIcon, ChevronDownIcon, SearchIcon } from 'lucide-react'
 import type { ProjectName } from '../api'
+import i18n from '../i18n'
 import { cn } from '@/lib/utils'
 
-const ALL_PROJECTS: ProjectOption = { id: null, name: '全部项目' }
-/** 与选项行高对齐：text-sm 1.25rem + py-1 0.5rem = 1.75rem；含列表 p-1，默认露出 10 条后滚动 */
+/** Row height reference: text-sm 1.25rem + py-1 0.5rem = 1.75rem; list p-1, ~10 rows before scroll. */
 const LIST_MAX_HEIGHT_CLASS = 'max-h-[calc(10*1.75rem+0.5rem)]'
 
 export type ProjectOption = {
@@ -32,17 +33,30 @@ export default function ProjectFilterCombobox({
   onProjectIdChange: (id: number | undefined) => void
   className?: string
 }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
 
+  const allProjects: ProjectOption = { id: null, name: t('projectFilter.all') }
+
   const items = useMemo<ProjectOption[]>(
-    () => [ALL_PROJECTS, ...projects.map((p) => ({ id: p.id, name: p.name || `项目 ${p.id}` }))],
+    () => [
+      allProjects,
+      ...projects.map((p) => ({ id: p.id, name: p.name || i18n.t('fmt.projectRef', { id: p.id }) })),
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [projects],
   )
 
   const selected = useMemo(() => {
-    if (projectId == null) return ALL_PROJECTS
-    return items.find((item) => item.id === projectId) ?? { id: projectId, name: `项目 ${projectId}` }
+    if (projectId == null) return allProjects
+    return (
+      items.find((item) => item.id === projectId) ?? {
+        id: projectId,
+        name: i18n.t('fmt.projectRef', { id: projectId }),
+      }
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, projectId])
 
   return (
@@ -83,13 +97,13 @@ export default function ProjectFilterCombobox({
                 <SearchIcon className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Combobox.Input
                   className="h-8 w-full rounded-md border border-input bg-transparent py-1 pr-2 pl-7 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                  placeholder="搜索项目名称或编号…"
-                  aria-label="搜索项目"
+                  placeholder={t('projectFilter.searchPlaceholder')}
+                  aria-label={t('projectFilter.searchAria')}
                 />
               </div>
             </div>
             <Combobox.Empty className="text-center text-sm text-muted-foreground">
-              <span className="block px-2 py-6">无匹配项目</span>
+              <span className="block px-2 py-6">{t('projectFilter.noMatch')}</span>
             </Combobox.Empty>
             <Combobox.List className={cn('overflow-x-hidden overflow-y-auto overscroll-contain p-1 outline-none', LIST_MAX_HEIGHT_CLASS)}>
               {(item: ProjectOption) => (

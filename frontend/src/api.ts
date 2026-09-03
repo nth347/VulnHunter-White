@@ -1,3 +1,5 @@
+import i18n from './i18n'
+
 export type WeightExt = {
   ext: string
   agent_added: boolean
@@ -749,10 +751,10 @@ export function isTimeoutError(e: unknown): boolean {
   return false
 }
 
-export function formatApiError(e: unknown, timeoutMessage = '请求超时，请稍后重试。'): string {
-  if (isTimeoutError(e)) return timeoutMessage
+export function formatApiError(e: unknown, timeoutMessage?: string): string {
+  if (isTimeoutError(e)) return timeoutMessage ?? i18n.t('common.requestTimeout')
   const text = e instanceof Error ? e.message : String(e || '')
-  if (!text) return '请求失败'
+  if (!text) return i18n.t('common.requestFailed')
   try {
     const parsed = JSON.parse(text) as { detail?: unknown }
     if (typeof parsed?.detail === 'string' && parsed.detail.trim()) return parsed.detail
@@ -765,8 +767,8 @@ export function formatApiError(e: unknown, timeoutMessage = '请求超时，请�
 export function formatProjectsListError(e: unknown, hasCached: boolean): string {
   if (isTimeoutError(e)) {
     return hasCached
-      ? '项目列表刷新超时，已显示最近一次成功结果。'
-      : '项目列表加载超时，请稍后重试。'
+      ? i18n.t('apiErrors.projectsRefreshTimeout')
+      : i18n.t('apiErrors.projectsLoadTimeout')
   }
   return formatApiError(e)
 }
@@ -825,7 +827,7 @@ function apiFetch(url: string, init?: ApiFetchInit): Promise<Response> {
   }
   return fetch(url, { ...rest, signal: nextSignal, headers }).catch((e) => {
     if (isTimeoutError(e)) {
-      const err = new Error('请求超时，请稍后重试。')
+      const err = new Error(i18n.t('common.requestTimeout'))
       err.name = 'TimeoutError'
       throw err
     }

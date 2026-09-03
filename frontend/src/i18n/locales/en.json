@@ -27,6 +27,10 @@
     "nextPage": "Next",
     "done": "Done"
   },
+  "apiErrors": {
+    "projectsRefreshTimeout": "Refreshing the project list timed out; showing the last successful result.",
+    "projectsLoadTimeout": "Loading the project list timed out, please try again."
+  },
   "nav": {
     "projects": "Projects",
     "discover": "Discover repos",
@@ -152,6 +156,72 @@
     "notePlaceholder": "e.g. prefer src/docker-compose.yml, MySQL on port 3307, app listening on 8080…",
     "start": "Start",
     "starting": "Starting…"
+  },
+  "zipUpload": {
+    "uploading": "Uploading {{name}}",
+    "messages": [
+      "Sending the source archive to the server…",
+      "Large files can take a few minutes — don't close this window",
+      "Import and recon start automatically once the upload finishes",
+      "Unpacking and indexing run in the background, please wait",
+      "The timer keeps running on slow networks — please be patient",
+      "Transferring the archive, almost there…",
+      "The server creates the audit project as soon as it receives the file",
+      "Transferring — don't refresh or close this window",
+      "The project list refreshes automatically when done",
+      "If there's no response for a long time, check disk space and network"
+    ]
+  },
+  "llmThreads": {
+    "title": "LLM threads",
+    "queued": "{{n}} queued",
+    "ariaLabel": "LLM thread usage",
+    "notConfigured": "(not configured)",
+    "reasonPair": "{{kind}}: {{detail}}",
+    "tooltip": "Combined usage of all LLM sessions (recon, mining, review, etc.) across running projects. The limit is the sum of each Base URL's concurrency; new sessions are balanced evenly across endpoints and, once full, queued in arrival order. Endpoints with an exhausted quota are not picked even while idle. Manage the model pool on the Settings page.",
+    "errorKind": {
+      "rate_limit": "Rate limited",
+      "quota": "Quota exhausted",
+      "auth": "Invalid key",
+      "transient": "Server error"
+    },
+    "skip": {
+      "disabled": "Disabled",
+      "cooldown": "Cooldown {{time}}",
+      "quota": "Quota exhausted; excluded from allocation"
+    }
+  },
+  "projectFilter": {
+    "all": "All projects",
+    "searchPlaceholder": "Search by project name or number…",
+    "searchAria": "Search projects",
+    "noMatch": "No matching projects"
+  },
+  "vulnGroup": {
+    "reproTarget": "Reproduced at {{url}}",
+    "downloadAria": "Download #{{id}} report and PoC",
+    "empty": "No data",
+    "collapseAria": "Collapse same-root-cause reports",
+    "expandAria": "Expand {{count}} same-root-cause reports",
+    "collapseChildren": "Collapse same-root-cause sub-items",
+    "moreSameRootCause": "{{count}} more with the same root cause"
+  },
+  "reconRerun": {
+    "section": "Recon docs",
+    "starting": "Starting…",
+    "startUpdate": "Start update",
+    "map": {
+      "button": "Update map/auth",
+      "buttonTitle": "Keeps existing docs and runs another map/auth round to update them",
+      "title": "Update code map and auth docs?",
+      "description": "Keeps the existing docs/code-map.md and docs/auth.md and runs another Agent round via the original map/auth flow, reviewing against the source and writing updates back. It does not clear existing docs, nor re-run extensions, historical vulns or marking. Progress and logs appear in a new conversation under \"Recon → map/auth\"."
+    },
+    "oldVulns": {
+      "button": "Update historical vulns",
+      "buttonTitle": "Keeps existing docs and runs another historical-vuln collection round to update them",
+      "title": "Update historical-vuln docs?",
+      "description": "Keeps the existing entries in docs/old-vulns/ and runs another round via the original historical-vuln flow (crawler → WebSearch gap-fill) to fill gaps or refresh the index. It does not delete saved historical-vuln docs, nor re-run map/auth or marking. Progress and logs appear in a new conversation under \"Recon → historical vulns\"."
+    }
   },
   "toggles": {
     "attackChain": {

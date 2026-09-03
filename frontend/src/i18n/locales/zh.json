@@ -27,6 +27,10 @@
     "nextPage": "下一页",
     "done": "完成"
   },
+  "apiErrors": {
+    "projectsRefreshTimeout": "项目列表刷新超时，已显示最近一次成功结果。",
+    "projectsLoadTimeout": "项目列表加载超时，请稍后重试。"
+  },
   "nav": {
     "projects": "审计项目",
     "discover": "发现仓库",
@@ -152,6 +156,72 @@
     "notePlaceholder": "例如：优先用 src/docker-compose.yml，MySQL 用 3307 端口，应用监听 8080…",
     "start": "开始续跑",
     "starting": "启动中…"
+  },
+  "zipUpload": {
+    "uploading": "正在上传 {{name}}",
+    "messages": [
+      "正在把源码包送往服务端…",
+      "大文件可能需要几分钟，请勿关闭窗口",
+      "上传完成后将自动开始导入与侦察",
+      "解压与建索引将在后台进行，请稍候",
+      "网络较慢时计时仍会继续，请耐心等待",
+      "正在传输压缩包，马上就好…",
+      "服务端收到文件后会立即创建审计项目",
+      "传输中，请勿刷新或关闭此窗口",
+      "完成后将自动刷新项目列表",
+      "若长时间无响应，可检查磁盘空间与网络连接"
+    ]
+  },
+  "llmThreads": {
+    "title": "LLM 线程",
+    "queued": "排队 {{n}}",
+    "ariaLabel": "LLM 线程占用",
+    "notConfigured": "(未配置)",
+    "reasonPair": "{{kind}}：{{detail}}",
+    "tooltip": "所有运行中项目的侦察、挖掘、审核等 LLM 会话合计占用。上限为各 Base URL 并发之和；新会话按负载均匀分配到各端点，超出按到达顺序排队。额度用尽的端点不因空闲被选中。可在设置页管理模型商池。",
+    "errorKind": {
+      "rate_limit": "限流",
+      "quota": "额度用尽",
+      "auth": "密钥无效",
+      "transient": "服务端错误"
+    },
+    "skip": {
+      "disabled": "已禁用",
+      "cooldown": "冷却 {{time}}",
+      "quota": "额度用尽，不参与分配"
+    }
+  },
+  "projectFilter": {
+    "all": "全部项目",
+    "searchPlaceholder": "搜索项目名称或编号…",
+    "searchAria": "搜索项目",
+    "noMatch": "无匹配项目"
+  },
+  "vulnGroup": {
+    "reproTarget": "复现目标 {{url}}",
+    "downloadAria": "下载 #{{id}} 报告与 PoC",
+    "empty": "暂无数据",
+    "collapseAria": "收起同根因报告",
+    "expandAria": "展开 {{count}} 条同根因报告",
+    "collapseChildren": "收起同根因子项",
+    "moreSameRootCause": "还有 {{count}} 条同根因"
+  },
+  "reconRerun": {
+    "section": "侦察文档",
+    "starting": "启动中…",
+    "startUpdate": "开始更新",
+    "map": {
+      "button": "更新地图/鉴权",
+      "buttonTitle": "保留原文档，再跑一轮地图/鉴权以更新",
+      "title": "更新代码地图与鉴权文档？",
+      "description": "将在保留现有 docs/code-map.md、docs/auth.md 的前提下，按「地图/鉴权」原流程再跑一轮 Agent，对照源码复核并写回更新。不会清空已有文档，也不会重跑扩展名、历史漏洞或盖章。进度与日志出现在「侦察 → 地图/鉴权」下的新一轮对话中。"
+    },
+    "oldVulns": {
+      "button": "更新历史漏洞",
+      "buttonTitle": "保留原文档，再跑一轮历史漏洞收集以更新",
+      "title": "更新历史漏洞文档？",
+      "description": "将在保留 docs/old-vulns/ 已有条目的前提下，按「历史漏洞」原流程再跑一轮（爬虫落盘 → WebSearch 补漏），用于补漏或刷新索引。不会删除已落盘的历史漏洞文档，也不会重跑地图/鉴权或盖章。进度与日志出现在「侦察 → 历史漏洞」下的新一轮对话中。"
+    }
   },
   "toggles": {
     "attackChain": {
