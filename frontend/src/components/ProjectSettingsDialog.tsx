@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, formatApiError, type Project } from '../api'
 import { DynamicVerifyToggle, normalizeDynamicVerifyMode, type DynamicVerifyMode } from './DynamicVerifyToggle'
-import { MANUAL_LAB_HINT, MANUAL_LAB_PLACEHOLDER } from './ManualLabFields'
 import { MiningPathSelect } from './MiningPathSelect'
 import { ProjectModelSelect } from './ProjectModelSelect'
 import { MaxTokenUsageField, formatMaxTokenUsageInput, parseMaxTokenUsageInput } from './MaxTokenUsageField'
@@ -33,6 +33,7 @@ export function ProjectSettingsButton({
   onSaved: (project: Project) => void
   disabled?: boolean
 }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [prompt, setPrompt] = useState(project.manual_lab_prompt || '')
   const [targetKind, setTargetKind] = useState<TargetKind>(normalizeTargetKind(project.target_kind))
@@ -145,10 +146,10 @@ export function ProjectSettingsButton({
       <Button
         variant="outline"
         disabled={disabled}
-        title={disabled ? '项目详情加载中' : undefined}
+        title={disabled ? t('projectSettings.loading') : undefined}
         onClick={() => setOpen(true)}
       >
-        项目配置
+        {t('projectSettings.button')}
       </Button>
       <Dialog
         open={open}
@@ -159,10 +160,8 @@ export function ProjectSettingsButton({
       >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg" showCloseButton={!saving}>
           <DialogHeader>
-            <DialogTitle>项目配置</DialogTitle>
-            <DialogDescription>
-              审计运行中也可修改模型、Token 上限、Recon 提示、挖掘提示、验证方式与互联网验证。审计对象、代码库与挖掘路径仅在项目暂停或完成后可改；人工靶场说明仅靶场动态下生效。模型与阶段提示对下一轮 Agent 生效。到达 Token 上限后会自动暂停，提高上限后再续跑。
-            </DialogDescription>
+            <DialogTitle>{t('projectSettings.title')}</DialogTitle>
+            <DialogDescription>{t('projectSettings.description')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <TargetKindSelect
@@ -204,14 +203,14 @@ export function ProjectSettingsButton({
             {dynamicVerifyMode === 'lab' ? (
               <div className="space-y-2">
                 <Label htmlFor="manual-lab-prompt" className="font-medium">
-                  人工靶场描述
+                  {t('projectSettings.manualLabTitle')}
                 </Label>
-                <p className="text-xs leading-relaxed text-muted-foreground">{MANUAL_LAB_HINT}</p>
+                <p className="text-xs leading-relaxed text-muted-foreground">{t('manualLab.hint')}</p>
                 <Textarea
                   id="manual-lab-prompt"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder={MANUAL_LAB_PLACEHOLDER}
+                  placeholder={t('manualLab.placeholder')}
                   rows={5}
                 />
               </div>
@@ -222,10 +221,10 @@ export function ProjectSettingsButton({
           </div>
           <DialogFooter>
             <Button variant="outline" disabled={saving} onClick={close}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button disabled={saving} onClick={() => void save()}>
-              {saving ? '保存中…' : '保存'}
+              {saving ? t('common.saving') : t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>

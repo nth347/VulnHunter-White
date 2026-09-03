@@ -1,30 +1,20 @@
+import { useTranslation } from 'react-i18next'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import i18n from '../i18n'
 import { cn } from '@/lib/utils'
 
 export type DynamicVerifyMode = 'off' | 'lab' | 'harness'
 
-export const DYNAMIC_VERIFY_OPTIONS = [
-  {
-    value: 'off' as const,
-    label: '关闭',
-    short: '仅静态复核',
-    hint: 'Reviewer 只做静态审核，Confirm 用 static_only。默认选项。',
-  },
-  {
-    value: 'lab' as const,
-    label: '靶场动态',
-    short: 'Docker / 人工靶场 + HTTP PoC',
-    hint: '独立环境轮搭建 Docker 靶场（或填写人工靶场），用 HTTP PoC / debug MCP 复现。证据等级 dynamic / mcp。',
-  },
-  {
-    value: 'harness' as const,
-    label: '局部验证',
-    short: '沙箱 mock / harness',
-    hint: '不搭整项目靶场。Reviewer 抽出函数、mock 依赖，在 Docker 沙箱跑 harness。打通记为局部验证，与靶场动态区分。无 Docker 则退静态。',
-  },
-] as const
+export const DYNAMIC_VERIFY_VALUES = ['off', 'lab', 'harness'] as const
 
-export const DYNAMIC_VERIFY_HINT = DYNAMIC_VERIFY_OPTIONS[1].hint
+function dynamicVerifyOption(value: DynamicVerifyMode) {
+  return {
+    value,
+    label: i18n.t(`toggles.dynamicVerify.options.${value}.label`),
+    short: i18n.t(`toggles.dynamicVerify.options.${value}.short`),
+    hint: i18n.t(`toggles.dynamicVerify.options.${value}.hint`),
+  }
+}
 
 export function normalizeDynamicVerifyMode(
   mode: string | null | undefined,
@@ -35,13 +25,11 @@ export function normalizeDynamicVerifyMode(
 }
 
 export function formatDynamicVerifyMode(mode: string | null | undefined, enabled?: boolean): string {
-  const normalized = normalizeDynamicVerifyMode(mode, enabled)
-  return DYNAMIC_VERIFY_OPTIONS.find((o) => o.value === normalized)?.label ?? '关闭'
+  return dynamicVerifyOption(normalizeDynamicVerifyMode(mode, enabled)).label
 }
 
 export function formatDynamicVerifyHint(mode: string | null | undefined, enabled?: boolean): string {
-  const normalized = normalizeDynamicVerifyMode(mode, enabled)
-  return DYNAMIC_VERIFY_OPTIONS.find((o) => o.value === normalized)?.hint ?? DYNAMIC_VERIFY_OPTIONS[0].hint
+  return dynamicVerifyOption(normalizeDynamicVerifyMode(mode, enabled)).hint
 }
 
 export function DynamicVerifyToggle({
@@ -55,10 +43,11 @@ export function DynamicVerifyToggle({
   onModeChange?: (mode: DynamicVerifyMode) => void
   onEnabledChange?: (enabled: boolean) => void
 }) {
+  const { t } = useTranslation()
   const value = normalizeDynamicVerifyMode(mode, enabled)
   return (
     <div className="min-w-0">
-      <div className="text-sm font-medium">验证方式</div>
+      <div className="text-sm font-medium">{t('toggles.dynamicVerify.label')}</div>
       <Select
         value={value}
         onValueChange={(next) => {
@@ -71,14 +60,19 @@ export function DynamicVerifyToggle({
           <SelectValue>{formatDynamicVerifyMode(value)}</SelectValue>
         </SelectTrigger>
         <SelectContent className="w-auto min-w-80 max-w-96" alignItemWithTrigger={false} align="start">
-          {DYNAMIC_VERIFY_OPTIONS.map((opt) => (
-            <SelectItem key={opt.value} value={opt.value} className="items-start py-2">
-              <span className="flex max-w-80 flex-col gap-0.5 whitespace-normal">
-                <span>{opt.label}</span>
-                <span className="text-xs font-normal whitespace-normal text-muted-foreground">{opt.short}</span>
-              </span>
-            </SelectItem>
-          ))}
+          {DYNAMIC_VERIFY_VALUES.map((v) => {
+            const opt = dynamicVerifyOption(v)
+            return (
+              <SelectItem key={v} value={v} className="items-start py-2">
+                <span className="flex max-w-80 flex-col gap-0.5 whitespace-normal">
+                  <span>{opt.label}</span>
+                  <span className="text-xs font-normal whitespace-normal text-muted-foreground">
+                    {opt.short}
+                  </span>
+                </span>
+              </SelectItem>
+            )
+          })}
         </SelectContent>
       </Select>
       <p className={cn('mt-1.5 max-w-xl text-xs leading-relaxed text-muted-foreground')}>

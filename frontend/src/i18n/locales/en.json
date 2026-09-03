@@ -24,7 +24,8 @@
     "language": "Language",
     "clearSearch": "Clear search",
     "prevPage": "Previous",
-    "nextPage": "Next"
+    "nextPage": "Next",
+    "done": "Done"
   },
   "nav": {
     "projects": "Projects",
@@ -56,6 +57,135 @@
     "uploadZip": "Upload zip",
     "uploadTimeout": "Source zip upload timed out. Check the size and retry, or import from GitHub instead.",
     "pickCustomFirst": "Pick a custom audit mode first (create one in Settings)."
+  },
+  "projectSettings": {
+    "button": "Project settings",
+    "loading": "Loading project details",
+    "title": "Project settings",
+    "description": "You can change the model, token cap, recon hint, mining hint, verification method and online verification while the audit is running. The audit target, code graph and mining paths can only be changed while the project is paused or completed; the manual-lab note applies only in live-lab mode. Model and phase hints take effect on the next Agent round. When the token cap is reached the project auto-pauses; raise the cap and resume.",
+    "manualLabTitle": "Manual lab description"
+  },
+  "projectModel": {
+    "label": "Project model",
+    "hint": "If not set, the global model from Settings is used. Takes effect on the next Agent round (recon / mining / review / verification) after saving.",
+    "useGlobal": "Use global default",
+    "useGlobalNamed": "Use global default ({{model}})",
+    "placeholder": "Leave blank to use the global model",
+    "placeholderNamed": "Leave blank to use {{model}}",
+    "filterPlaceholder": "Filter {{count}} models…",
+    "pickFromList": "Pick from list ({{shown}}/{{total}})…",
+    "fetch": "Fetch model list",
+    "fetching": "Fetching…",
+    "listEmpty": "List is empty",
+    "fetchFailed": "Fetch failed",
+    "fetchTimeout": "Fetching the model list timed out, please try again."
+  },
+  "maxToken": {
+    "label": "Max token usage",
+    "hint": "Counts the combined input + output tokens of all this project's Agents. When reached, every phase auto-pauses; raise the cap (or set it to unlimited) in project settings and resume. Blank or 0 means unlimited.",
+    "placeholder": "0 or blank means unlimited",
+    "invalid": "The token cap must be a non-negative integer; 0 means unlimited",
+    "presets": {
+      "unlimited": "Unlimited",
+      "m1": "1M",
+      "m5": "5M",
+      "m10": "10M"
+    }
+  },
+  "advancedOptions": {
+    "title": "Advanced options",
+    "description": "Optional. Project model, token cap, recon hint and mining Worker hint do not affect mining paths or the verification method; effective on the next Agent round.",
+    "summary": "Project model, token cap, recon hint and mining Worker hint.",
+    "setCount": "{{count}} set",
+    "setList": "Set: {{list}}.",
+    "fields": {
+      "model": "project model",
+      "tokenCap": "token cap",
+      "reconHint": "recon hint",
+      "workerHint": "mining hint"
+    }
+  },
+  "toggles": {
+    "attackChain": {
+      "label": "Attack-chain linking",
+      "hint": "After both mining and review finish, tries multi-step chained exploitation of this project's confirmed vulnerabilities to widen the impact. Skipped automatically when fewer than 2 vulnerabilities are confirmed. When a local Docker lab exists, writes a chaining script and dynamically verifies chains that need no user interaction; chains that require interaction (XSS, etc.) skip verification. Off by default."
+    },
+    "verifier": {
+      "label": "Verifier (online verification)",
+      "hint": "After the Reviewer confirms a front-facing vulnerability, uses FOFA to search for matching internet targets. It first understands the exploit from the report and PoC and runs the original PoC where possible; when no usable HTTP PoC exists it builds a payload from the report rather than skipping; if that fails it adjusts the exploit on the same finding and retries. By default it searches 10 targets per round and stops after 3 successes; otherwise it keeps the successes and searches the next round, up to 5 rounds (50 targets total). Vulnerabilities that would disrupt or tamper with a live service (arbitrary file deletion, DoS, SQL writes, etc.) are only tested after you confirm. Requires a FOFA key in Settings. Off by default."
+    },
+    "codeIntel": {
+      "section": "Code graph",
+      "label": "Build call graph",
+      "hint": "Runs alongside recon. When checked, CodeGraph builds a call graph for src/ so the Worker / Reviewer can look up symbols and calls. The index is written to src/.codegraph/ and rebuilds overwrite the same directory. Failure degrades gracefully and does not block the audit. Off by default to save disk; if enabled mid-run, mining waits for this build to finish. Disabling it deletes this project's index."
+    },
+    "dynamicVerify": {
+      "label": "Verification method",
+      "options": {
+        "off": {
+          "label": "Off",
+          "short": "Static review only",
+          "hint": "The Reviewer does static review only; confirmations use static_only. Default option."
+        },
+        "lab": {
+          "label": "Live lab",
+          "short": "Docker / manual lab + HTTP PoC",
+          "hint": "An isolated-environment round builds a Docker lab (or you provide a manual lab) and reproduces the bug with an HTTP PoC / debug MCP. Evidence level dynamic / mcp."
+        },
+        "harness": {
+          "label": "Local verification",
+          "short": "Sandbox mock / harness",
+          "hint": "No full-project lab. The Reviewer extracts the function, mocks dependencies, and runs a harness in a Docker sandbox. A successful run is recorded as local verification, distinct from a live lab. Falls back to static when Docker is unavailable."
+        }
+      }
+    }
+  },
+  "miningPath": {
+    "section": "Mining paths",
+    "heuristic": {
+      "label": "Heuristic mining",
+      "hint": "After historical-vuln collection finishes, files are weighted and the Worker mines source→sink from high-weight unaudited files. Missing auth, IDOR and business-logic bugs still rely on this path."
+    },
+    "lite": {
+      "label": "Lite",
+      "hint": "Uses only weight-100 files as entry points; lower weights do not block completion. Off by default, which audits every weighted file."
+    },
+    "fast": {
+      "label": "Fast scan",
+      "hint": "After recon, Semgrep matches sinks; a hard code filter then an Agent freezes about 60, and the Fast Worker traces back from each sink. Covers SAST sinks; does not replace heuristic mining."
+    },
+    "bypass": {
+      "label": "Historical-vuln bypass",
+      "hint": "After historical-vuln collection finishes, each round injects one historical-vuln document and tries to bypass the patch, produce a variant, or confirm an unfixed bug is still exploitable."
+    },
+    "unconstrained": {
+      "label": "Unconstrained scan",
+      "hint": "Starts after historical-vuln collection with a single fixed Worker. Injects only the code map and auth document, dispatching no weighted files. Always uses the bounty gate; the path ends once the Reviewer judges a front-facing bug to have achieved RCE-level impact."
+    }
+  },
+  "manualLab": {
+    "label": "Manual lab",
+    "hint": "For vulnerability environments that must be set up by hand. Once you fill in the address, credentials and other details, review uses this description first and only falls back to a Docker lab if it is unreachable. You can also add it later in project settings; it takes effect on the next review round.",
+    "placeholder": "e.g. lab at http://127.0.0.1:8080, credentials admin/admin, login at /login. You can also add paths, auth headers, etc."
+  },
+  "reconHint": {
+    "label": "Recon hint",
+    "hint": "Optional. Paste text or upload a .txt / .md file as an extra manual hint injected into each recon sub-stage (map/auth, extensions, historical vulns, marking). Do not use it to skip gate tasks; editable while running, effective next round.",
+    "placeholder": "e.g. focus on SSO and admin-panel routes; ignore demo modules; treat the JWT filter as the source of truth for auth.",
+    "tooLong": "Recon hint is too long; max {{max}} characters"
+  },
+  "workerHint": {
+    "label": "Mining Worker hint",
+    "hint": "Optional. Paste text or upload a .txt / .md file as an extra manual hint injected into every mining round of heuristic, fast scan, historical-vuln bypass and unconstrained scan. Do not use it to shift focus; editable while running, effective next round.",
+    "placeholder": "e.g. focus on admin-panel export and file download; ignore demo accounts; treat the JWT filter as the source of truth for auth.",
+    "tooLong": "Mining hint is too long; max {{max}} characters"
+  },
+  "hintText": {
+    "uploadText": "Upload text",
+    "uploadTextFile": "Please upload a .txt or .md text file",
+    "notText": "File is not text",
+    "tooLong": "{{label}} is too long; max {{max}} characters",
+    "clear": "Clear"
   },
   "enum": {
     "attackSurface": {

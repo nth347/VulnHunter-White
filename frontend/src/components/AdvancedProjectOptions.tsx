@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { SlidersHorizontal } from 'lucide-react'
 import { MaxTokenUsageField } from './MaxTokenUsageField'
 import { ProjectModelSelect } from './ProjectModelSelect'
@@ -13,24 +14,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import i18n from '../i18n'
 
-export function advancedOptionLabels({
-  llmModel,
-  maxTokenUsage,
-  workerHint,
-  reconHint,
-}: {
+type OptionState = {
   llmModel: string
   maxTokenUsage: string
   workerHint: string
   reconHint: string
-}): string[] {
-  const items: string[] = []
-  if (llmModel.trim()) items.push('项目模型')
-  if (maxTokenUsage.trim() && maxTokenUsage.trim() !== '0') items.push('Token 上限')
-  if (reconHint.trim()) items.push('Recon 提示')
-  if (workerHint.trim()) items.push('挖掘提示')
-  return items
+}
+
+/** Keys of the advanced options that currently carry a value. */
+export function advancedOptionKeys({ llmModel, maxTokenUsage, workerHint, reconHint }: OptionState): string[] {
+  const keys: string[] = []
+  if (llmModel.trim()) keys.push('model')
+  if (maxTokenUsage.trim() && maxTokenUsage.trim() !== '0') keys.push('tokenCap')
+  if (reconHint.trim()) keys.push('reconHint')
+  if (workerHint.trim()) keys.push('workerHint')
+  return keys
 }
 
 export function AdvancedProjectOptions({
@@ -58,6 +58,7 @@ export function AdvancedProjectOptions({
   onReconHintChange: (value: string) => void
   disabled?: boolean
 }) {
+  const { t } = useTranslation()
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -66,10 +67,8 @@ export function AdvancedProjectOptions({
         showCloseButton={!disabled}
       >
         <DialogHeader>
-          <DialogTitle>高级选项</DialogTitle>
-          <DialogDescription>
-            可选。项目模型、Token 上限、Recon 提示与挖掘 Worker 提示不影响挖掘路径和验证方式；下一轮 Agent 生效。
-          </DialogDescription>
+          <DialogTitle>{t('advancedOptions.title')}</DialogTitle>
+          <DialogDescription>{t('advancedOptions.description')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <ProjectModelSelect value={llmModel} onValueChange={onLlmModelChange} />
@@ -78,7 +77,7 @@ export function AdvancedProjectOptions({
           <WorkerHintFields value={workerHint} onChange={onWorkerHintChange} disabled={disabled} />
         </div>
         <DialogFooter>
-          <DialogClose render={<Button type="button" disabled={disabled} />}>完成</DialogClose>
+          <DialogClose render={<Button type="button" disabled={disabled} />}>{t('common.done')}</DialogClose>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -100,7 +99,10 @@ export function AdvancedProjectOptionsButton({
   reconHint: string
   disabled?: boolean
 }) {
-  const configured = advancedOptionLabels({ llmModel, maxTokenUsage, workerHint, reconHint })
+  const { t } = useTranslation()
+  const configuredKeys = advancedOptionKeys({ llmModel, maxTokenUsage, workerHint, reconHint })
+  const configuredLabels = configuredKeys.map((k) => t(`advancedOptions.fields.${k}`))
+  const listSep = i18n.language.startsWith('zh') ? '、' : ', '
 
   return (
     <div className="space-y-2">
@@ -112,14 +114,18 @@ export function AdvancedProjectOptionsButton({
         onClick={onClick}
       >
         <SlidersHorizontal />
-        高级选项
-        {configured.length ? (
-          <span className="ml-auto text-xs font-normal text-muted-foreground">已设置 {configured.length} 项</span>
+        {t('advancedOptions.title')}
+        {configuredKeys.length ? (
+          <span className="ml-auto text-xs font-normal text-muted-foreground">
+            {t('advancedOptions.setCount', { count: configuredKeys.length })}
+          </span>
         ) : null}
       </Button>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        项目模型、Token 上限、Recon 提示与挖掘 Worker 提示。
-        {configured.length ? ` 已设置：${configured.join('、')}。` : ''}
+        {t('advancedOptions.summary')}
+        {configuredLabels.length
+          ? ` ${t('advancedOptions.setList', { list: configuredLabels.join(listSep) })}`
+          : ''}
       </p>
     </div>
   )
