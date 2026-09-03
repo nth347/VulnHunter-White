@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type WheelEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { LogEvent } from '../api'
+import i18n from '../i18n'
 
 type Props = {
   events: LogEvent[]
@@ -19,37 +21,37 @@ type Props = {
   onSessionChange?: (session: number | null) => void
 }
 
-const PHASE_LABEL: Record<string, string> = {
-  recon: '侦察/地图',
-  'recon-map': '侦察/地图',
-  'recon-source-ext': '侦察/扩展名',
-  recon_source_ext: '侦察/扩展名',
-  'recon-old-vuln': '侦察/历史漏洞',
-  recon_old_vuln: '侦察/历史漏洞',
-  'recon-old-vuln-ghsa': '侦察/历史漏洞补漏',
-  recon_old_vuln_ghsa: '侦察/历史漏洞补漏',
-  'recon-mark': '侦察/盖章',
-  recon_mark: '侦察/盖章',
-  'code-intel': '代码库',
-  code_intel: '代码库',
-  worker: '挖掘',
-  'fast-worker': '快速扫描',
-  fast_worker: '快速扫描',
-  'bypass-worker': '历史漏洞绕过',
-  bypass_worker: '历史漏洞绕过',
-  'unconstrained-worker': '无约束扫描',
-  unconstrained_worker: '无约束扫描',
-  'sink-triage': 'Sink 筛选',
-  sink_triage: 'Sink 筛选',
-  reviewer: '审核',
-  'reviewer-lab': '审核/环境搭建',
-  reviewer_lab: '审核/环境搭建',
-  'reviewer-review': '审核',
-  verifier: '验证',
-  attack_chain: '攻击链',
-  'attack-chain': '攻击链',
-  fix: '修复',
-  mine: '挖掘',
+const PHASE_LABEL_KEY: Record<string, string> = {
+  recon: 'reconMap',
+  'recon-map': 'reconMap',
+  'recon-source-ext': 'reconExt',
+  recon_source_ext: 'reconExt',
+  'recon-old-vuln': 'reconOld',
+  recon_old_vuln: 'reconOld',
+  'recon-old-vuln-ghsa': 'reconOldGhsa',
+  recon_old_vuln_ghsa: 'reconOldGhsa',
+  'recon-mark': 'reconMark',
+  recon_mark: 'reconMark',
+  'code-intel': 'codeIntel',
+  code_intel: 'codeIntel',
+  worker: 'worker',
+  'fast-worker': 'fast',
+  fast_worker: 'fast',
+  'bypass-worker': 'bypass',
+  bypass_worker: 'bypass',
+  'unconstrained-worker': 'unconstrained',
+  unconstrained_worker: 'unconstrained',
+  'sink-triage': 'sinkTriage',
+  sink_triage: 'sinkTriage',
+  reviewer: 'reviewer',
+  'reviewer-lab': 'reviewerLab',
+  reviewer_lab: 'reviewerLab',
+  'reviewer-review': 'reviewer',
+  verifier: 'verifier',
+  attack_chain: 'attackChain',
+  'attack-chain': 'attackChain',
+  fix: 'fix',
+  mine: 'worker',
 }
 
 export function eventMatchesPhase(ev: LogEvent, phaseFilter?: string): boolean {
@@ -135,7 +137,8 @@ export function eventVisibleInPhase(ev: LogEvent, phaseFilter?: string): boolean
 
 function phaseLabel(ev: LogEvent): string {
   const p = ev.role || ev.phase || ''
-  return PHASE_LABEL[p] || p
+  const key = PHASE_LABEL_KEY[p]
+  return key ? i18n.t(`liveLog.phase.${key}`) : p
 }
 
 function LogLine({ ev }: { ev: LogEvent }) {
@@ -162,7 +165,7 @@ function LogLine({ ev }: { ev: LogEvent }) {
     tag = ev.tool || 'tool_exec_error'
     body =
       (ev.command ? `$ ${ev.command}\n` : '') +
-      (ev.text || ev.output || '本机工具执行失败') +
+      (ev.text || ev.output || i18n.t('liveLog.toolExecFailed')) +
       (ev.traceback ? `\n${ev.traceback}` : '')
   } else if (k === 'tokens') {
     const cached = Number(ev.cached) || 0
@@ -216,7 +219,9 @@ function LogLine({ ev }: { ev: LogEvent }) {
       </span>
       {collapsible ? (
         <>
-          {!expanded && hidden > 0 ? <span className="vh-line-hint">+{hidden}行</span> : null}
+          {!expanded && hidden > 0 ? (
+            <span className="vh-line-hint">{i18n.t('liveLog.moreLines', { n: hidden })}</span>
+          ) : null}
           <span className="vh-caret" onClick={() => setExpanded((x) => !x)}>
             {expanded ? '▾' : '▸'}
           </span>
@@ -248,6 +253,7 @@ export default function LiveLogPanel({
   sessionCount = 1,
   onSessionChange,
 }: Props) {
+  const { t } = useTranslation()
   const ref = useRef<HTMLDivElement>(null)
   const atBottomRef = useRef(true)
   const prevFirstSeq = useRef<number | undefined>(undefined)
@@ -392,7 +398,7 @@ export default function LiveLogPanel({
   return (
     <div className="vh-task-log" data-log-window="100">
       <div className="vh-log-bar">
-        <span className="vh-log-bar-label">阶段日志</span>
+        <span className="vh-log-bar-label">{t('liveLog.barLabel')}</span>
         <span className="vh-log-pager">
           <Button
             type="button"
@@ -400,19 +406,19 @@ export default function LiveLogPanel({
             size="icon-xs"
             className="vh-log-pager-btn"
             disabled={session <= 1}
-            aria-label="上一轮"
+            aria-label={t('liveLog.prevRound')}
             onClick={() => goSession(session - 1)}
           >
             ‹
           </Button>
           <span className={'vh-log-pager-status' + (isLive ? ' live' : '')}>
-            第
+            {t('liveLog.roundPrefix')}
             <Input
               className="vh-log-pager-input"
               type="text"
               inputMode="numeric"
               pattern="[0-9]*"
-              aria-label="跳转到第几轮"
+              aria-label={t('liveLog.jumpToRound')}
               value={draft}
               size={Math.max(2, String(sessionCount).length)}
               onFocus={(e) => {
@@ -442,7 +448,8 @@ export default function LiveLogPanel({
                 }
               }}
             />
-            / {sessionCount} 轮{isLive ? ' · 进行中' : ' · 历史'}
+            {t('liveLog.roundSuffix', { count: sessionCount })}
+            {isLive ? ` · ${t('liveLog.live')}` : ` · ${t('liveLog.history')}`}
           </span>
           <Button
             type="button"
@@ -450,16 +457,16 @@ export default function LiveLogPanel({
             size="icon-xs"
             className="vh-log-pager-btn"
             disabled={session >= sessionCount}
-            aria-label="下一轮"
+            aria-label={t('liveLog.nextRound')}
             onClick={() => goSession(session + 1)}
           >
             ›
           </Button>
         </span>
         <span className="vh-log-count">
-          最近 {visible.length} 条
-          {moreHidden ? ' · 上滚加载更早' : ''}
-          {loadingOlder ? ' · 加载中' : ''}
+          {t('liveLog.recentCount', { n: visible.length })}
+          {moreHidden ? ` · ${t('liveLog.scrollUpForOlder')}` : ''}
+          {loadingOlder ? ` · ${t('liveLog.loading')}` : ''}
         </span>
       </div>
       <div className="vh-log-wrap">
@@ -471,7 +478,7 @@ export default function LiveLogPanel({
           style={{ minHeight, maxHeight: Math.max(minHeight, 560) }}
         >
           {visible.length === 0 ? (
-            <div className="vh-log-empty">等待 Agent 输出…</div>
+            <div className="vh-log-empty">{t('liveLog.waiting')}</div>
           ) : (
             visible.map((ev, i) => (
               <LogLine key={ev.seq != null ? `s${ev.seq}` : `${ev.ts || i}-${ev.kind}-${i}`} ev={ev} />
@@ -480,7 +487,7 @@ export default function LiveLogPanel({
         </div>
         {showJump ? (
           <Button type="button" variant="outline" size="sm" className="vh-jump-btn" onClick={jumpToBottom}>
-            ↓ 跳到最新
+            {t('liveLog.jumpToLatest')}
           </Button>
         ) : null}
       </div>

@@ -531,6 +531,41 @@
       "unconstrained": "侦察完成后启动，只注入代码地图与鉴权。若开启了代码库则同时等其构建结束。始终走赏金闸门；Reviewer 判定前台洞达成 RCE 效果后结束。"
     }
   },
+  "liveLog": {
+    "barLabel": "阶段日志",
+    "prevRound": "上一轮",
+    "nextRound": "下一轮",
+    "roundPrefix": "第 ",
+    "jumpToRound": "跳转到第几轮",
+    "roundSuffix": " / {{count}} 轮",
+    "live": "进行中",
+    "history": "历史",
+    "recentCount": "最近 {{n}} 条",
+    "scrollUpForOlder": "上滚加载更早",
+    "loading": "加载中",
+    "waiting": "等待 Agent 输出…",
+    "jumpToLatest": "↓ 跳到最新",
+    "toolExecFailed": "本机工具执行失败",
+    "moreLines": "+{{n}}行",
+    "phase": {
+      "reconMap": "侦察/地图",
+      "reconExt": "侦察/扩展名",
+      "reconOld": "侦察/历史漏洞",
+      "reconOldGhsa": "侦察/历史漏洞补漏",
+      "reconMark": "侦察/盖章",
+      "codeIntel": "代码库",
+      "worker": "挖掘",
+      "fast": "快速扫描",
+      "bypass": "历史漏洞绕过",
+      "unconstrained": "无约束扫描",
+      "sinkTriage": "Sink 筛选",
+      "reviewer": "审核",
+      "reviewerLab": "审核/环境搭建",
+      "verifier": "验证",
+      "attackChain": "攻击链",
+      "fix": "修复"
+    }
+  },
   "toggles": {
     "attackChain": {
       "label": "攻击链串联",

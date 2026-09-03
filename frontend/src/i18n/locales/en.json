@@ -531,6 +531,41 @@
       "unconstrained": "Starts after recon, injecting only the code map and auth. If the code graph is on it also waits for that build. Always uses the bounty gate; ends once the Reviewer judges front-facing RCE impact."
     }
   },
+  "liveLog": {
+    "barLabel": "Phase log",
+    "prevRound": "Previous round",
+    "nextRound": "Next round",
+    "roundPrefix": "#",
+    "jumpToRound": "Jump to round",
+    "roundSuffix": " of {{count}}",
+    "live": "live",
+    "history": "history",
+    "recentCount": "Last {{n}}",
+    "scrollUpForOlder": "scroll up for older",
+    "loading": "loading",
+    "waiting": "Waiting for Agent output…",
+    "jumpToLatest": "↓ Jump to latest",
+    "toolExecFailed": "Local tool execution failed",
+    "moreLines": "+{{n}} lines",
+    "phase": {
+      "reconMap": "Recon/map",
+      "reconExt": "Recon/extensions",
+      "reconOld": "Recon/historical",
+      "reconOldGhsa": "Recon/historical gap-fill",
+      "reconMark": "Recon/marking",
+      "codeIntel": "Code graph",
+      "worker": "Mining",
+      "fast": "Fast scan",
+      "bypass": "Bypass",
+      "unconstrained": "Unconstrained",
+      "sinkTriage": "Sink triage",
+      "reviewer": "Review",
+      "reviewerLab": "Review/lab setup",
+      "verifier": "Verify",
+      "attackChain": "Attack chain",
+      "fix": "Fix"
+    }
+  },
   "toggles": {
     "attackChain": {
       "label": "Attack-chain linking",
