@@ -460,6 +460,77 @@
       "pending_review": "Pending"
     }
   },
+  "phaseFlow": {
+    "subStageOf": "{{label}} sub-stage",
+    "phase": {
+      "recon": {
+        "label": "Recon",
+        "hint": "Maps the project structure and auth, fills in source extensions, collects historical vulns, and weights files for later mining."
+      },
+      "code_intel": {
+        "label": "Code graph",
+        "hint": "Optional. CodeGraph builds a code database for src/ so the Worker / Reviewer can query call relations. Off by default to save disk; when on it runs alongside recon and mining waits for both. On failure it degrades to Read/Grep."
+      },
+      "worker": {
+        "label": "Mining",
+        "hint": "After recon, mines file by file; if the code graph is on it also waits for that build. Lite mode injects only weight-100 entry points. Fast scan traces back from Semgrep sinks. Historical-vuln bypass tries each doc in turn. Unconstrained scan injects only the map and auth with a single fixed Worker, ending once the Reviewer judges front-facing RCE impact. Mining is complete only after every enabled path finishes."
+      },
+      "reviewer": {
+        "label": "Review",
+        "hint": "Independently verifies the vulnerabilities the Worker submits. Static review only by default; live-lab mode runs an HTTP PoC first, local verification uses a sandbox harness."
+      },
+      "verifier": {
+        "label": "Verify",
+        "hint": "Optional. After the Reviewer confirms a front-facing vulnerability, uses FOFA to search for matching targets; it first understands the exploit from the report and PoC, runs the original PoC where possible, and builds a payload from the report when none is usable. On failure it adjusts the exploit on the same chain and retries. 10 targets per round by default, stopping after 3 successes; otherwise it searches the next round, up to 5 rounds / 50 targets."
+      },
+      "attack_chain": {
+        "label": "Attack chain",
+        "hint": "Optional. After mining and review finish, tries multi-step chained exploitation of confirmed vulnerabilities to widen impact; skipped when fewer than 2 are confirmed."
+      },
+      "done": {
+        "label": "Done",
+        "hint": "Recon, mining, review and (if enabled) online verification / attack-chain linking have all finished."
+      }
+    },
+    "branchHint": {
+      "map": "Maps modules, HTTP and non-HTTP entry points and the tech stack, and writes the login / roles / permissions docs.",
+      "source_ext": "Adds execution-surface files not indexed by default (templates, ORM mappings, etc.) to the index.",
+      "old_vulns": "First runs the GHSA and GitHub Issues crawlers and the Agent saves the results; then uses WebSearch to fill gaps.",
+      "mark": "Weights or skips source files in batches, setting mining priority.",
+      "lab": "Uses Docker to build a reusable default lab for dynamic reproduction; not to manufacture exploit conditions.",
+      "manualLab": "Uses the user-provided vulnerable environment for dynamic verification, skipping the Docker build.",
+      "harness": "Extracts the function and mocks dependencies to run a harness in a sandbox; no full-project lab."
+    },
+    "badge": {
+      "heuristic": "Heuristic",
+      "heuristicLite": "Heuristic lite",
+      "rounds": "{{n}} rounds",
+      "fast": "Fast scan",
+      "preparing": "preparing",
+      "bypass": "Bypass",
+      "waitingHistory": "waiting for history",
+      "unconstrained": "Unconstrained",
+      "localVerify": "Local verification",
+      "labSetup": "Lab setup",
+      "manualLab": "Manual lab"
+    },
+    "codeIntel": {
+      "off": "Code graph off",
+      "stale": "Code graph stale",
+      "degraded": "Code graph degraded"
+    },
+    "suffix": {
+      "static": "static",
+      "local": "local",
+      "off": "off"
+    },
+    "workerHint": {
+      "mine": "After recon, files are weighted: entry points are mined forward, lower weights are traced back by role or control surface. If the code graph is on it also waits for that build. Missing auth, IDOR and business logic rely on this path.",
+      "fast": "Semgrep finds sinks and each is traced back. Runs in parallel with heuristic mining, covering SAST sinks.",
+      "bypass": "After historical-vuln collection, tries each doc in turn to bypass the patch or confirm an unfixed bug is still exploitable.",
+      "unconstrained": "Starts after recon, injecting only the code map and auth. If the code graph is on it also waits for that build. Always uses the bounty gate; ends once the Reviewer judges front-facing RCE impact."
+    }
+  },
   "toggles": {
     "attackChain": {
       "label": "Attack-chain linking",

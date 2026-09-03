@@ -460,6 +460,77 @@
       "pending_review": "待审"
     }
   },
+  "phaseFlow": {
+    "subStageOf": "{{label}}子阶段",
+    "phase": {
+      "recon": {
+        "label": "侦察",
+        "hint": "摸清项目结构与鉴权，补齐源码扩展名、收录历史漏洞，并为文件定权，供后续挖掘使用。"
+      },
+      "code_intel": {
+        "label": "代码库",
+        "hint": "可选。用 CodeGraph 给 src/ 建代码数据库，供 Worker / Reviewer 查调用关系。默认关闭以免占磁盘；开启后与侦察并列，都完成后才挖掘。失败则降级继续用 Read/Grep。"
+      },
+      "worker": {
+        "label": "挖掘",
+        "hint": "侦察完成后按文件挖洞；若开启了代码库则同时等其构建结束。轻量版只注入权重 100 的入口。快速扫描按 Semgrep Sink 回推。历史漏洞绕过按文档逐条尝试绕过。无约束扫描只注入地图与鉴权、固定 1 个 Worker，Reviewer 判定前台 RCE 效果后结束。开启的路径都结束后才算挖掘完成。"
+      },
+      "reviewer": {
+        "label": "审核",
+        "hint": "独立验证 Worker 提交的漏洞。默认仅静态复核；靶场动态先跑 HTTP PoC，局部验证用沙箱 harness。"
+      },
+      "verifier": {
+        "label": "验证",
+        "hint": "可选。Reviewer 确认前台漏洞后，用 FOFA 搜同款目标；先理解报告和 PoC 的利用本质，优先跑原 PoC，没有可用 PoC 时按报告构造 payload。失效时同链调整再利用。默认每轮 10 个，成功 3 个即结束；不足则再搜下一轮，最多 5 轮 / 50 个目标。"
+      },
+      "attack_chain": {
+        "label": "攻击链",
+        "hint": "可选。挖掘与审核结束后，根据已确认漏洞尝试多步串联利用以扩大危害；已确认洞少于 2 条时跳过。"
+      },
+      "done": {
+        "label": "完成",
+        "hint": "侦察、挖掘、审核与（若开启）互联网验证 / 攻击链串联均已结束。"
+      }
+    },
+    "branchHint": {
+      "map": "梳理模块、HTTP 与非 HTTP 入口和技术栈，并写出登录 / 角色 / 权限文档。",
+      "source_ext": "把默认未入库的执行面文件（模板、ORM 映射等）补进索引。",
+      "old_vulns": "先跑 GHSA 与 GitHub Issues 爬虫，由 Agent 按爬虫结果落盘；完成后再用 WebSearch 补漏。",
+      "mark": "按批次给源码定权或跳过，决定后续挖掘优先级。",
+      "lab": "用 Docker 搭建默认可复用靶场，供动态复现；不是制造利用条件。",
+      "manualLab": "使用用户提供的漏洞环境地址做动态验证，跳过 Docker 搭建。",
+      "harness": "抽出函数并 mock 依赖，在沙箱跑 harness；不搭整项目靶场。"
+    },
+    "badge": {
+      "heuristic": "启发式",
+      "heuristicLite": "启发式轻量",
+      "rounds": "{{n}} 轮",
+      "fast": "快速扫描",
+      "preparing": "准备中",
+      "bypass": "历史漏洞绕过",
+      "waitingHistory": "等待历史漏洞",
+      "unconstrained": "无约束扫描",
+      "localVerify": "局部验证",
+      "labSetup": "环境搭建",
+      "manualLab": "人工靶场"
+    },
+    "codeIntel": {
+      "off": "代码库 未开",
+      "stale": "代码库 需重建",
+      "degraded": "代码库 已降级"
+    },
+    "suffix": {
+      "static": "静态",
+      "local": "局部",
+      "off": "未开"
+    },
+    "workerHint": {
+      "mine": "侦察完成后按文件定权：入口正向挖，更低权按角色回推或控面。若开启了代码库则同时等其构建结束。缺鉴权、IDOR、业务逻辑靠这条。",
+      "fast": "Semgrep 找 Sink 后按条回推。与启发式并行，覆盖 SAST Sink。",
+      "bypass": "历史漏洞收集完毕后按文档逐条尝试绕过补丁或确认未修复洞仍可打。",
+      "unconstrained": "侦察完成后启动，只注入代码地图与鉴权。若开启了代码库则同时等其构建结束。始终走赏金闸门；Reviewer 判定前台洞达成 RCE 效果后结束。"
+    }
+  },
   "toggles": {
     "attackChain": {
       "label": "攻击链串联",
