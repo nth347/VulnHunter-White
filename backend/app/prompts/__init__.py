@@ -10,8 +10,10 @@ PROMPTS_DIR = Path(__file__).resolve().parent
 USE_ENGLISH_PROMPTS = os.getenv("USE_ENGLISH_PROMPTS", "false").lower() in ("true", "1", "yes")
 
 
-def load_prompt(name: str) -> str:
-    if USE_ENGLISH_PROMPTS:
+def load_prompt(name: str, language: str | None = None) -> str:
+    use_english = language == "en" or (language is None and USE_ENGLISH_PROMPTS)
+
+    if use_english:
         for en_suffix in [f"{name}.en.md", f"{name}.en"]:
             path = PROMPTS_DIR / en_suffix
             if path.exists():
@@ -25,10 +27,10 @@ def load_prompt(name: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def render_prompt(name: str, **kwargs: object) -> str:
+def render_prompt(name: str, language: str | None = None, **kwargs: object) -> str:
     """Load a prompt document and substitute ${placeholders}."""
     mapping = {key: "" if value is None else str(value) for key, value in kwargs.items()}
-    return Template(load_prompt(name)).safe_substitute(mapping).strip()
+    return Template(load_prompt(name, language=language)).safe_substitute(mapping).strip()
 
 
 def cvss_scoring_prompt() -> str:
