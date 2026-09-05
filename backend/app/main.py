@@ -8,6 +8,7 @@ from .auth import AccessTokenMiddleware
 from .models import init_db
 from .services.shutdown import install_signal_bridge, reset as reset_shutdown
 from .tools import register_all_tools
+from .db_migrations import run_migrations
 
 app = FastAPI(title="VulnHunter-White", version="0.1.0")
 
@@ -32,6 +33,7 @@ app.include_router(discoveries.router)
 @app.on_event("startup")
 def on_startup() -> None:
     reset_shutdown()
+    run_migrations()
     init_db()
     register_all_tools()
     install_signal_bridge()
