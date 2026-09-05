@@ -11,15 +11,12 @@ USE_ENGLISH_PROMPTS = os.getenv("USE_ENGLISH_PROMPTS", "false").lower() in ("tru
 
 
 def load_prompt(name: str) -> str:
-    # Try English version first if USE_ENGLISH_PROMPTS is enabled
     if USE_ENGLISH_PROMPTS:
-        # Try name.en.md or name.en
         for en_suffix in [f"{name}.en.md", f"{name}.en"]:
             path = PROMPTS_DIR / en_suffix
             if path.exists():
                 return path.read_text(encoding="utf-8")
 
-    # Fall back to original Chinese prompts
     path = PROMPTS_DIR / name
     if not path.exists():
         path = PROMPTS_DIR / f"{name}.md"
