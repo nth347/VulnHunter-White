@@ -435,7 +435,7 @@ class ProjectOut(BaseModel):
     recon_hint: str = ""
     max_token_usage: int = 0
     error: str | None = None
-    language: str = "zh"
+    language: str = "en"
     worker_concurrency: int | None = None
     created_at: datetime
     updated_at: datetime
