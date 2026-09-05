@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, formatApiError, type Project, type ProjectLab } from '../api'
+import { translateBackendText } from '../i18n/backendText'
 import { Button } from '@/components/ui/button'
 import i18n from '../i18n'
 import { startVisibilityPoll } from '../lib/visibilityPoll'
@@ -103,7 +104,7 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
     try {
       const next = await api.getLab(project.id)
       setLab(next)
-      setError(next.error || '')
+      setError(translateBackendText(next.error || ''))
     } catch (e) {
       setError(formatApiError(e, labTimeout()))
     }
@@ -133,7 +134,7 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
       if (next.port_changes?.length) {
         setNote(t('labPanel.portsRemapped', { list: next.port_changes.join(t('labPanel.listSep')) }))
       }
-      setError(next.error || '')
+      setError(translateBackendText(next.error || ''))
     } catch (e) {
       setError(formatApiError(e, labTimeout()))
       void refresh()

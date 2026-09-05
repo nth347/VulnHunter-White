@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from '../i18n'
+import { translateBackendText } from '../i18n/backendText'
 import { api, formatApiError, setAccessToken, type LlmEndpointUsage, type Settings } from '../api'
 import { CustomAuditModesCard } from '../components/CustomAuditModesCard'
 import { endpointCooldownReason, endpointSkipLabel } from '../components/LlmThreadUsageBar'
@@ -214,7 +215,7 @@ export default function SettingsPage() {
       if (!out.ok) {
         setModels([])
         setProbeOk(false)
-        setProbeMsg(out.error || t('settings.fetchFailed'))
+        setProbeMsg(translateBackendText(out.error || t('settings.fetchFailed')))
         return
       }
       setModels(out.models)
@@ -247,7 +248,7 @@ export default function SettingsPage() {
       const out = await api.testLlm(probeBody(endpointId))
       if (!out.ok) {
         setProbeOk(false)
-        setProbeMsg(out.error || t('settings.connFailed'))
+        setProbeMsg(translateBackendText(out.error || t('settings.connFailed')))
         return
       }
       const latency = out.latency_ms != null ? `${out.latency_ms}ms` : ''
@@ -273,7 +274,7 @@ export default function SettingsPage() {
       const out = await api.testFofa(body)
       if (!out.ok) {
         setFofaOk(false)
-        setFofaMsg(out.error || t('settings.connFailed'))
+        setFofaMsg(translateBackendText(out.error || t('settings.connFailed')))
         return
       }
       const parts = [t('settings.connOk')]
@@ -303,7 +304,7 @@ export default function SettingsPage() {
       const out = await api.testGithub(body)
       if (!out.ok) {
         setGithubOk(false)
-        setGithubMsg(out.error || t('settings.connFailed'))
+        setGithubMsg(translateBackendText(out.error || t('settings.connFailed')))
         return
       }
       const parts = [t('settings.connOk')]
@@ -333,7 +334,7 @@ export default function SettingsPage() {
       const out = await api.testJadx(body)
       if (!out.ok) {
         setJadxOk(false)
-        setJadxMsg(out.error || t('settings.detectFailed'))
+        setJadxMsg(translateBackendText(out.error || t('settings.detectFailed')))
         return
       }
       const parts = [out.version || t('settings.available')]
@@ -359,7 +360,7 @@ export default function SettingsPage() {
       const out = await api.testCodegraph(body)
       if (!out.ok) {
         setCodegraphOk(false)
-        setCodegraphMsg(out.error || t('settings.codegraphNotFound'))
+        setCodegraphMsg(translateBackendText(out.error || t('settings.codegraphNotFound')))
         return
       }
       setCodegraphOk(true)

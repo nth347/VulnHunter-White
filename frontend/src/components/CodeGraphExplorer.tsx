@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, formatApiError, type CodeIntelSymbol } from '../api'
+import { translateBackendText } from '../i18n/backendText'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -87,7 +88,7 @@ export function CodeGraphExplorer({
       .then((out) => {
         if (!out.ok) {
           setHits([])
-          setError(out.error || t('codeGraph.queryFailed'))
+          setError(translateBackendText(out.error || t('codeGraph.queryFailed')))
           return
         }
         setHits(out.items || [])
@@ -106,13 +107,13 @@ export function CodeGraphExplorer({
     ])
       .then(([from, to]) => {
         if (!from.ok) {
-          setError(from.error || t('codeGraph.callersFailed'))
+          setError(translateBackendText(from.error || t('codeGraph.callersFailed')))
           setCallers([])
         } else {
           setCallers(from.callers || [])
         }
         if (!to.ok) {
-          setError((prev) => prev || to.error || t('codeGraph.calleesFailed'))
+          setError((prev) => prev || translateBackendText(to.error || t('codeGraph.calleesFailed')))
           setCallees([])
         } else {
           setCallees(to.callees || [])

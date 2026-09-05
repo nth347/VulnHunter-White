@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { Loader2Icon, RefreshCw, Square, Trash2 } from 'lucide-react'
 import i18n from '../i18n'
+import { translateBackendText } from '../i18n/backendText'
 import {
   api,
   formatApiError,
@@ -37,7 +38,7 @@ function summarizeBatchErrors(
   const failed = results.filter((r) => r.error)
   if (failed.length === 0) return null
   return i18n.t('containers.partialFailure', {
-    list: failed.map((r) => `${r.id.slice(0, slice)} (${r.error})`).join('; '),
+    list: failed.map((r) => `${r.id.slice(0, slice)} (${translateBackendText(r.error || '')})`).join('; '),
   })
 }
 
