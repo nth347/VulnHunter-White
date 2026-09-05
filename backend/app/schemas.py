@@ -387,6 +387,7 @@ class ProjectUpdate(BaseModel):
     worker_hint: str | None = Field(default=None, max_length=WORKER_HINT_MAX)
     recon_hint: str | None = Field(default=None, max_length=RECON_HINT_MAX)
     max_token_usage: int | None = Field(default=None, ge=0, le=1_000_000_000_000)
+    language: Literal["en", "zh"] | None = None
 
 
 class WeightExtOut(BaseModel):
@@ -434,6 +435,7 @@ class ProjectOut(BaseModel):
     recon_hint: str = ""
     max_token_usage: int = 0
     error: str | None = None
+    language: str = "zh"
     worker_concurrency: int | None = None
     created_at: datetime
     updated_at: datetime
