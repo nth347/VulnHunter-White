@@ -526,6 +526,7 @@ def _ensure_columns() -> None:
             "llm_model": "VARCHAR(256)",
             "worker_hint": "TEXT",
             "recon_hint": "TEXT",
+            "language": "VARCHAR(8) DEFAULT 'zh'",
             "max_token_usage": "INTEGER DEFAULT 0",
             "code_intel_enabled": "BOOLEAN DEFAULT 0",
             "code_intel_status": "VARCHAR(32) DEFAULT 'pending'",

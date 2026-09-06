@@ -25,4 +25,3 @@ def run_migrations() -> None:
 
     except Exception as e:
         logger.error(f"Database migration failed: {e}", exc_info=True)
-        raise

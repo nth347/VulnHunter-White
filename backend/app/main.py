@@ -33,8 +33,8 @@ app.include_router(discoveries.router)
 @app.on_event("startup")
 def on_startup() -> None:
     reset_shutdown()
-    run_migrations()
     init_db()
+    run_migrations()
     register_all_tools()
     install_signal_bridge()
     from .services.pipeline import recover_inflight_projects
