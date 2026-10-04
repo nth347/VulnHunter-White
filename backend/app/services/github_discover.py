@@ -12,6 +12,7 @@ import httpx
 
 from ..models import GithubCandidate, Project, SessionLocal, utcnow
 from ..prompts import load_prompt
+from ..prompts import DEFAULT_LANGUAGE
 from ..target_kind import (
     DEFAULT_TARGET_KIND,
     TARGET_KIND_LABELS,
@@ -435,7 +436,7 @@ def refine_target_kind_with_llm(
         ]
     )
     try:
-        system = load_prompt("discover-target-kind.md").strip()
+        system = load_prompt("discover-target-kind.md", language=DEFAULT_LANGUAGE).strip()
     except FileNotFoundError:
         return keyword_kind, keyword_reason
 

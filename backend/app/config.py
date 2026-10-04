@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     # 16780 avoids crowded uvicorn/Django 8000 and the lab scan range 18000-19000.
     port: int = 16780
 
-    # Timeouts (seconds) — aligned with AutoPoc scale
+    # Timeouts (seconds) - aligned with AutoPoc scale
     timeout_recon: int = 3600
     timeout_recon_mark_round: int = 1800
     recon_mark_batch_size: int = 150

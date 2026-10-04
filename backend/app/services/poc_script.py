@@ -126,7 +126,7 @@ def poc_cli_block_reason(poc_code: str | None, *, target_kind: str | None = None
 
     Empty poc_code is allowed here; SubmitVuln decides whether the field is required.
     HTTP-shaped scripts (including library/mixed with an HTTP client) follow the web CLI
-    contract (including --zh). Pure library API scripts must import the real package —
+    contract (including --zh). Pure library API scripts must import the real package -
     no unused -u/--proxy and no inlined/mocked harness copies; argparse scripts still
     need --zh for bilingual stdout.
     """

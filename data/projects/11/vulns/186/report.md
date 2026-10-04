@@ -48,7 +48,7 @@ def api_note(note_id: int):
     """Fetch one memo. X-User is the logged-in identity.
 
     Intended rule: only the author may read their own note.
-    Bug: ownership is never checked — any id is returned (IDOR).
+    Bug: ownership is never checked - any id is returned (IDOR).
     """
     _current = (request.headers.get("X-User") or "").strip()
     row = get_note(note_id)
@@ -74,7 +74,7 @@ def api_note(note_id: int):
     """Fetch one memo. X-User is the logged-in identity.
 
     Intended rule: only the author may read their own note.
-    Bug: ownership is never checked — any id is returned (IDOR).
+    Bug: ownership is never checked - any id is returned (IDOR).
     """
     _current = (request.headers.get("X-User") or "").strip()
     row = get_note(note_id)
@@ -91,8 +91,8 @@ def api_note(note_id: int):
 
 ## 同根因受影响点
 
-- `src/app.py:73-84` — `api_note` 路由，读取 X-User 但未做属主校验（主报告点）
-- `src/board/store.py:33-39` — `get_note` 函数，按 id 查询无属主过滤
+- `src/app.py:73-84` - `api_note` 路由，读取 X-User 但未做属主校验（主报告点）
+- `src/board/store.py:33-39` - `get_note` 函数，按 id 查询无属主过滤
 
 ## 复现证明
 

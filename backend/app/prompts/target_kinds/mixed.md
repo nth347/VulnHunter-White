@@ -3,8 +3,8 @@
 仓库同时含**可复用组件核心**与 demo / sample / examples / 示例 Web。
 
 ### 优先级
-- **主挖**：库核心（`api` / `core` / `parser` / `codec` / `serialize` 等）— 公开 API → sink，规则同组件库。
-- **降权或薄扫**：`**/demo/**`、`**/sample*/**`、`**/examples/**`、`**/webapp/**`、示例 Controller — `MarkSkip` 或权重 10–30，不要占满启发式预算。
+- **主挖**：库核心（`api` / `core` / `parser` / `codec` / `serialize` 等）- 公开 API → sink，规则同组件库。
+- **降权或薄扫**：`**/demo/**`、`**/sample*/**`、`**/examples/**`、`**/webapp/**`、示例 Controller - `MarkSkip` 或权重 10–30，不要占满启发式预算。
 - 示例 Web 上的洞仅在能证明**库 API 本身**可被同样利用时再报；否则优先在库入口上复现。
 
 ### 验证

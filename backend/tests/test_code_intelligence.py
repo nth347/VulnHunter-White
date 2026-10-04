@@ -248,7 +248,7 @@ def test_rebuild_rejected_when_disabled(tmp_env, project):
     with TestClient(app) as client:
         rebuilt = client.post(f"/api/projects/{project}/code-intelligence/rebuild")
         assert rebuilt.status_code == 400
-        assert "未开启" in rebuilt.json()["detail"]
+        assert "Code intelligence is off" in rebuilt.json()["detail"]
 
 
 def test_rebuild_api_starts_thread(tmp_env, project, monkeypatch):

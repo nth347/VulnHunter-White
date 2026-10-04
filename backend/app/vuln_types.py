@@ -360,21 +360,33 @@ def _has_cjk(text: str) -> bool:
     return bool(re.search(r"[\u4e00-\u9fff]", text))
 
 
+_LATIN_WORD_RE = re.compile(r"[A-Za-z]{2,}")
+
+
 def normalize_submission_decision(
     *,
     submission_tier: Any,
     submission_reason: Any,
     root_cause_key: Any = None,
+    language: str | None = None,
 ) -> SubmissionTierDecision:
+    from .i18n import tr
+
+    lang = (language or "en").strip().lower()
     tier = normalize_submission_tier(submission_tier)
     reason = str(submission_reason or "").strip()
     if not reason:
-        raise ValueError("缺少 submission_reason（须说明为何进入该提交分层）")
-    if not _has_cjk(reason):
-        raise ValueError("submission_reason 须用中文说明分层理由（产品名/类名/CVE 编号可保留英文）")
+        raise ValueError(tr("submit.missing_reason", lang))
+    # The reason has to be written in the project's language, not Chinese
+    # unconditionally - an English project could otherwise never submit.
+    if lang == "zh":
+        if not _has_cjk(reason):
+            raise ValueError(tr("submit.reason_language", lang))
+    elif not _LATIN_WORD_RE.search(reason):
+        raise ValueError(tr("submit.reason_language", lang))
     root = normalize_root_cause_key(root_cause_key)
     if tier == "duplicate_grouped" and not root:
-        raise ValueError("submission_tier=duplicate_grouped 时必须提供 root_cause_key")
+        raise ValueError(tr("submit.duplicate_needs_root_cause", lang))
     return SubmissionTierDecision(tier=tier, reason=reason, root_cause_key=root)
 
 

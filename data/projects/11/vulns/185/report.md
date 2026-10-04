@@ -84,9 +84,9 @@ body 参数无任何过滤或转义，通过 `create_note` 参数化插入数据
 
 ## 同根因受影响点
 
-- `src/templates/notes.html:18` — `{{ n.body | safe }}` 使用 safe 过滤器跳过转义（主报告点）
-- `src/app.py:87-94` — `api_create_note` 路由，无鉴权，body 未过滤直接存入数据库（写入点）
-- `src/app.py:37-39` — `notes_page` 路由，渲染含未转义 body 的模板（渲染点）
+- `src/templates/notes.html:18` - `{{ n.body | safe }}` 使用 safe 过滤器跳过转义（主报告点）
+- `src/app.py:87-94` - `api_create_note` 路由，无鉴权，body 未过滤直接存入数据库（写入点）
+- `src/app.py:37-39` - `notes_page` 路由，渲染含未转义 body 的模板（渲染点）
 
 ## 复现证明
 

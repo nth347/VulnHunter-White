@@ -105,6 +105,6 @@ CWE-78. A caller with an admin session can execute arbitrary operating-system co
 ## Severity / CWE
 
 - **Severity:** High
-- **CVSS 3.1:** 7.2 High — `CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H`
+- **CVSS 3.1:** 7.2 High - `CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H`
 - **CWE:** CWE-78 Improper Neutralization of Special Elements used in an OS Command ("OS Command Injection")
 - **Related:**

@@ -1,4 +1,4 @@
-"""MemoBoard — Flask intranet app with four planted bugs, two of which chain.
+"""MemoBoard - Flask intranet app with four planted bugs, two of which chain.
 
 White-box audit target for VulnHunter (including attack-chain). Not production.
 """
@@ -75,7 +75,7 @@ def api_note(note_id: int):
     """Fetch one memo. X-User is the logged-in identity.
 
     Intended rule: only the author may read their own note.
-    Bug: ownership is never checked — any id is returned (IDOR).
+    Bug: ownership is never checked - any id is returned (IDOR).
     """
     _current = (request.headers.get("X-User") or "").strip()
     row = get_note(note_id)

@@ -8,6 +8,8 @@ upstream application passing attacker-controlled input into the vulnerable API.
 from __future__ import annotations
 
 import re
+
+from .report_sections import any_heading_re, heading, heading_re
 from typing import Any
 
 from .cvss31 import Cvss31Result
@@ -36,14 +38,26 @@ _EXPOSURE_ALIASES: dict[str, str] = {
     "上游依赖": EXPOSURE_INDIRECT_CONSUMER,
 }
 
-TRIGGER_CONDITIONS_HEADING = "### 触发条件"
-_TRIGGER_HEADING_RE = re.compile(r"(?m)^###\s+触发条件\s*$")
+_TRIGGER_HEADING_RE = heading_re("trigger_conditions", level=3)
+_NEXT_H3_RE = any_heading_re(3)
+# An English report states the same facts in English, so both vocabularies have
+# to satisfy the indirect-exposure gate.
 _INDIRECT_CONTENT_HINT_RE = re.compile(
     r"(上游|业务应用|集成方|消费方|调用方|依赖.{0,8}应用|"
     r"不能直接|无法直接|非直接|间接|注入点|SELECT.{0,12}注入|"
-    r"WallFilter|过滤器|中间件|组件库|库本身.{0,6}无.{0,6}(HTTP|请求|入口))",
+    r"WallFilter|过滤器|中间件|组件库|库本身.{0,6}无.{0,6}(HTTP|请求|入口)|"
+    r"upstream|host application|business application|integrat(or|ing|ion)|"
+    r"consumer|caller|calling application|depend(s|ing|ent)?.{0,12}application|"
+    r"cannot.{0,12}directly|no.{0,12}direct.{0,12}(attack surface|entry|request)|"
+    r"indirect|injection point|filter|middleware|component library|"
+    r"library itself.{0,16}(no|without).{0,16}(HTTP|request|entry))",
     re.IGNORECASE,
 )
+
+
+def trigger_conditions_heading(language: str | None = None) -> str:
+    """Canonical "Trigger conditions" heading for the project language."""
+    return heading("trigger_conditions", 3, language)
 _MIN_TRIGGER_SECTION_CHARS = 40
 
 
@@ -74,7 +88,7 @@ def _extract_trigger_conditions_section(report_text: str) -> str | None:
     if not match:
         return None
     rest = body[match.end() :]
-    nxt = re.search(r"(?m)^###\s+", rest)
+    nxt = _NEXT_H3_RE.search(rest)
     end = match.end() + nxt.start() if nxt else len(body)
     return body[match.end() : end].strip()
 

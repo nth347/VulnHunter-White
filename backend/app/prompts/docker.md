@@ -1,7 +1,7 @@
 # Build / reuse a Docker lab for whitebox dynamic verification
 
 You help VulnHunter stand up a reusable lab under `env/` for the audited Web project.
-This is a dedicated Reviewer round that starts after source ingest — do not review vulnerabilities in this round.
+This is a dedicated Reviewer round that starts after source ingest - do not review vulnerabilities in this round.
 
 ## Goals
 1. Prefer existing Dockerfile / compose in the project `src/` over inventing from scratch.

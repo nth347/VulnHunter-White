@@ -94,8 +94,8 @@ def run_user_lookup(name: str) -> list[dict]:
 
 ## 同根因受影响点
 
-- `src/board/engine.py:71` — `run_user_lookup` 函数，字符串拼接 SQL（主报告点）
-- `src/app.py:63-70` — `api_users` 路由，无鉴权调用 `run_user_lookup` 并将结果（含 password）返回给客户端
+- `src/board/engine.py:71` - `run_user_lookup` 函数，字符串拼接 SQL（主报告点）
+- `src/app.py:63-70` - `api_users` 路由，无鉴权调用 `run_user_lookup` 并将结果（含 password）返回给客户端
 
 ## 复现证明
 

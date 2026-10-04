@@ -1,4 +1,4 @@
-# 鉴权文档 — MemoBoard（项目 ID=11）
+# 鉴权文档 - MemoBoard（项目 ID=11）
 
 ## 概述
 
@@ -18,8 +18,8 @@ MemoBoard 使用 Flask session（cookie-based）进行身份认证。认证逻�
 - **类型**：Flask 默认 cookie session（签名 cookie）
 - **secret_key**：`os.urandom(32)`，每次进程启动重新生成（非硬编码密钥）
 - **session 字段**：
-  - `session["name"]` — 用户名
-  - `session["role"]` — 角色（"user" 或 "admin"）
+  - `session["name"]` - 用户名
+  - `session["role"]` - 角色（"user" 或 "admin"）
 
 ## 角色与权限
 

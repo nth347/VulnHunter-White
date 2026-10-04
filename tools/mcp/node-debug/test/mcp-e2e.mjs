@@ -1,5 +1,5 @@
 /**
- * MCP End-to-End Test — simulates an AI agent using the Node Debug MCP
+ * MCP End-to-End Test - simulates an AI agent using the Node Debug MCP
  * to analyze a vulnerable web application.
  *
  * Usage:
@@ -141,7 +141,7 @@ async function run() {
   ok(status.state === "running", `Status: ${status.state}`);
 
   // ── Phase 2: Reconnaissance ───────────────────────────────────
-  console.log("\n── Phase 2: Recon — scripts & runtime ──");
+  console.log("\n── Phase 2: Recon - scripts & runtime ──");
 
   const scripts = await mcp.tool("debug_list_scripts", { filter: "vuln-app" });
   ok(scripts.count > 0, `Found target script: ${scripts.scripts[0]?.url}`);
@@ -150,7 +150,7 @@ async function run() {
   const src = await mcp.tool("debug_get_script_source", { scriptId: targetScriptId });
   ok(src.source.includes("findUser"), "Source contains findUser function");
   ok(src.source.includes("exec(cmd"), "Source contains exec() call");
-  ok(src.source.includes("eval(expr)"), "Source contains eval() — SSTI vulnerability");
+  ok(src.source.includes("eval(expr)"), "Source contains eval() - SSTI vulnerability");
 
   const searchExec = await mcp.tool("debug_search_in_scripts", { query: "exec\\(", isRegex: true });
   ok(searchExec.totalMatches > 0, `Found ${searchExec.totalMatches} exec() calls`);
@@ -163,7 +163,7 @@ async function run() {
   ok(info.heap.usedSize > 0, `Heap: ${(info.heap.usedSize / 1024 / 1024).toFixed(1)}MB used`);
 
   // ── Phase 3: SQL Injection Analysis ───────────────────────────
-  console.log("\n── Phase 3: SQL Injection — breakpoint on findUser ──");
+  console.log("\n── Phase 3: SQL Injection - breakpoint on findUser ──");
 
   // Find the line number of findUser
   const findUserSearch = await mcp.tool("debug_search_in_scripts", {
@@ -252,7 +252,7 @@ async function run() {
   await mcp.tool("debug_remove_breakpoint", { breakpointId: "bp-1" });
 
   // ── Phase 5: SSTI Analysis ────────────────────────────────────
-  console.log("\n── Phase 5: SSTI — breakpoint on renderTemplate ──");
+  console.log("\n── Phase 5: SSTI - breakpoint on renderTemplate ──");
 
   const evalSearch = await mcp.tool("debug_search_in_scripts", {
     query: "return String(eval(expr))",
@@ -295,7 +295,7 @@ async function run() {
   await mcp.tool("debug_remove_breakpoint", { breakpointId: "bp-2" });
 
   // ── Phase 6: Command Injection ────────────────────────────────
-  console.log("\n── Phase 6: Command Injection — breakpoint on exec() ──");
+  console.log("\n── Phase 6: Command Injection - breakpoint on exec() ──");
 
   const execSearch = await mcp.tool("debug_search_in_scripts", {
     query: "exec(cmd,",
@@ -347,7 +347,7 @@ async function run() {
   // ── Phase 7: Runtime Introspection ────────────────────────────
   console.log("\n── Phase 7: Runtime introspection via evaluate ──");
 
-  // ESM modules scope variables privately — to access `db`, we need to
+  // ESM modules scope variables privately - to access `db`, we need to
   // pause inside the module and evaluate on the call frame.
   // Set a breakpoint on the /debug endpoint which accesses db.
   const debugSearch = await mcp.tool("debug_search_in_scripts", {
@@ -388,7 +388,7 @@ async function run() {
     ok(false, "Could not inspect users array");
   }
 
-  // Check sessions — still paused in module scope
+  // Check sessions - still paused in module scope
   const sessionCount = await mcp.tool("debug_evaluate", {
     expression: "db.sessions.size",
   });

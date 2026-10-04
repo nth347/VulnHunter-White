@@ -82,13 +82,13 @@ def ping_host(host: str) -> str:
 
 1. （可选）利用 SQLi 漏洞 `GET /api/users?name=' OR 1=1 --` 获取 admin 密码
 2. `POST /api/login` 用 admin/admin123 登录，获取 admin 会话 cookie
-3. `GET /api/tools/ping?host=;id` — shell 执行 `echo MEMO-PING ;id`，分号后注入 `id` 命令
+3. `GET /api/tools/ping?host=;id` - shell 执行 `echo MEMO-PING ;id`，分号后注入 `id` 命令
 4. 响应正文包含 `id` 命令输出（uid/gid/groups）
 
 ## 同根因受影响点
 
-- `src/board/engine.py:79` — `ping_host` 函数，`subprocess.getoutput` 拼接 shell 命令（主报告点）
-- `src/app.py:97-105` — `api_ping` 路由，将用户可控的 `host` 参数传入 `ping_host` 并返回执行结果
+- `src/board/engine.py:79` - `ping_host` 函数，`subprocess.getoutput` 拼接 shell 命令（主报告点）
+- `src/app.py:97-105` - `api_ping` 路由，将用户可控的 `host` 参数传入 `ping_host` 并返回执行结果
 
 ## 复现证明
 
@@ -139,5 +139,5 @@ def ping_host(host: str) -> str:
 - CVSS 3.1：7.2
 - 评分向量：CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H
 - 价值分层：有 CVE 价值（cve_candidate）
-- 分层理由：Authenticated admin can inject shell metacharacters into the ping host parameter, achieving full RCE with command output echoed back in the HTTP response. The admin session is obtainable via the unauthenticated SQLi on /api/users (chained attack), making this reachable from anonymous access. Classic command injection with clear RCE impact — CVE-worthy.
+- 分层理由：Authenticated admin can inject shell metacharacters into the ping host parameter, achieving full RCE with command output echoed back in the HTTP response. The admin session is obtainable via the unauthenticated SQLi on /api/users (chained attack), making this reachable from anonymous access. Classic command injection with clear RCE impact - CVE-worthy.
 - 根因合并键：rce:ping_host

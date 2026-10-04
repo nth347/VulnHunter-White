@@ -2,17 +2,27 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import functools
+
 from app.services.report import (
     CHINESE_TITLE_ERROR,
     chinese_title_block_reason,
-    ensure_search_fingerprint_section,
     extract_asset_queries,
     format_produced_at,
     is_placeholder_query,
-    replace_search_fingerprint_section,
-    stamp_produced_at,
-    write_report_md,
 )
+from app.services.report import ensure_search_fingerprint_section as _ensure_fp
+from app.services.report import replace_search_fingerprint_section as _replace_fp
+from app.services.report import stamp_produced_at as _stamp_produced_at
+from app.services.report import write_report_md as _write_report_md
+
+# This module asserts Chinese report structure, so it pins the language instead
+# of taking the default (English); the English report is covered by
+# tests/test_i18n_english.py.
+ensure_search_fingerprint_section = functools.partial(_ensure_fp, language="zh")
+replace_search_fingerprint_section = functools.partial(_replace_fp, language="zh")
+stamp_produced_at = functools.partial(_stamp_produced_at, language="zh")
+write_report_md = functools.partial(_write_report_md, language="zh")
 from app.services.paths import vuln_dir
 from app.tools import ToolContext, registry
 
@@ -245,7 +255,7 @@ def test_finish_fix_keeps_original_produced_at(tmp_env, project):
     report = (vuln_dir(project, vuln_id) / "report.md").read_text(encoding="utf-8")
     from app.services.report import produced_at_line
 
-    assert produced_at_line(created) in report
+    assert produced_at_line(created, "zh") in report
     assert "updated" in report
 
 
@@ -393,7 +403,11 @@ def test_extract_product_hints_skips_placeholders():
 
 
 def test_missing_report_headings_bypass_requires_patch_section():
-    from app.services.report import missing_report_headings
+    import functools
+
+    from app.services.report import missing_report_headings as _missing
+
+    missing_report_headings = functools.partial(_missing, language="zh")
 
     minimal = "\n".join(
         [

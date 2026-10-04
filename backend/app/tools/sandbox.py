@@ -232,7 +232,7 @@ def block_dangerous_shell(command: str, project_id: int, *, workspace_root: Path
     for b in banned:
         if b in lowered:
             raise SandboxError(f"命令包含禁止模式: {b}")
-    # Force DecompileJava tool — do not bypass index via raw CLI
+    # Force DecompileJava tool - do not bypass index via raw CLI
     for tool in ("jadx", "cfr", "procyon", "fernflower"):
         if re.search(rf"(^|[;&|`$\s\\/]){tool}(\.bat|\.cmd|\.exe)?(\s|$)", lowered):
             raise SandboxError(f"禁止直接调用 {tool}；请使用 DecompileJava 工具（含索引与去重）")

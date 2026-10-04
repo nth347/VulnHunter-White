@@ -1,0 +1,10 @@
+Mining mode: ${audit_mode_label}. ${audit_mode_hint}
+Project ID=${project_id}. Source is in src/.
+Review judged the current lab **falsely ready** (the container runs but the business entry is unusable) and returned it for a rebuild this round.
+This round is still the Reviewer's **separate environment-setup round**; do not review vulnerabilities.
+Do not just `docker start` the application container and FinishLab. First bring up the dependency sidecars with compose, then confirm the business URL (login page/portal/health check, not a Tomcat/nginx default page 200) is genuinely reachable.
+Repair or rebuild the reusable web lab under env/ (prefer an existing Dockerfile / compose in src/) and write env/env.json.
+The application under test must be built from the current code in src/ (the latest version); do not swap in an older release, an old git tag, an old application image or a vulhub historical lab to hit a known finding. Dependency images such as mysql/redis follow the project's needs.
+Tag a self-built image `${lab_image}`, the web container `${lab_container}`, dependency containers `${lab_container}-<role>`; the compose project name `${lab_compose_project}`. Every container and self-built image must carry the labels `${lab_label_args}`.
+Once the business application is reachable with accepted=true / status=running, call FinishLab; if it cannot be repaired, FinishLab(skipped=true, reason=...).
+This is not "creating an exploitation environment": build a default-deployment lab, and do not plant payloads or change non-application configuration in the container.

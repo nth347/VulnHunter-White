@@ -94,9 +94,9 @@ class Project(Base):
     code_intel_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     code_intel_source_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     code_intel_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # bounty | full | custom — set at create time; change only while paused or completed
+    # bounty | full | custom - set at create time; change only while paused or completed
     audit_mode: Mapped[str] = mapped_column(String(32), default="bounty")
-    # web | library | mixed — audit object profile; orthogonal to audit_mode / mining paths
+    # web | library | mixed - audit object profile; orthogonal to audit_mode / mining paths
     target_kind: Mapped[str] = mapped_column(String(32), default="web")
     # custom 模式：绑定全局预设 id（删库校验）+ 切换时快照名称/正文
     custom_audit_mode_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -113,7 +113,7 @@ class Project(Base):
     attack_chain_done: Mapped[bool] = mapped_column(Boolean, default=False)
     # Reviewer 动态验证（Docker 靶场 / 先 HTTP PoC，PoC 不可用再 debug MCP）；默认关闭，仅静态复核
     dynamic_verify_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
-    # off | lab | harness — 与 dynamic_verify_enabled 同步；旧库仅有布尔时 enabled=true 视为 lab
+    # off | lab | harness - 与 dynamic_verify_enabled 同步；旧库仅有布尔时 enabled=true 视为 lab
     dynamic_verify_mode: Mapped[str] = mapped_column(String(32), default="off")
     # 挖掘路径：启发式按文件 / 快速按 Sink / 历史漏洞绕过；至少开一条
     heuristic_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -266,7 +266,7 @@ class Vuln(Base):
     line_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source_sink: Mapped[str | None] = mapped_column(Text, nullable=True)
     auth_premise: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # default | specific — 默认配置 / 特定配置（官方已警示的风险配置不算 specific）
+    # default | specific - 默认配置 / 特定配置（官方已警示的风险配置不算 specific）
     config_premise: Mapped[str | None] = mapped_column(String(32), nullable=True)
     http_request: Mapped[str | None] = mapped_column(Text, nullable=True)
     poc_code: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -274,25 +274,25 @@ class Vuln(Base):
     intended_behavior: Mapped[bool] = mapped_column(Boolean, default=False)
     # pending_review | returned | confirmed | false_positive | static_only | merged
     status: Mapped[str] = mapped_column(String(64), default="pending_review")
-    # none | submitted | ignored — 用户对产出的提交跟踪，与审核 status 独立
+    # none | submitted | ignored - 用户对产出的提交跟踪，与审核 status 独立
     tracking_status: Mapped[str] = mapped_column(String(32), default="none")
     evidence_level: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # dynamic | static_only | mcp | harness
     harness_depth: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    # sink | module | integration — per-vuln harness tier; L3 success → evidence dynamic
+    # sink | module | integration - per-vuln harness tier; L3 success → evidence dynamic
     integration_runtime: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    # sandbox | host_fallback — how L3 integration verify ran
+    # sandbox | host_fallback - how L3 integration verify ran
     attack_surface: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    # frontend | backend — Reviewer 确认时标注
+    # frontend | backend - Reviewer 确认时标注
     required_account: Mapped[str | None] = mapped_column(String(32), nullable=True)
     exposure_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    # direct | indirect_consumer — 组件无直接攻击面、依赖上游应用传入输入
+    # direct | indirect_consumer - 组件无直接攻击面、依赖上游应用传入输入
     upstream_chain_proven: Mapped[bool] = mapped_column(Boolean, default=False)
-    # user | admin — 仅后台漏洞需要
+    # user | admin - 仅后台漏洞需要
     submission_tier: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # cve_candidate | low_impact | duplicate_grouped
     submission_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # heuristic | fast | bypass | unconstrained — SubmitVuln 时按 Worker 角色写入
+    # heuristic | fast | bypass | unconstrained - SubmitVuln 时按 Worker 角色写入
     mining_path: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # Reviewer：本条是否达成前台 RCE 效果（无约束扫描结束条件由 Reviewer 判定）
     rce_effect: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
@@ -304,10 +304,10 @@ class Vuln(Base):
     # Consecutive Reviewer timeouts; >= before_static forces static retry; >= before_static+1 give up as FP.
     review_timeout_streak: Mapped[int] = mapped_column(Integer, default=0)
     return_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # timeout — system closed after review timeouts; empty/null — Reviewer MarkFalsePositive
+    # timeout - system closed after review timeouts; empty/null - Reviewer MarkFalsePositive
     fp_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
     report_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    # none | pending | awaiting_user | verified | failed | skipped — Verifier 互联网复测
+    # none | pending | awaiting_user | verified | failed | skipped - Verifier 互联网复测
     verifier_status: Mapped[str] = mapped_column(String(32), default="none")
     verifier_verified_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     verifier_poc: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -318,7 +318,7 @@ class Vuln(Base):
     verifier_ask_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     verifier_user_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
     verifier_consent: Mapped[bool] = mapped_column(Boolean, default=False)
-    # none | awaiting_user — Reviewer RunCode 连续失败后 AskUser
+    # none | awaiting_user - Reviewer RunCode 连续失败后 AskUser
     harness_ask_status: Mapped[str] = mapped_column(String(32), default="none")
     harness_ask_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     harness_user_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -342,7 +342,7 @@ class AttackChain(Base):
     vuln_ids: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     report_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    # static | verified | skipped_interaction — lab dynamic verify outcome for detailed chains
+    # static | verified | skipped_interaction - lab dynamic verify outcome for detailed chains
     verify_status: Mapped[str] = mapped_column(String(32), default="static")
     # Relative path to chain.py when dynamically verified (or written then skipped)
     script_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
@@ -457,7 +457,7 @@ _schema_lock = threading.Lock()
 # Windows: use forward slashes so sqlite3 does not mis-parse drive paths.
 # NullPool: check_same_thread=False otherwise selects QueuePool(5+10). Nested
 # SessionLocal (stale-claim release, ensure_schema inspect+begin) then deadlocks
-# the pool — /api/projects hangs while in-memory routes like llm-threads still work.
+# the pool - /api/projects hangs while in-memory routes like llm-threads still work.
 engine = create_engine(
     f"sqlite:///{DB_PATH.resolve().as_posix()}",
     connect_args={
@@ -526,7 +526,7 @@ def _ensure_columns() -> None:
             "llm_model": "VARCHAR(256)",
             "worker_hint": "TEXT",
             "recon_hint": "TEXT",
-            "language": "VARCHAR(8) DEFAULT 'zh'",
+            "language": "VARCHAR(8) DEFAULT 'en'",
             "max_token_usage": "INTEGER DEFAULT 0",
             "code_intel_enabled": "BOOLEAN DEFAULT 0",
             "code_intel_status": "VARCHAR(32) DEFAULT 'pending'",
@@ -719,7 +719,7 @@ def ensure_schema() -> None:
         existing = set(inspect(engine).get_table_names())
         missing = [t for t in REQUIRED_TABLES if t not in existing]
         if missing:
-            # Retry once after create_all — handles rare SQLite lock races.
+            # Retry once after create_all - handles rare SQLite lock races.
             Base.metadata.create_all(bind=engine)
             existing = set(inspect(engine).get_table_names())
             missing = [t for t in REQUIRED_TABLES if t not in existing]

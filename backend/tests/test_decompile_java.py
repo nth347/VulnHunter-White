@@ -225,7 +225,7 @@ def test_skip_when_java_source_exists(tmp_env, project, monkeypatch):
         "DecompileJava",
         {"path": "src/WEB-INF/classes/com/demo/Hello.class"},
     )
-    # may be queued then skip in worker — wait
+    # may be queued then skip in worker - wait
     deadline = time.time() + 5
     status = out
     jid = out.get("job_id")

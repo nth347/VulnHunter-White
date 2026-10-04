@@ -27,6 +27,7 @@ from ..harness_depth import (
     is_integration_depth,
     parse_harness_depth,
 )
+from ..i18n import project_language
 from ..models import Project, SessionLocal, Vuln
 from ..mining_paths import MINING_PATH_UNCONSTRAINED, normalize_mining_path
 from ..services.cli_tool_index import search_cli_tools
@@ -469,6 +470,7 @@ def _confirm_vuln(ctx, args: dict[str, Any]) -> dict[str, Any]:
             submission_tier=args.get("submission_tier"),
             submission_reason=args.get("submission_reason"),
             root_cause_key=args.get("root_cause_key"),
+            language=project_language(ctx.project_id),
         )
     except (Cvss31Error, ValueError) as exc:
         return {"ok": False, "error": str(exc)}
@@ -1135,7 +1137,7 @@ def register_reviewer_tools() -> None:
                 "有漏洞环境时若项目指纹仍缺，用 CollectLabFingerprints 升级项目共享指纹，"
                 "再传入 fofa_fingerprint / x_fingerprint；未传且报告仍是占位语句时会写入 docs/app-fingerprints.json 的共享指纹。"
                 "\n\n"
-                + cvss_scoring_prompt()
+                + cvss_scoring_prompt(language="zh")
             ),
             parameters={
                 "type": "object",
@@ -1199,7 +1201,7 @@ def register_reviewer_tools() -> None:
                             "有回显或外带内网信息并读到元数据/内网正文才可将 C 标 H。"
                             "完整度量标准见本工具描述。"
                             "\n\n"
-                            + cvss_scoring_prompt()
+                            + cvss_scoring_prompt(language="zh")
                         ),
                     },
                     "submission_tier": {
@@ -1443,7 +1445,7 @@ def register_reviewer_tools() -> None:
             name="ReturnToWorker",
             description=(
                 "仅当入口/sink/根因分析错了、需要 Worker 重新读源码补分析债务时打回。"
-                "不要用来改 PoC、CLI 形态、指纹、危害口径或报告文案——那些由本轮 Reviewer Write 后 ConfirmVuln。"
+                "不要用来改 PoC、CLI 形态、指纹、危害口径或报告文案--那些由本轮 Reviewer Write 后 ConfirmVuln。"
                 "误报请用 MarkFalsePositive。不要用打回做同根因合并。"
             ),
             parameters={

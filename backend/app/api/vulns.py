@@ -15,6 +15,8 @@ from sqlalchemy import cast, func, or_
 from sqlalchemy.orm import joinedload, load_only
 from sqlalchemy.types import String
 
+from ..i18n import project_language
+from ..report_sections import label_alternation
 from ..target_kind import normalize_target_kind
 from ..models import Project, SessionLocal, Vuln
 from ..schemas import (
@@ -68,7 +70,9 @@ from ..vuln_types import (
 
 router = APIRouter(prefix="/api/vulns", tags=["vulns"])
 _CVSS_SCORE_RE = re.compile(r"-\s*CVSS\s*3\.[01][:：]\s*(\d+(?:\.\d+)?)")
-_SCORE_RE = re.compile(r"-\s*校准得分[:：]\s*(-?\d+(?:\.\d+)?)")
+_SCORE_RE = re.compile(
+    rf"-\s*(?:{label_alternation('calibration_score')})[:：]\s*(-?\d+(?:\.\d+)?)"
+)
 _UNSAFE_FILENAME_RE = re.compile(r'[\\/:*?"<>|\x00-\x1f]+')
 _CREATED_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
 ALLOWED_TRACKING_STATUSES = frozenset({"none", "submitted", "ignored"})
@@ -138,7 +142,11 @@ def _read_report_md(v: Vuln) -> str | None:
     path = _report_file(v, "report")
     if not path.is_file():
         return None
-    return stamp_produced_at(path.read_text(encoding="utf-8", errors="ignore"), v.created_at)
+    return stamp_produced_at(
+        path.read_text(encoding="utf-8", errors="ignore"),
+        v.created_at,
+        project_language(v.project_id),
+    )
 
 
 def _read_advisory_md(v: Vuln) -> str | None:

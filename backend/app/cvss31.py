@@ -312,7 +312,7 @@ def parse_cvss31(raw: Any) -> Cvss31Result:
 def stamp_advisory_cvss31(text: str, result: Cvss31Result) -> str:
     """Replace CVSS 3.x/4.x lines in advisory.md with the computed CVSS 3.1 line."""
     body = (text or "").replace("\r\n", "\n")
-    cvss_line = f"- **CVSS 3.1:** {result.score:.1f} {result.severity_en} — `{result.vector}`"
+    cvss_line = f"- **CVSS 3.1:** {result.score:.1f} {result.severity_en} - `{result.vector}`"
     sev_line = f"- **Severity:** {result.severity_en}"
     if _ADVISORY_SEVERITY_LINE_RE.search(body):
         body = _ADVISORY_SEVERITY_LINE_RE.sub(sev_line, body, count=1)

@@ -447,16 +447,16 @@ pytest
 
 ## 目录
 
-- `backend/app` — FastAPI、Agent 循环、工具、调度
-- `frontend` — React + Tailwind UI
-- `templates` — 文档模板
-- `tools/mcp` — Java / Node / Python debug MCP
-- `tools/cli` — 用户放置的 CLI 工具（一目录一工具；Reviewer SearchTools）
-- `docker/sandbox` — 局部验证 harness 沙箱镜像（L1/L2）
-- `docker/integration-sandbox` — L3 集成验证沙箱镜像
-- `scripts` — 启停、测试、构建沙箱
-- `data/projects/{id}` — 项目隔离工作区（运行态，不要提交）
-- `docs/DESIGN.md` — 架构与设计说明
+- `backend/app` - FastAPI、Agent 循环、工具、调度
+- `frontend` - React + Tailwind UI
+- `templates` - 文档模板
+- `tools/mcp` - Java / Node / Python debug MCP
+- `tools/cli` - 用户放置的 CLI 工具（一目录一工具；Reviewer SearchTools）
+- `docker/sandbox` - 局部验证 harness 沙箱镜像（L1/L2）
+- `docker/integration-sandbox` - L3 集成验证沙箱镜像
+- `scripts` - 启停、测试、构建沙箱
+- `data/projects/{id}` - 项目隔离工作区（运行态，不要提交）
+- `docs/DESIGN.md` - 架构与设计说明
 
 ## 设计文档
 

@@ -106,7 +106,7 @@ def run_tests():
 
     print(f"\n=== Summary: {sum(results)}/{len(results)} tests passed ===")
     if all(results):
-        print("[+] VULNERABILITY CONFIRMED: Unauthenticated IDOR — any user can read any note by id")
+        print("[+] VULNERABILITY CONFIRMED: Unauthenticated IDOR - any user can read any note by id")
         return 0
     else:
         print("[-] Some tests failed")

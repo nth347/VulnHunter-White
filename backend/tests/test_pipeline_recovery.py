@@ -1037,7 +1037,7 @@ def test_sandbox_write_local_fail(tmp_env, project):
 def test_missing_field_is_call_not_local(tmp_env, project):
     out = registry.dispatch(_ctx(project, "worker"), "SubmitVuln", {"title": "x"})
     assert out["ok"] is False
-    # SubmitVuln doesn't set error_class call explicitly — ensure not local jsonl
+    # SubmitVuln doesn't set error_class call explicitly - ensure not local jsonl
     path = tool_exec_errors_path(project)
     if path.exists():
         assert "SubmitVuln" not in path.read_text(encoding="utf-8")

@@ -66,7 +66,9 @@ from ..dynamic_verify import (
 )
 from ..mining_paths import HEURISTIC_LITE_WEIGHT, heuristic_lite_active, mining_path_label
 from ..models import FileWeight, PhaseRun, Project, SessionLocal, Sink, Source, Vuln, utcnow
-from ..prompts import load_prompt, render_prompt
+from ..i18n import project_language
+from ..prompts import load_prompt, normalize_language, render_prompt
+from ..report_sections import outline_block
 from ..target_kind import (
     initial_hint as target_kind_initial_hint,
     normalize_target_kind,
@@ -1551,6 +1553,11 @@ def _read_audit_mode(project_id: int) -> str:
         return normalize_audit_mode(None if not proj else proj.audit_mode)
 
 
+def _read_language(project_id: int) -> str:
+    """Prompt language for a project; drives which prompt sibling gets loaded."""
+    return project_language(project_id)
+
+
 def _read_target_kind(project_id: int) -> str:
     with SessionLocal() as db:
         proj = db.get(Project, project_id)
@@ -1846,12 +1853,31 @@ def _target_kind_vars(project_id: int) -> dict[str, str]:
 
 
 def _agent_prompt_vars(project_id: int) -> dict[str, str]:
-    return {**_audit_mode_vars(project_id), **_target_kind_vars(project_id)}
+    return {
+        "project_id": str(project_id),
+        **_audit_mode_vars(project_id),
+        **_target_kind_vars(project_id),
+    }
 
 
-def _target_kind_overlay(project_id: int) -> str:
+def _language_contract(language: str) -> str:
+    """Output-language contract appended to every system prompt.
+
+    Instructions may still be written in Chinese for prompts that have no
+    English sibling yet; this is what makes the model's *output* follow the
+    project language, and it injects the canonical report outline so the
+    headings it writes match the ones report.py parses.
+    """
+    return render_prompt(
+        f"language/{normalize_language(language)}.md",
+        report_outline=outline_block(language),
+    ).strip()
+
+
+def _target_kind_overlay(project_id: int, language: str | None = None) -> str:
     kind = _read_target_kind(project_id)
-    return load_prompt(f"target_kinds/{kind}.md").strip()
+    lang = language or _read_language(project_id)
+    return load_prompt(f"target_kinds/{kind}.md", language=lang).strip()
 
 
 _POC_PROMPT_PHASES = frozenset(
@@ -1873,14 +1899,16 @@ def _phase_system_prompt(
     *,
     verify_mode: str | None = None,
 ) -> str:
-    base = load_prompt(name).rstrip()
+    lang = _read_language(project_id)
+    base = load_prompt(name, language=lang).rstrip()
     if name == "worker-unconstrained.md":
-        overlay = load_prompt("modes/bounty.md").strip()
-        parts = [base, overlay, _target_kind_overlay(project_id)]
+        overlay = load_prompt("modes/bounty.md", language=lang).strip()
+        parts = [base, overlay, _target_kind_overlay(project_id, lang)]
         if name in _POC_PROMPT_PHASES:
-            parts.append(load_prompt("poc.md").strip())
+            parts.append(load_prompt("poc.md", language=lang).strip())
         if name in _REPORT_FORMAT_PHASES:
-            parts.append(load_prompt("report-formats.md").strip())
+            parts.append(load_prompt("report-formats.md", language=lang).strip())
+        parts.append(_language_contract(lang))
         return "\n\n".join(p for p in parts if p) + "\n"
     mode = _read_audit_mode(project_id)
     if mode == AUDIT_MODE_CUSTOM:
@@ -1888,26 +1916,24 @@ def _phase_system_prompt(
             proj = db.get(Project, project_id)
             overlay = project_custom_overlay(proj).strip()
         if not overlay:
-            overlay = (
-                "## 当前挖掘模式：自定义模式\n\n"
-                "自定义提示词快照为空；请勿提交或确认任何漏洞，并提示用户在设置中配置后再续跑。"
-            )
+            overlay = load_prompt("modes/custom-empty.md", language=lang).strip()
     else:
-        overlay = load_prompt(f"modes/{mode}.md").strip()
-    parts = [base, overlay, _target_kind_overlay(project_id)]
+        overlay = load_prompt(f"modes/{mode}.md", language=lang).strip()
+    parts = [base, overlay, _target_kind_overlay(project_id, lang)]
     if name in _POC_PROMPT_PHASES:
-        parts.append(load_prompt("poc.md").strip())
+        parts.append(load_prompt("poc.md", language=lang).strip())
     if name in _REPORT_FORMAT_PHASES:
-        parts.append(load_prompt("report-formats.md").strip())
+        parts.append(load_prompt("report-formats.md", language=lang).strip())
     if name == "reviewer.md":
-        parts.append(load_prompt("cvss.md").strip())
+        parts.append(load_prompt("cvss.md", language=lang).strip())
         chosen = verify_mode if verify_mode is not None else _read_dynamic_verify_mode(project_id)
         if chosen == VERIFY_MODE_OFF:
-            parts.append(load_prompt("verify/static.md").strip())
+            parts.append(load_prompt("verify/static.md", language=lang).strip())
         elif chosen == VERIFY_MODE_HARNESS:
-            parts.append(load_prompt("verify/harness.md").strip())
+            parts.append(load_prompt("verify/harness.md", language=lang).strip())
         elif chosen == VERIFY_MODE_LAB:
-            parts.append(load_prompt("verify/lab.md").strip())
+            parts.append(load_prompt("verify/lab.md", language=lang).strip())
+    parts.append(_language_contract(lang))
     return "\n\n".join(p for p in parts if p) + "\n"
 
 
@@ -2303,7 +2329,14 @@ def _truthy(value: Any) -> bool:
 
 
 def _initial_prompt(name: str, **kwargs: object) -> str:
-    """Render a user-message document from prompts/initial/ and inject it as-is."""
+    """Render a user-message document from prompts/initial/ and inject it as-is.
+
+    Callers pass project_id as a template var; it also selects the language
+    sibling, so every call site must supply it or the prompt falls back to the
+    no-context default.
+    """
+    project_id = kwargs.get("project_id")
+    language = _read_language(int(project_id)) if project_id is not None else None
     kwargs.setdefault("audit_mode", "bounty")
     kwargs.setdefault("audit_mode_label", audit_mode_label("bounty"))
     kwargs.setdefault("audit_mode_hint", audit_mode_initial_hint("bounty"))
@@ -2313,7 +2346,7 @@ def _initial_prompt(name: str, **kwargs: object) -> str:
     kwargs.setdefault("prior_basis", "static_only")
     kwargs.setdefault("prior_conclusion", "静态结论")
     kwargs.setdefault("unconstrained_note", "")
-    return render_prompt(f"initial/{name}", **kwargs)
+    return render_prompt(f"initial/{name}", language=language, **kwargs)
 
 
 def _prompt_with_summary(
@@ -3815,10 +3848,12 @@ def _run_recon_gated_session(
     extra_label: str | None = None,
     prompt_vars: dict[str, Any] | None = None,
 ) -> bool:
-    system = load_prompt(prompt_name)
-    tk = _target_kind_overlay(project_id)
+    lang = _read_language(project_id)
+    system = load_prompt(prompt_name, language=lang)
+    tk = _target_kind_overlay(project_id, lang)
     if tk:
         system = f"{system.rstrip()}\n\n{tk}\n"
+    system = f"{system.rstrip()}\n\n{_language_contract(lang)}\n"
     vars_ = {
         "project_id": project_id,
         **_target_kind_vars(project_id),
@@ -3934,10 +3969,12 @@ def _chunk_list(paths: list[str], chunk_size: int) -> list[list[str]]:
 
 
 def _run_recon_marking(project_id: int, cancel: threading.Event) -> None:
-    system = load_prompt("recon-mark.md")
-    tk = _target_kind_overlay(project_id)
+    lang = _read_language(project_id)
+    system = load_prompt("recon-mark.md", language=lang)
+    tk = _target_kind_overlay(project_id, lang)
     if tk:
         system = f"{system.rstrip()}\n\n{tk}\n"
+    system = f"{system.rstrip()}\n\n{_language_contract(lang)}\n"
     llm = resolve_llm("recon", project_id=project_id)
     batch_size = max(1, int(settings.recon_mark_batch_size))
     sub_batch_size = max(1, int(settings.recon_mark_sub_batch_size))
@@ -5063,7 +5100,10 @@ def _run_fix(project_id: int, vuln_id: int) -> None:
 
 def _lab_system_prompt(project_id: int) -> str:
     names = lab_naming(project_id)
-    return f"{render_prompt('reviewer-lab.md', **names)}\n\n{render_prompt('docker.md', **names)}\n"
+    lang = _read_language(project_id)
+    lab = render_prompt("reviewer-lab.md", language=lang, **names)
+    docker = render_prompt("docker.md", language=lang, **names)
+    return f"{lab}\n\n{docker}\n\n{_language_contract(lang)}\n"
 
 
 def _run_reviewer_lab(project_id: int) -> None:
@@ -5087,11 +5127,10 @@ def _run_reviewer_lab(project_id: int) -> None:
 
         system = _lab_system_prompt(project_id)
         repairs_block = format_lab_repairs_for_prompt(project_id)
-        lab_body = _initial_prompt(
-            _lab_initial_prompt_doc(project_id),
-            **_agent_prompt_vars(project_id),
-            **lab_naming(project_id),
-        )
+        # Both dicts carry project_id, so merge before splatting rather than
+        # passing it twice.
+        lab_vars = {**_agent_prompt_vars(project_id), **lab_naming(project_id)}
+        lab_body = _initial_prompt(_lab_initial_prompt_doc(project_id), **lab_vars)
         if repairs_block:
             lab_body = f"{repairs_block}\n{lab_body}"
         user = _prompt_with_summary("reviewer-lab", project_id, lab_body)
@@ -5764,7 +5803,7 @@ def _run_attack_chain_once(project_id: int) -> None:
             return
         _finish_phase_run(run_id, "completed" if result.ok else "failed", result.error)
         if not is_attack_chain_done(project_id):
-            # Agent exited without FinishAttackChain — still close the gate.
+            # Agent exited without FinishAttackChain - still close the gate.
             mark_attack_chain_done(
                 project_id,
                 reason=f"会话结束未显式收工（{result.stop_reason}）",

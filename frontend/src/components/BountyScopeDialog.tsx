@@ -55,7 +55,7 @@ export function BountyScopeButton({ className }: { className?: string }) {
                           <Badge variant="destructive">{t('bountyScope.excluded')}</Badge>
                         )}
                       </td>
-                      <td className="py-2 align-top text-muted-foreground">{text.note || '—'}</td>
+                      <td className="py-2 align-top text-muted-foreground">{text.note || '-'}</td>
                     </tr>
                   )
                 })}

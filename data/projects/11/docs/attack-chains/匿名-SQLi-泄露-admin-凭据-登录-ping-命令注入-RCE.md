@@ -13,7 +13,7 @@ vuln_ids:
 - 漏洞 184（RCE）：`GET /api/tools/ping?host=` 需 admin 会话（`session["role"]=="admin"`），`host` 参数拼入 `subprocess.getoutput(f"echo MEMO-PING {host}")`。
 - 串联关键：SQLi 泄露的 admin 明文密码可通过 `POST /api/login` 的 `find_user()` 参数化校验（store.py:10-16），登录后 Flask session 设置 `session["name"]="admin"` + `session["role"]="admin"`，满足 ping 接口的鉴权前提。
 
-### Step 1 — 匿名 SQLi 拖取 admin 密码（漏洞 183）
+### Step 1 - 匿名 SQLi 拖取 admin 密码（漏洞 183）
 
 匿名发送：
 ```
@@ -37,7 +37,7 @@ Host: TARGET:5000
 
 攻击者获得 admin 明文密码 `admin123`。
 
-### Step 2 — 登录获取 admin 会话
+### Step 2 - 登录获取 admin 会话
 
 用泄露的凭据登录：
 ```
@@ -54,7 +54,7 @@ Content-Type: application/json
 
 攻击者获得 admin 会话 cookie。
 
-### Step 3 — ping 命令注入 RCE（漏洞 184）
+### Step 3 - ping 命令注入 RCE（漏洞 184）
 
 带 admin session cookie 发送：
 ```

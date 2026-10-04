@@ -358,7 +358,7 @@ def resolve_jadx_binary(path_override: str | None = None) -> str | None:
         which = shutil.which(configured)
         if which:
             return which
-        # Absolute/relative path that does not exist — do not silently fall back to PATH
+        # Absolute/relative path that does not exist - do not silently fall back to PATH
         if path_override is not None and (path_override or "").strip():
             return None
         if Path(configured).is_absolute() or "/" in configured or "\\" in configured:
@@ -820,7 +820,7 @@ def _filter_input_for_scope(
     cn = (class_name or "").strip().replace(".", "/")
     pkg = (package or "").strip().replace(".", "/").strip("/")
     if not cn and not pkg:
-        # whole archive — still skip classes that already have source when jar
+        # whole archive - still skip classes that already have source when jar
         if source_abs.suffix.lower() == ".class":
             return None
         return _copy_jar_missing_only(source_abs, work_dir, project_id)
@@ -881,7 +881,7 @@ def _copy_jar_missing_only(source_abs: Path, work_dir: Path, project_id: int) ->
         if not source_java_exists(project_id, fqcn, cache=cache):
             missing.append(name)
     if not missing:
-        return work_dir  # empty — all have source
+        return work_dir  # empty - all have source
     if len(missing) == len(names):
         return None  # use original jar
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -1175,7 +1175,7 @@ def submit_decompile(
             if st == _STATUS_READY and (not out_abs or not out_abs.is_dir()):
                 pass  # re-queue below
             elif st in (_STATUS_QUEUED, _STATUS_RUNNING):
-                pass  # no live executor job (process restart) — re-queue
+                pass  # no live executor job (process restart) - re-queue
             elif st == _STATUS_SKIPPED and not force:
                 return _entry_to_result(entry)
             elif st == _STATUS_FAILED and not force:

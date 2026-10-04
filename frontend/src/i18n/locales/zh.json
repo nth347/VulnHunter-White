@@ -12,7 +12,7 @@
     "logout": "退出",
     "project": "项目",
     "all": "全部",
-    "none": "—",
+    "none": "-",
     "yes": "是",
     "no": "否",
     "requestFailed": "请求失败",

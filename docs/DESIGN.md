@@ -205,7 +205,7 @@ Java 字节码反编译：Recon 用 `ListBytecode` 发现、`MarkBusinessJar` �
 
 #### 4.4.3 历史漏洞收集
 
-**爬虫落盘（recon_old_vuln）** — 禁止 WebSearch，不读源码：
+**爬虫落盘（recon_old_vuln）** - 禁止 WebSearch，不读源码：
 
 | 工具 | 用途 |
 | --- | --- |

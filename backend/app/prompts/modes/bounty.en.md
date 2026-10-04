@@ -1,0 +1,42 @@
+## Current mining mode: bounty (overrides conflicting clauses above)
+
+This project is in **bounty mode**. Where this conflicts with the text above about "low impact and hard to exploit can still be Confirmed / stored as `low_impact`", **this section wins**.
+
+### Accepted types
+Only submit and only confirm issues that cause real harm: RCE, SSTI, deserialization, SQL injection, XML injection, **genuinely arbitrary** file operations (able to read/write/delete sensitive or out-of-scope objects, not "an anonymous user can poke a file API"), SSRF that reaches the internal network, sensitive information disclosure, file upload that leads to execution / overwriting sensitive paths / stored XSS, file inclusion, directory traversal, authentication bypass, privilege escalation, DoS, **stored XSS**, **1-click CSRF**, **hard-coded source keys with server-side secret impact**, and other vulnerabilities that **definitely cause real harm**.
+
+Submit stored XSS as `stored_xss`, and it must persist and then execute in **another user's** browser (session theft / acting on their behalf). Do not write reflected XSS, DOM XSS or self-only Self-XSS as stored. Mark stored XSS value as `cve_candidate`, not `low_impact`.
+
+Submit CSRF as `csrf`, and it must be **1-click**: after a logged-in victim opens an attacker-controlled malicious page, **with no further click on the target site, no second confirmation and no form filling**, the browser immediately issues the cross-site request on its own (auto-submitting form, `fetch` with credentials, etc.) and **immediately triggers RCE or another high-impact operation** (arbitrary file write/delete, command execution, unauthorized administrative action, account takeover, privilege escalation). Mark the value `cve_candidate`; at least one of C/I/A in the CVSS vector must be H; do not mark `low_impact`, and do not write both confidentiality and integrity as N/L. Do not treat "the endpoint lacks a CSRF token" as a finding in itself; changing a nickname, logging out, liking, posting, changing a low-impact setting, or anything needing several victim clicks or a second confirmation is not 1-click.
+
+Submit hard-coded source keys as `hardcoded_secret`: only constants compiled into the program and treated as a **server-side secret**. Qualifying examples: JWT/HMAC signing keys, API signing secrets, private keys, third-party API keys, and server-side encryption keys protecting in-library or backup data that should not be public to unauthorized parties. Knowing the key must enable unauthorized harm (forging a token, bypassing signature validation, impersonating third-party credentials, decrypting server-side ciphertext the attacker should not see). Mark the value `cve_candidate`. Do not submit user-changeable passwords or keys from config files, `.env`, compose, documentation or install wizards.
+
+The following are **not** hard-coded key vulnerabilities (false positives - do not mark `cve_candidate`): AES/DES used only for front-end transport obfuscation (the key is in front-end JS, or is deliberately served to the front end through a public endpoint); a key shared by client and server that is public to all clients by design, where the only harm is "decrypting a field the front end would decrypt anyway" or "decrypting an already intercepted login request". AES raising the cost of intercepting and tampering with traffic is not a confidentiality boundary; do not treat "hard-coded key + served publicly" as a CVE in itself.
+
+Do not submit reflected XSS or DOM XSS; anything already submitted should be `MarkFalsePositive`, not Confirmed.
+
+Use `other` only when real harm can be proven (code execution, sensitive data disclosure, unauthorized read/write/delete, genuinely arbitrary file operations). Do not use `other` as a home for CORS, reflected XSS, missing rate limiting, security headers, ordinary CSRF, or harmless/restricted file operations.
+
+### Explicitly discarded (false positive - do not mark low impact / hard to exploit)
+Even when the request itself produces an observable difference, bounty mode marks the following as **outright false positives**: do not Confirm them and do not mark `low_impact`:
+- CORS / ACAO reflection, missing CSP / X-Frame-Options and other security headers
+- Open redirect (unless it clearly escalates to real harm such as authentication hijacking or token theft)
+- Reflected XSS, DOM XSS, Self-XSS
+- Ordinary CSRF / a merely missing CSRF token (changing a nickname, logging out, liking, posting, changing a low-impact setting); CSRF needing several victim clicks, a second confirmation, or form filling
+- Missing rate limiting, single-point throttle bypass, a brute-forceable captcha with no further harm
+- Weak randomness / predictable tokens (unless they directly cause an authentication bypass)
+- Default accounts and passwords, or user-changeable keys, in config files / `.env` / compose / documentation
+- Hard-coded or publicly served AES/DES keys used for front-end transport obfuscation (see above)
+- Pure configuration-hardening advice, informational scanner items
+- **Harmless / restricted file operations** (including "anonymous file operations"): can only read allow-listed extensions or non-sensitive content in public directories, can only upload harmless non-executable files, cannot overwrite config / keys / scripts
+- **UUIDs / random IDs that cannot be obtained and cannot be predicted**: exploitation requires knowing the ID first, and it cannot be listed, leaked, enumerated or predicted
+
+SSRF must reach the internal network, cloud metadata, or a sensitive local port; do not submit cases that only reach the public internet with no internal or credential impact. Submission and confirmation must state the observation surface: **response echo** (the response contains the target body), **internal data exfiltrated out of band** (internal or metadata content is sent to an attacker-controlled channel and read there), or **response difference only** (probing internal ports via status code, latency or error). All three count as "reaches the internal network". **A response echo and out-of-band exfiltration carry the same impact level**; when metadata credentials or sensitive internal bodies can be obtained, describe the impact from what was actually read. A difference-probe only, or merely proving an outbound/DNS callback whose callback carries no internal content, must not be written up as having obtained cloud metadata credentials. Where readable metadata is claimed without a proven echo or exfiltration, the Reviewer rewrites the report to the probing surface and then Confirms - do not confirm it as credential theft, and do not return it to the Worker for this.
+
+### Exploitation prerequisites
+It must be exploitable under the **default configuration**, or with **only the application's own configuration options changed**. State this on submission with `config_premise`: `default` (default configuration) or `specific` (the application's own configuration must be changed). **Specific configuration excludes** settings the official documentation already warns carry a security risk; do not submit anything that only holds under such a warned switch.
+Allowed: editing `application.yml`, an admin feature toggle, or an application configuration item listed in the official documentation (and not flagged there as a known risk switch).
+If the project has dynamic verification enabled: the Reviewer builds or reuses a Docker lab in a separate environment round (`env/`, `docs/lab.md`). The lab is a running instance of the default deployment, not an exploitation environment modified "to make the finding work". The application under test must be the current latest code in `src/`; switching to an older release / tag / application image to hit a known vulnerability is forbidden.
+Local verification mode builds no lab; the Reviewer reproduces at function level with a sandbox harness, and the bar for the finding holding up is unchanged.
+Forbidden: planting a payload or template on disk, uploading a theme, placing files in non-default directories, changing dependency versions that are not application configuration, or needing a second independent vulnerability to complete the chain.
+Do not read this section as "no docker / do not build a lab / do not write env.json". When lab dynamic verification is on, the Docker lab must be built; what is forbidden is manufacturing the exploitation conditions inside the lab. When dynamic verification is off, the Reviewer only performs static review.

@@ -13,6 +13,7 @@ from typing import Any
 
 from ..config import ROOT_DIR, resolve_repo_path, settings
 from ..prompts import load_prompt, render_prompt
+from ..prompts import DEFAULT_LANGUAGE
 from ..services.shutdown import is_shutting_down
 
 INDEX_FILENAME = ".vulnhunter-index.json"
@@ -494,9 +495,10 @@ def _index_one(tool_dir: Path) -> None:
         role="cli_indexer",
         session_start=True,
     )
-    system = load_prompt("cli_indexer.md")
+    system = load_prompt("cli_indexer.md", language=DEFAULT_LANGUAGE)
     user = render_prompt(
         "initial/cli_indexer.md",
+        language=DEFAULT_LANGUAGE,
         tool_name=tool_dir.name,
         tool_dir=str(tool_dir.resolve()),
         max_turns=MAX_INDEX_TURNS,

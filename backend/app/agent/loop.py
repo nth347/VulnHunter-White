@@ -300,7 +300,7 @@ class AgentLoop:
         """Apply acquired pool endpoint credentials onto self.llm."""
         self._slot_handle = handle
         if self._llm_injected and not handle.endpoint_id.startswith("ep-"):
-            # Test / anonymous override bucket — keep injected ResolvedLlm as-is
+            # Test / anonymous override bucket - keep injected ResolvedLlm as-is
             if handle.endpoint_id == "_anon":
                 return
         url, key, model = llm_thread_limiter.endpoint_creds(handle.endpoint_id)
@@ -972,7 +972,7 @@ class AgentLoop:
 
             # Terminal tool flags
             if self.state.get("recon_finished") or self.state.get("audit_finished") or self.state.get("review_done") or self.state.get("fix_finished") or self.state.get("round_finished") or self.state.get("index_done"):
-                # round_finished alone shouldn't end entire worker process — scheduler decides
+                # round_finished alone shouldn't end entire worker process - scheduler decides
                 if self.state.get("round_finished") and self.phase in (
                     "worker",
                     "unconstrained-worker",
@@ -1193,7 +1193,7 @@ class AgentLoop:
                 if status == 400:
                     drop_key = param_to_drop(body, err_text)
                     if drop_key:
-                        # Mutate for next rebuild — prepare_chat_body may re-add; strip after rebuild
+                        # Mutate for next rebuild - prepare_chat_body may re-add; strip after rebuild
                         self._live.system(
                             self.project_id,
                             f"HTTP 400，去掉 {drop_key} 后重试：{(err_text or '')[:180]}",

@@ -4,6 +4,22 @@
 
 版本号形如 `V主.次.补`：初始为 **V1.0.0**；小改动 `+0.0.1`；新功能或架构调整 `+0.1`。同一批改动只升一次，取最高档。
 
+## V1.3.0 - 2026-10-04
+
+### 新增
+
+- 后端产出语言随项目 `language` 切换，实现端到端英文支持。英文项目的 LLM 系统提示词、用户消息、报告与错误信息全部为英文；中文项目不变。
+- 提示词全量双语化：`backend/app/prompts/` 下系统提示词层（worker / reviewer / fast / bypass / unconstrained / sink_triage / recon 系列 / verifier / attack_chain / reviewer-lab / cvss / poc / report-formats / modes / verify / target_kinds）与 `initial/` 用户消息文档各新增 `.en.md` 英文版，键与占位符对齐。`load_prompt(name, language=)` 修正英文兄弟文件查找（原 `worker.md` 误找 `worker.md.en.md`），并由 `pipeline` 按项目语言加载。
+- 新增 `backend/app/prompts/language/{en,zh}.md` **输出语言契约**：拼到每个系统提示词末尾，规定产出语言，并注入由 `report_sections.py` 生成的规范报告大纲，使未单独翻译的提示词也产出正确语言与可解析的标题。
+- 新增 `backend/app/report_sections.py`：报告章节标题的双语规范表。`report.py` / `exposure_mode.py` / `compression.py` / `api/vulns.py` 的报告解析器改为语言无关匹配（原先只认中文标题，英文报告会漏判 PoC / 漏洞代码 / 资产证明等章节导致确认闸门失败）。
+- 新增 `backend/app/i18n.py` 后端消息目录（93 条键，中英对照）与 `translate_source()` 兜底；`main.py` 增加本地化 `HTTPException` 处理器，按请求 `Accept-Language` 翻译报错。前端 `api.ts` 随请求发送语言头。
+- 新增 `backend/tests/test_i18n_english.py` 覆盖英文路径（加载器、解析器、闸门、消息目录）。原用例按中文路径固定语言。
+
+### 修复
+
+- 标题语言闸门原先**无条件要求中文标题**（`chinese_title_block_reason`），英文项目无法提交任何漏洞；改为按项目语言校验（`title_language_block_reason`）。`submission_reason` 同理不再无条件要求中文。
+- `Project.language` 默认统一为 `en`：修正 `ensure_schema()` 与 Alembic 迁移里仍为 `zh` 的默认值，与 ORM 及创建默认一致。
+
 ## V1.2.0 - 2026-09-03
 
 ### 新增

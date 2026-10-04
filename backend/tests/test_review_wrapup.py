@@ -110,7 +110,7 @@ def test_recent_grep_blocks_grace():
         result={"ok": True},
         vuln_id=1,
     )
-    # Last three tracked: Write, Grep, Write — Grep is not wrapup
+    # Last three tracked: Write, Grep, Write - Grep is not wrapup
     assert recent_tools_are_wrapup(state) is False
     assert should_grant_wrapup_grace(state, phase="reviewer", remaining=10) is False
 

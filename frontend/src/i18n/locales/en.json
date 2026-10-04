@@ -12,7 +12,7 @@
     "logout": "Sign out",
     "project": "Project",
     "all": "All",
-    "none": "—",
+    "none": "-",
     "yes": "Yes",
     "no": "No",
     "requestFailed": "Request failed",

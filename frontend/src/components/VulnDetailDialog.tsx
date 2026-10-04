@@ -378,9 +378,9 @@ export default function VulnDetailDialog({
                                 {formatVerifierTargetStatus(tgt.status)}
                               </Badge>
                             </td>
-                            <td className="py-1.5 pr-2 break-all text-slate-200">{tgt.host || '—'}</td>
-                            <td className="py-1.5 pr-2 text-slate-400">{tgt.title || '—'}</td>
-                            <td className="py-1.5 text-slate-400">{tgt.note || '—'}</td>
+                            <td className="py-1.5 pr-2 break-all text-slate-200">{tgt.host || '-'}</td>
+                            <td className="py-1.5 pr-2 text-slate-400">{tgt.title || '-'}</td>
+                            <td className="py-1.5 text-slate-400">{tgt.note || '-'}</td>
                           </tr>
                         ))}
                       </tbody>

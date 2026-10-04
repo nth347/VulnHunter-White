@@ -70,7 +70,7 @@ function PortField({
         </>
       ) : (
         <>
-          <span className="font-mono text-slate-200">{display || '—'}</span>
+          <span className="font-mono text-slate-200">{display || '-'}</span>
           {showEdit && (
             <button
               type="button"

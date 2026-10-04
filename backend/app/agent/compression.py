@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import settings
+from ..report_sections import heading_re
 from ..services.paths import docs_dir, find_security_policy_path, src_dir, summaries_dir, workspace_dir
 
 
@@ -68,7 +69,7 @@ _FAST_ROUND_FILE = re.compile(r"^fast-round-(\d+)\.md$")
 _BYPASS_ROUND_FILE = re.compile(r"^bypass-round-(\d+)\.md$")
 _UNCONSTRAINED_ROUND_FILE = re.compile(r"^unconstrained-round-(\d+)\.md$")
 _WORKER_ROUND_SUMMARY = re.compile(r"^(\d+)\.md$")
-_FOLLOWUP_HEADING = re.compile(r"^##[ \t]*建议后续方向[ \t]*\r?$", re.MULTILINE)
+_FOLLOWUP_HEADING = heading_re("followup", level=2)
 _NEXT_H2 = re.compile(r"^##[ \t]+\S", re.MULTILINE)
 
 

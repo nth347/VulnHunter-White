@@ -1,4 +1,4 @@
-# MemoBoard — VulnHunter 演示靶场
+# MemoBoard - VulnHunter 演示靶场
 
 故意存在 **4 个**漏洞的小型 Flask 内网备忘录。其中 **SQL 注入与管理员 ping RCE 可串联**，用来测攻击链阶段。
 
@@ -41,8 +41,8 @@ python scripts/smoke.py
 
 ## 布局
 
-- `app.py` — 路由、登录会话、admin-only ping
-- `board/engine.py` — 拼接 SQL、ping 命令拼接
-- `board/store.py` — 用户与备忘录
-- `templates/notes.html` — `| safe`
-- `Dockerfile` — 靶场动态复用
+- `app.py` - 路由、登录会话、admin-only ping
+- `board/engine.py` - 拼接 SQL、ping 命令拼接
+- `board/store.py` - 用户与备忘录
+- `templates/notes.html` - `| safe`
+- `Dockerfile` - 靶场动态复用

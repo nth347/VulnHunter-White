@@ -11,7 +11,7 @@ from .report import upsert_report_section
 AFFECTED_LOCATIONS_HEADING = "## 同根因受影响点"
 
 _BULLET_RE = re.compile(
-    r"^-\s*`(?P<path>[^`]+)`(?:\s+(?P<method>\S+))?(?:\s*[—\-–]\s*(?P<note>.+))?\s*$"
+    r"^-\s*`(?P<path>[^`]+)`(?:\s+(?P<method>\S+))?(?:\s*[-\-–]\s*(?P<note>.+))?\s*$"
 )
 
 
@@ -70,7 +70,7 @@ def format_location_line(loc: dict[str, Any]) -> str:
         parts.append(str(method))
     line_out = " ".join(parts)
     if note:
-        line_out = f"{line_out} — {note}"
+        line_out = f"{line_out} - {note}"
     return line_out
 
 
@@ -95,8 +95,8 @@ def parse_section_body(body: str) -> list[dict[str, Any]]:
                 if right.isdigit():
                     path, line_no = left, int(right)
             method, note = None, None
-            if "—" in rest or "–" in rest or " - " in rest:
-                for sep in ("—", "–", " - "):
+            if "-" in rest or "–" in rest or " - " in rest:
+                for sep in ("-", "–", " - "):
                     if sep in rest:
                         method_part, note = rest.split(sep, 1)
                         method = method_part.strip() or None

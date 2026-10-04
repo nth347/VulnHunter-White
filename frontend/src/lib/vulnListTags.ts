@@ -106,11 +106,11 @@ export function vulnListAttributeLines(v: Vuln, projectName?: string): VulnListA
     { label: t('vulnTags.attr.status'), value: formatVulnStatus(v.status, v.evidence_level, v.fp_kind, v.harness_depth) },
     {
       label: t('vulnTags.attr.severity'),
-      value: formatSeverityScore(v.severity_score, v.severity, v.cvss_vector) || formatSeverity(v.severity) || '—',
+      value: formatSeverityScore(v.severity_score, v.severity, v.cvss_vector) || formatSeverity(v.severity) || '-',
     },
     { label: t('vulnTags.attr.tier'), value: formatSubmissionTier(v.submission_tier) },
     { label: t('vulnTags.attr.project'), value: projectName ? `#${v.project_id} ${projectName}` : `#${v.project_id}` },
-    { label: t('vulnTags.attr.type'), value: v.vuln_type || '—' },
+    { label: t('vulnTags.attr.type'), value: v.vuln_type || '-' },
   ]
 
   const surface = formatAttackSurface(v.attack_surface, v.required_account)

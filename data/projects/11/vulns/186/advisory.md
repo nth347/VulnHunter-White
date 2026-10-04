@@ -38,7 +38,7 @@ def api_note(note_id: int):
     """Fetch one memo. X-User is the logged-in identity.
 
     Intended rule: only the author may read their own note.
-    Bug: ownership is never checked — any id is returned (IDOR).
+    Bug: ownership is never checked - any id is returned (IDOR).
     """
     _current = (request.headers.get("X-User") or "").strip()
     row = get_note(note_id)
@@ -102,6 +102,6 @@ CWE-639. Any network caller who can reach the default MemoBoard HTTP port can en
 ## Severity / CWE
 
 - **Severity:** High
-- **CVSS 3.1:** 7.5 High — `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N`
+- **CVSS 3.1:** 7.5 High - `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N`
 - **CWE:** CWE-639 Authorization Bypass Through User-Controlled Key
 - **Related:**

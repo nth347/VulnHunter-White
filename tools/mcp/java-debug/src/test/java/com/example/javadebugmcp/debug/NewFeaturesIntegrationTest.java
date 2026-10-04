@@ -689,7 +689,7 @@ class NewFeaturesIntegrationTest {
             List<Map<String, Object>> specs = List.of(
                     Map.of("className", "com.example.javadebugmcp.fixture.SampleDebuggee",
                             "line", greetLine),
-                    // Invalid: non-existent class — will be accepted as pending (resolved=false)
+                    // Invalid: non-existent class - will be accepted as pending (resolved=false)
                     Map.of("className", "com.nonexistent.FakeClass",
                             "line", 1),
                     // Invalid: valid class but use methodName that doesn't exist

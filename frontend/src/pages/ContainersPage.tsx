@@ -27,7 +27,7 @@ import { startVisibilityPoll } from '../lib/visibilityPoll'
 const KIND_KEYS = new Set(['lab', 'sidecar', 'sandbox', 'other', 'dependency'])
 
 function kindLabel(kind: string | null | undefined): string {
-  if (!kind) return '—'
+  if (!kind) return '-'
   return KIND_KEYS.has(kind) ? i18n.t(`containers.kind.${kind}`) : kind
 }
 
@@ -448,14 +448,14 @@ export default function ContainersPage() {
                           {c.project_name || `#${c.project_id}`}
                         </Link>
                       ) : (
-                        <span className="text-sm text-muted-foreground">—</span>
+                        <span className="text-sm text-muted-foreground">-</span>
                       )}
                     </TableCell>
                     <TableCell className="max-w-0 truncate text-xs text-muted-foreground" title={c.image}>
                       {c.image}
                     </TableCell>
                     <TableCell className="max-w-0 truncate font-mono text-xs" title={portsText || undefined}>
-                      {c.ports.length > 0 ? portsText : <span className="text-muted-foreground">—</span>}
+                      {c.ports.length > 0 ? portsText : <span className="text-muted-foreground">-</span>}
                     </TableCell>
                     <TableCell className="pr-4 text-right whitespace-nowrap">
                       {c.status === 'running' ? (
@@ -556,7 +556,7 @@ export default function ContainersPage() {
                         {img.project_name || `#${img.project_id}`}
                       </Link>
                     ) : (
-                      <span className="text-sm text-muted-foreground">—</span>
+                      <span className="text-sm text-muted-foreground">-</span>
                     )}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{formatBytes(img.size_bytes)}</TableCell>

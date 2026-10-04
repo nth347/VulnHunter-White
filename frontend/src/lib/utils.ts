@@ -388,7 +388,7 @@ export function formatProjectStatus(status: string | null | undefined): string {
     error: 'enum.projectStatus.error',
   }
   const key = keys[status || '']
-  return key ? t(key) : status?.trim() || '—'
+  return key ? t(key) : status?.trim() || '-'
 }
 
 export function projectStatusBadgeVariant(
@@ -399,7 +399,7 @@ export function projectStatusBadgeVariant(
 }
 
 export function formatDateTime(value: string | null | undefined): string {
-  if (!value) return '—'
+  if (!value) return '-'
   let s = value.trim()
   if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(s) && !/(?:Z|[+-]\d{2}:?\d{2})$/i.test(s)) {
     s = `${s.replace(' ', 'T')}Z`
@@ -589,7 +589,7 @@ export function formatMiningProgress(p: {
 }
 
 export function formatTokens(n: number | null | undefined): string {
-  if (n == null || Number.isNaN(n)) return '—'
+  if (n == null || Number.isNaN(n)) return '-'
   const v = Math.round(n)
   if (v < 1000) return String(v)
   if (v < 1_000_000) {
@@ -605,7 +605,7 @@ export function formatCacheRate(
 ): string {
   const c = cached ?? 0
   const i = input ?? 0
-  if (i <= 0) return '—'
+  if (i <= 0) return '-'
   const pct = (c / i) * 100
   if (pct >= 10) return `${Math.round(pct)}%`
   return `${pct.toFixed(1).replace(/\.0$/, '')}%`
@@ -650,7 +650,7 @@ export function saveBlob(blob: Blob, filename: string) {
 }
 
 export function formatBytes(bytes: number | null | undefined): string {
-  if (bytes == null || Number.isNaN(Number(bytes))) return '—'
+  if (bytes == null || Number.isNaN(Number(bytes))) return '-'
   const n = Number(bytes)
   if (n < 1024) return `${Math.round(n)} B`
   const mb = n / (1024 * 1024)

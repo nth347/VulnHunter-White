@@ -1,0 +1,1 @@
+The previous round was aborted on an infinite loop; continue the code-map / auth re-run: update and write back on top of the existing code-map.md / auth.md, and MarkSource an entry point immediately. When done, FinishReconMap.

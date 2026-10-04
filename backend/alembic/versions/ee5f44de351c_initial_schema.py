@@ -30,7 +30,7 @@ def upgrade() -> None:
         return
     op.add_column(
         "projects",
-        sa.Column("language", sa.String(length=8), server_default="zh", nullable=False),
+        sa.Column("language", sa.String(length=8), server_default="en", nullable=False),
     )
 
 

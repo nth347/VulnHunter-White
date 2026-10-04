@@ -14,7 +14,7 @@ fi
 
 cd "$ROOT/backend"
 if [ ! -x "$ROOT/backend/.venv/bin/uvicorn" ]; then
-  echo "[VulnHunter] missing backend/.venv — run sh start.sh first" >>"$LOGDIR/backend.log"
+  echo "[VulnHunter] missing backend/.venv - run sh start.sh first" >>"$LOGDIR/backend.log"
   exit 1
 fi
 

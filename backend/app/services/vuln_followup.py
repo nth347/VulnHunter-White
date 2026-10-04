@@ -27,6 +27,7 @@ from ..services.llm_gate import llm_gate
 from ..services.llm_settings import resolve_llm
 from .cve_record import format_cve_record_json, write_cve_record
 from .paths import project_root, vuln_dir
+from ..i18n import project_language
 from .report import stamp_produced_at, write_advisory_md, write_report_md
 
 
@@ -36,12 +37,21 @@ REPORT_KIND_LABELS = {
     "advisory": "Advisory",
     "cve": "CVE JSON",
 }
+REPORT_KIND_LABELS_BY_LANG = {
+    "zh": {"report": "中文报告", "advisory": "Advisory", "cve": "CVE JSON"},
+    "en": {"report": "report", "advisory": "Advisory", "cve": "CVE JSON"},
+}
 
 
-def _revision_format_rules(kind: str, *, bypass: bool) -> str:
-    rules = load_prompt("report-formats.md").strip()
-    if kind == "cve":
-        focus = (
+def _kind_label(kind: str, language: str | None = None) -> str:
+    lang = project_language(None) if language is None else language
+    table = REPORT_KIND_LABELS_BY_LANG.get(lang) or REPORT_KIND_LABELS_BY_LANG["en"]
+    return table.get(kind, kind)
+
+
+_REVISION_FOCUS = {
+    "zh": {
+        "cve": (
             "本次只改 CVE JSON：revised_text 必须是完整合法 CVE 5.2 JSON 字符串"
             "（详情页改写输出整份文档，不调用 ReadCveRecord / SetCveRecordField）；"
             "未知字段继续使用 VULNHUNTER_PENDING。"
@@ -49,19 +59,54 @@ def _revision_format_rules(kind: str, *, bypass: bool) -> str:
             "漏洞代码完整路径与源码原文、完整 HTTP 请求包或无 HTTP 面时的 API/调用链、危害），"
             "supportingMedia 用 HTML。"
             "不要改成中文报告或 Advisory。"
-        )
-    elif kind == "advisory":
-        focus = (
+        ),
+        "advisory": (
             "本次只改英文 GitHub Advisory：revised_text 必须是完整英文 Markdown，"
             "结构、章节与语言与提交/收口时相同。用户指令即使是中文，也不要把 Advisory 改成中文，不要把中文报告粘进去。"
-        )
-    else:
-        focus = (
+        ),
+        "report": (
             "本次只改中文报告：revised_text 必须是完整中文 Markdown，"
             "结构、章节与语言与提交/收口时相同；标题（YAML title 与一级标题）须为中文。"
-        )
-        if bypass:
-            focus += " 本条为历史漏洞绕过产出，必须保留 `### 补丁绕过简析`。"
+        ),
+        "report_bypass": " 本条为历史漏洞绕过产出，必须保留 `### 补丁绕过简析`。",
+    },
+    "en": {
+        "cve": (
+            "This edit only touches the CVE JSON: revised_text must be a complete, "
+            "valid CVE 5.2 JSON string (the detail-page rewrite outputs the whole "
+            "document and does not call ReadCveRecord / SetCveRecordField); keep "
+            "VULNHUNTER_PENDING for unknown fields. descriptions[0].value must be a "
+            "detailed English description (product/version, root cause, entry→sink "
+            "chain, full vulnerable-code path with source, the full HTTP request or "
+            "an API/call chain when there is no HTTP surface, and impact), with "
+            "supportingMedia as HTML. Do not turn it into a report or an Advisory."
+        ),
+        "advisory": (
+            "This edit only touches the English GitHub Advisory: revised_text must "
+            "be complete English Markdown with the same structure, sections and "
+            "language as at submission. Keep it in English and do not paste the "
+            "report into it."
+        ),
+        "report": (
+            "This edit only touches the report: revised_text must be complete "
+            "English Markdown with the same structure, sections and language as at "
+            "submission; the title (YAML title and the level-one heading) must be in "
+            "English."
+        ),
+        "report_bypass": (
+            " This finding is a historical-bypass product and must keep the "
+            "`### Patch bypass analysis` section."
+        ),
+    },
+}
+
+
+def _revision_format_rules(kind: str, *, bypass: bool, language: str | None = None) -> str:
+    lang = "en" if (language or "en") not in ("zh", "en") else (language or "en")
+    rules = load_prompt("report-formats.md", language=lang).strip()
+    focus = _REVISION_FOCUS[lang][kind]
+    if kind == "report" and bypass:
+        focus += _REVISION_FOCUS[lang]["report_bypass"]
     return f"{rules}\n\n{focus}"
 
 
@@ -226,7 +271,7 @@ def _write_report_text(vuln: Vuln, kind: str, content: str) -> str:
         raise ValueError("修订内容不能为空")
     path = _report_path(vuln, kind)
     if kind == "report":
-        write_report_md(path, text, vuln.created_at)
+        write_report_md(path, text, vuln.created_at, project_language(vuln.project_id))
         with SessionLocal() as db:
             row = db.get(Vuln, vuln.id)
             if row and not row.report_path:
@@ -517,6 +562,39 @@ def _build_chat_messages(
     return messages
 
 
+def _revision_instruction_message(
+    kind: str, label: str, instruction: str, language: str
+) -> str:
+    if language == "zh":
+        if kind == "advisory":
+            head = f"请按以下指令修改英文 Advisory（修订稿正文必须保持英文），返回 JSON：\n{instruction}\n\n"
+        elif kind == "cve":
+            head = (
+                "请按以下指令修改 CVE JSON（修订稿必须是完整 JSON，未知字段保持 "
+                f"VULNHUNTER_PENDING），返回 JSON：\n{instruction}\n\n"
+            )
+        else:
+            head = f"请按以下指令修改{label}（修订稿必须保持中文报告结构），返回 JSON：\n{instruction}\n\n"
+        return head + 'JSON 格式示例：{"summary":"本次修改摘要","revised_text":"完整修订后内容"}'
+    if kind == "advisory":
+        head = (
+            "Revise the English Advisory per the instruction below (the revised body "
+            f"must stay in English); return JSON:\n{instruction}\n\n"
+        )
+    elif kind == "cve":
+        head = (
+            "Revise the CVE JSON per the instruction below (the revised draft must be "
+            "complete JSON, keeping VULNHUNTER_PENDING for unknown fields); return JSON:"
+            f"\n{instruction}\n\n"
+        )
+    else:
+        head = (
+            f"Revise the {label} per the instruction below (the revised draft must keep "
+            f"the report structure); return JSON:\n{instruction}\n\n"
+        )
+    return head + 'JSON example: {"summary":"summary of this change","revised_text":"full revised content"}'
+
+
 def _build_revision_messages(
     *,
     vuln: Vuln,
@@ -526,29 +604,63 @@ def _build_revision_messages(
     current: str,
     instruction: str,
 ) -> list[dict[str, str]]:
-    label = REPORT_KIND_LABELS[kind]
-    system = str((ctx or {}).get("system_prompt") or "").strip() or "你是 VulnHunter 的 Reviewer。"
-    system += (
-        "\n\n现在进入漏洞报告修改模式。请只根据当前报告、漏洞元数据、Reviewer 上下文和用户修改指令生成完整修订稿。"
-        "不要改变漏洞状态，不要编造未出现的动态验证结果、互联网验证结果、CVE 编号、提交状态或真实密钥。"
-        "必须保留原报告中仍然正确的事实和证据。"
-        "返回严格 JSON 对象，字段为 summary 与 revised_text，不要输出 Markdown 代码围栏或额外解释。"
-        "改写必须遵守与提交/收口时相同的格式要求：\n"
-        f"{_revision_format_rules(kind, bypass=getattr(vuln, 'mining_path', None) == 'bypass')}"
+    lang = project_language(vuln.project_id)
+    label = _kind_label(kind, lang)
+    rules = _revision_format_rules(
+        kind, bypass=getattr(vuln, "mining_path", None) == "bypass", language=lang
     )
-    context = (
-        f"漏洞 #{vuln.id}: {vuln.title}\n"
-        f"漏洞类型: {vuln.vuln_type}\n"
-        f"严重性: {vuln.severity}\n"
-        f"状态: {vuln.status}\n"
-        f"证据等级: {vuln.evidence_level or 'unknown'}\n"
-        f"分层: {vuln.submission_tier or 'unknown'}\n"
-        f"根因键: {vuln.root_cause_key or 'unknown'}\n"
-        f"挖掘路径: {vuln.mining_path or 'unknown'}\n\n"
-        f"## 当前{label}\n{current}\n\n"
-        "## Reviewer 轮次上下文\n"
-        f"{_reviewer_transcript_text(ctx) if ctx else '（无 Reviewer 上下文，仅基于当前报告修订）'}"
-    )
+    if lang == "zh":
+        base_system = "你是 VulnHunter 的 Reviewer。"
+        system = str((ctx or {}).get("system_prompt") or "").strip() or base_system
+        system += (
+            "\n\n现在进入漏洞报告修改模式。请只根据当前报告、漏洞元数据、Reviewer 上下文和用户修改指令生成完整修订稿。"
+            "不要改变漏洞状态，不要编造未出现的动态验证结果、互联网验证结果、CVE 编号、提交状态或真实密钥。"
+            "必须保留原报告中仍然正确的事实和证据。"
+            "返回严格 JSON 对象，字段为 summary 与 revised_text，不要输出 Markdown 代码围栏或额外解释。"
+            "改写必须遵守与提交/收口时相同的格式要求：\n"
+            f"{rules}"
+        )
+        context = (
+            f"漏洞 #{vuln.id}: {vuln.title}\n"
+            f"漏洞类型: {vuln.vuln_type}\n"
+            f"严重性: {vuln.severity}\n"
+            f"状态: {vuln.status}\n"
+            f"证据等级: {vuln.evidence_level or 'unknown'}\n"
+            f"分层: {vuln.submission_tier or 'unknown'}\n"
+            f"根因键: {vuln.root_cause_key or 'unknown'}\n"
+            f"挖掘路径: {vuln.mining_path or 'unknown'}\n\n"
+            f"## 当前{label}\n{current}\n\n"
+            "## Reviewer 轮次上下文\n"
+            f"{_reviewer_transcript_text(ctx) if ctx else '（无 Reviewer 上下文，仅基于当前报告修订）'}"
+        )
+    else:
+        base_system = "You are the VulnHunter Reviewer."
+        system = str((ctx or {}).get("system_prompt") or "").strip() or base_system
+        system += (
+            "\n\nYou are now in report-revision mode. Produce a complete revised draft "
+            "based only on the current report, the vulnerability metadata, the Reviewer "
+            "context and the user's revision instruction. Do not change the vulnerability "
+            "status, and do not invent dynamic-verification results, internet-verification "
+            "results, CVE ids, submission status or real secrets that did not appear. "
+            "Keep the facts and evidence in the original report that are still correct. "
+            "Return a strict JSON object with the fields summary and revised_text; do not "
+            "emit a Markdown code fence or any extra explanation. The rewrite must follow "
+            "the same format requirements as submission:\n"
+            f"{rules}"
+        )
+        context = (
+            f"Vulnerability #{vuln.id}: {vuln.title}\n"
+            f"Type: {vuln.vuln_type}\n"
+            f"Severity: {vuln.severity}\n"
+            f"Status: {vuln.status}\n"
+            f"Evidence level: {vuln.evidence_level or 'unknown'}\n"
+            f"Tier: {vuln.submission_tier or 'unknown'}\n"
+            f"Root-cause key: {vuln.root_cause_key or 'unknown'}\n"
+            f"Mining path: {vuln.mining_path or 'unknown'}\n\n"
+            f"## Current {label}\n{current}\n\n"
+            "## Reviewer round context\n"
+            f"{_reviewer_transcript_text(ctx) if ctx else '(no Reviewer context; revising from the current report only)'}"
+        )
     history_text = _followup_history_text(history)
     if history_text:
         context += "\n\n" + history_text
@@ -557,18 +669,7 @@ def _build_revision_messages(
         {"role": "user", "content": context},
         {
             "role": "user",
-            "content": (
-                (
-                    f"请按以下指令修改英文 Advisory（修订稿正文必须保持英文），返回 JSON：\n{instruction}\n\n"
-                    if kind == "advisory"
-                    else (
-                        f"请按以下指令修改 CVE JSON（修订稿必须是完整 JSON，未知字段保持 VULNHUNTER_PENDING），返回 JSON：\n{instruction}\n\n"
-                        if kind == "cve"
-                        else f"请按以下指令修改{label}（修订稿必须保持中文报告结构），返回 JSON：\n{instruction}\n\n"
-                    )
-                )
-                + 'JSON 格式示例：{"summary":"本次修改摘要","revised_text":"完整修订后内容"}'
-            ),
+            "content": _revision_instruction_message(kind, label, instruction, lang),
         },
     ]
     return messages

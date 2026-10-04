@@ -2032,7 +2032,7 @@ def test_grep_default_skips_binary_extensions(tmp_env, project):
     stats = out.get("stats") or {}
     assert stats.get("skipped_binary", 0) >= 2
 
-    # Caller can opt out by glob=**/* — every file is scanned.
+    # Caller can opt out by glob=**/* - every file is scanned.
     out_all = registry.dispatch(
         _ctx(project, "recon"),
         "Grep",

@@ -12,6 +12,7 @@ from ..audit_mode import (
 )
 from ..models import CustomAuditMode, Project
 from ..prompts import load_prompt
+from ..prompts import normalize_language
 
 
 def custom_mode_out_fields(preset: CustomAuditMode) -> dict:
@@ -78,17 +79,25 @@ def delete_preset(db: Session, preset: CustomAuditMode) -> None:
     db.flush()
 
 
-def builtin_prompts() -> list[dict[str, str]]:
+_BUILTIN_MODE_LABELS = {
+    "zh": {"bounty": "赏金模式", "full": "全量模式"},
+    "en": {"bounty": "Bounty mode", "full": "Full mode"},
+}
+
+
+def builtin_prompts(language: str | None = None) -> list[dict[str, str]]:
+    lang = normalize_language(language)
+    labels = _BUILTIN_MODE_LABELS.get(lang, _BUILTIN_MODE_LABELS["en"])
     return [
         {
             "id": "bounty",
-            "label": "赏金模式",
-            "body": load_prompt("modes/bounty.md").strip(),
+            "label": labels["bounty"],
+            "body": load_prompt("modes/bounty.md", language=lang).strip(),
         },
         {
             "id": "full",
-            "label": "全量模式",
-            "body": load_prompt("modes/full.md").strip(),
+            "label": labels["full"],
+            "body": load_prompt("modes/full.md", language=lang).strip(),
         },
     ]
 

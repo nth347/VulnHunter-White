@@ -179,7 +179,16 @@ def project(tmp_env):
     models = tmp_env["models"]
     Session = tmp_env["Session"]
     with Session() as db:
-        p = models.Project(name="demo", source_type="zip", status="recon", phase="recon")
+        # The existing suite asserts Chinese prompts, headings and gate
+        # messages, so it exercises the zh path explicitly. English-path
+        # behaviour is covered in tests/test_i18n_english.py.
+        p = models.Project(
+            name="demo",
+            source_type="zip",
+            status="recon",
+            phase="recon",
+            language="zh",
+        )
         db.add(p)
         db.commit()
         db.refresh(p)
