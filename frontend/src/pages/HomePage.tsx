@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
-import { ChevronLeftIcon, ChevronRightIcon, Loader2Icon, PlusIcon, SearchIcon, XIcon } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { AlertTriangleIcon, ChevronLeftIcon, ChevronRightIcon, CloudDownloadIcon, Loader2Icon, PlusIcon, SearchIcon, XIcon } from 'lucide-react'
 import { api, formatProjectsListError, type Project, type ProjectRunStatusCounts } from '../api'
-import { translateBackendText } from '../i18n/backendText'
 import { CreateProjectDialog } from '../components/CreateProjectDialog'
 import { DeleteProjectButton } from '../components/DeleteProjectButton'
 import { GithubLink } from '../components/GithubLink'
@@ -25,7 +23,8 @@ import {
   rememberProjectRun,
   writeJsonCache,
 } from '../lib/listCache'
-import { formatAuditMode, formatDateTime, formatMiningPaths, formatMiningProgress, formatProjectRunStatus, formatTargetKind, formatTokenUsage, projectRunBucket, projectRunTone } from '../lib/utils'
+import { useI18n } from '@/i18n'
+import { formatAuditMode, formatDateTime, formatMiningPaths, formatMiningProgress, formatProjectRunStatus, formatTargetKind, formatTokenUsage, projectRunBucket } from '../lib/utils'
 import { startVisibilityPoll } from '../lib/visibilityPoll'
 
 const PAGE_SIZE = 5
@@ -37,8 +36,12 @@ const EMPTY_STATUS_COUNTS: ProjectRunStatusCounts = {
   completed: 0,
 }
 
+function isInteractiveCardTarget(target: EventTarget | null) {
+  return target instanceof Element && Boolean(target.closest('a, button, input, textarea, select, [role="menuitem"]'))
+}
+
 function CreateProjectButton({ onClick }: { onClick: () => void }) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   return (
     <Button
       size="lg"
@@ -46,19 +49,22 @@ function CreateProjectButton({ onClick }: { onClick: () => void }) {
       onClick={onClick}
     >
       <PlusIcon className="size-5" />
-      {t('home.createProject')}
+      {t('home.create')}
     </Button>
   )
 }
 
 type RunStatusFilter = 'all' | 'running' | 'paused' | 'completed'
 
-const RUN_STATUS_FILTER_KEYS: RunStatusFilter[] = ['all', 'running', 'paused', 'completed']
-
 export default function HomePage() {
-  const { t } = useTranslation()
-  const runStatusFilterLabel = (key: RunStatusFilter) =>
-    key === 'all' ? t('common.all') : t(`enum.projectRunStatus.${key}`)
+  const { t } = useI18n()
+  const navigate = useNavigate()
+  const runStatusFilters: { key: RunStatusFilter; label: string }[] = [
+    { key: 'all', label: t('filter.all') },
+    { key: 'running', label: t('run.running') },
+    { key: 'paused', label: t('run.paused') },
+    { key: 'completed', label: t('run.completed') },
+  ]
   const [projects, setProjects] = useState<Project[]>([])
   const [total, setTotal] = useState(0)
   const [statusCounts, setStatusCounts] = useState<ProjectRunStatusCounts>(EMPTY_STATUS_COUNTS)
@@ -249,7 +255,7 @@ export default function HomePage() {
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t('home.filterAria')}>
-          {RUN_STATUS_FILTER_KEYS.map((key) => (
+          {runStatusFilters.map(({ key, label }) => (
             <Button
               key={key}
               variant={statusFilter === key ? 'default' : 'outline'}
@@ -261,7 +267,7 @@ export default function HomePage() {
                 setLoading(true)
               }}
             >
-              {runStatusFilterLabel(key)} {statusCounts[key]}
+              {label} {statusCounts[key]}
             </Button>
           ))}
         </div>
@@ -274,14 +280,29 @@ export default function HomePage() {
           <Card className="w-full">
             <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
               <Loader2Icon className="size-8 animate-spin" aria-hidden />
-              <span className="text-sm">{t('home.loadingList')}</span>
+              <span className="text-sm">{t('home.loading')}</span>
             </CardContent>
           </Card>
         ) : null}
         {!loading
           ? projects.map((p) => {
+          const runBucket = projectRunBucket(p.status, p.project_paused)
+          const runStatus = formatProjectRunStatus(p.status, p.project_paused)
           return (
-          <Card key={p.id} className="w-full">
+          <Card
+            key={p.id}
+            className="relative w-full cursor-pointer transition-colors hover:bg-muted/40"
+            onClick={(e: MouseEvent<HTMLDivElement>) => {
+              if (e.defaultPrevented || isInteractiveCardTarget(e.target)) return
+              if (window.getSelection()?.toString()) return
+              const href = `/projects/${p.id}`
+              if (e.metaKey || e.ctrlKey) {
+                window.open(href, '_blank', 'noopener,noreferrer')
+                return
+              }
+              navigate(href)
+            }}
+          >
             <CardHeader>
               <div className="min-w-0">
                 <CardTitle>
@@ -294,7 +315,7 @@ export default function HomePage() {
                   <span>·</span>
                   <span>{formatAuditMode(p.audit_mode, p.custom_audit_mode_name)}</span>
                   <span>·</span>
-                  <span>{p.llm_model || t('home.globalModel')}</span>
+                  <span>{p.llm_model || t('common.globalModel')}</span>
                   <span>·</span>
                   <span>{formatMiningPaths(p)}</span>
                   <span>·</span>
@@ -309,9 +330,37 @@ export default function HomePage() {
               </div>
               <CardAction>
                 <div className="flex flex-wrap items-center justify-end gap-2">
+                  {p.source_sync_error ? (
+                    <span
+                      className="text-amber-400"
+                      title={t('home.syncFailTip')}
+                      aria-label={t('home.syncFailAria')}
+                    >
+                      <AlertTriangleIcon className="size-4" />
+                    </span>
+                  ) : null}
+                  {p.source_sync_notice ? (
+                    <span
+                      className="text-sky-400"
+                      title={p.source_sync_notice}
+                      aria-label={t('home.syncOkAria')}
+                    >
+                      <CloudDownloadIcon className="size-4" />
+                    </span>
+                  ) : null}
                   <GithubLink project={p} variant="button" />
-                  <Badge variant={projectRunTone(p.status, p.project_paused)}>
-                    {formatProjectRunStatus(p.status, p.project_paused)}
+                  <Badge
+                    variant={
+                      runBucket === 'completed'
+                        ? 'success'
+                        : runBucket === 'stopped'
+                          ? 'destructive'
+                          : runBucket === 'paused'
+                            ? 'warning'
+                            : 'info'
+                    }
+                  >
+                    {runStatus}
                   </Badge>
                   <ProjectRunButtons project={p} />
                   <DeleteProjectButton
@@ -347,6 +396,7 @@ export default function HomePage() {
                 verifierPending={p.verifier_pending}
                 attackChainEnabled={p.attack_chain_enabled}
                 attackChainDone={p.attack_chain_done}
+                attackChainStopped={p.attack_chain_stopped}
                 heuristicEnabled={p.heuristic_enabled}
                 heuristicLite={p.heuristic_lite}
                 fastEnabled={p.fast_enabled}
@@ -359,18 +409,19 @@ export default function HomePage() {
                 bypassDone={p.bypass_done}
                 unconstrainedEnabled={p.unconstrained_enabled}
                 unconstrainedDone={p.unconstrained_done}
+                heuristicStopped={p.heuristic_stopped}
+                fastStopped={p.fast_stopped}
+                bypassStopped={p.bypass_stopped}
               />
               <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                <span>{t('home.countConfirmed', { n: p.vuln_confirmed })}</span>
-                <span>{t('home.countPending', { n: p.vuln_pending })}</span>
-                <span>{t('home.countFalsePositive', { n: p.vuln_false_positive })}</span>
+                <span>{t('home.stat.confirmed', { n: p.vuln_confirmed })}</span>
+                <span>{t('home.stat.pending', { n: p.vuln_pending })}</span>
+                <span>{t('home.stat.fp', { n: p.vuln_false_positive })}</span>
                 <span>{formatMiningProgress(p)}</span>
                 <span>{formatTokenUsage(p)}</span>
               </div>
               <WeightExtBadges exts={p.weight_exts} />
-              {p.error ? (
-                <p className="text-xs text-red-300">{translateBackendText(p.error)}</p>
-              ) : null}
+              {p.error ? <p className="text-xs text-red-300">{p.error}</p> : null}
             </CardContent>
           </Card>
           )
@@ -380,7 +431,7 @@ export default function HomePage() {
           <Card className="w-full">
             <CardContent className="flex flex-col items-start gap-3 py-8 text-sm text-muted-foreground">
               {searchInput.trim() || statusFilter !== 'all' ? (
-                t('home.noMatch')
+                t('home.emptyFiltered')
               ) : (
                 <>
                   <p>{t('home.empty')}</p>
@@ -394,7 +445,9 @@ export default function HomePage() {
 
       {total > PAGE_SIZE ? (
         <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-          <span>{t('home.pageInfo', { page: page + 1, count: pageCount, total })}</span>
+          <span>
+            {t('page.info', { page: page + 1, pageCount, total })}
+          </span>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"

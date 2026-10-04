@@ -11,13 +11,16 @@ from app.models import Project, Vuln
 from app.services.fofa import FOFA_DEFAULT_SIZE, search as fofa_search
 from app.services.pipeline import control_phase
 from app.services.verifier import (
+    apply_verifier_timeout_fail,
     enqueue_confirmed_frontend,
     extract_fofa_query,
     format_verifier_report,
     internet_test_block_reason,
     load_project_fofa_cache,
+    merge_fofa_samples,
     merge_verifier_targets,
     pending_verifier_count,
+    save_project_fofa_cache,
 )
 from app.tools import ROLE_ACL, registry
 from app.tools.phase_worker import project_complete_gates
@@ -80,6 +83,11 @@ def _submit_and_confirm(
             "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
             if surface == "backend"
             else "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
+        ),
+        "cvss4_vector": (
+            "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+            if surface == "backend"
+            else "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N"
         ),
         "submission_tier": "cve_candidate",
         "submission_reason": "未授权可读敏感数据",
@@ -688,6 +696,40 @@ def test_merge_verifier_targets_keeps_untested():
     assert "| 未测 | c.example |" in md
 
 
+def test_merge_verifier_targets_collapses_same_ip_different_ports():
+    rows = merge_verifier_targets(
+        fofa_sample=[
+            {"host": "a.example:80", "ip": "1.1.1.1", "port": "80", "protocol": "http"},
+            {"host": "a.example:8080", "ip": "1.1.1.1", "port": "8080", "protocol": "http"},
+            {"host": "b.example:443", "ip": "1.1.1.1", "port": "443", "protocol": "https"},
+            {"host": "c.example:80", "ip": "2.2.2.2", "port": "80", "protocol": "http"},
+        ],
+        submitted=[
+            {"host": "a.example:8080", "status": "success", "note": "同 IP 另一端口"},
+            {"host": "http://c.example", "status": "fail"},
+        ],
+    )
+    assert len(rows) == 2
+    by_ip = {r["ip"]: r for r in rows}
+    assert by_ip["1.1.1.1"]["status"] == "success"
+    assert by_ip["2.2.2.2"]["status"] == "fail"
+
+
+def test_merge_fofa_samples_skips_same_ip_new_port():
+    existing = [
+        {"host": "a.example", "ip": "1.1.1.1", "port": "80"},
+        {"host": "b.example", "ip": "2.2.2.2", "port": "443"},
+    ]
+    incoming = [
+        {"host": "a.example:8080", "ip": "1.1.1.1", "port": "8080"},
+        {"host": "cdn.example", "ip": "2.2.2.2", "port": "8443"},
+        {"host": "c.example", "ip": "3.3.3.3", "port": "80"},
+    ]
+    merged, new_rows = merge_fofa_samples(existing, incoming)
+    assert [row["ip"] for row in merged] == ["1.1.1.1", "2.2.2.2", "3.3.3.3"]
+    assert [row["host"] for row in new_rows] == ["c.example"]
+
+
 def test_finish_verifier_lists_untested_fofa_hosts(tmp_env, project, monkeypatch):
     vuln_id, _ = _submit_and_confirm(project, enable_verifier=True)
 
@@ -923,6 +965,99 @@ def test_finish_verifier_success_requires_three_targets(tmp_env, project):
     )
     assert out["ok"] is False
     assert "3 个" in out["error"]
+
+
+def test_finish_verifier_same_ip_does_not_count_as_three_successes(tmp_env, project):
+    vuln_id, _ = _submit_and_confirm(project, enable_verifier=True)
+    out = registry.dispatch(
+        _ctx(project, "verifier", vuln_id=vuln_id),
+        "FinishVerifier",
+        {
+            "verdict": "success",
+            "verified_url": "http://1.1.1.1:80/api/x",
+            "poc": "GET /api/x HTTP/1.1\nHost: 1.1.1.1\n\n",
+            "response": "HTTP/1.1 200 OK\n\nsecret",
+            "fofa_query": 'title="demo"',
+            "targets": [
+                {"host": "http://1.1.1.1:80", "ip": "1.1.1.1", "status": "success"},
+                {"host": "http://1.1.1.1:8080", "ip": "1.1.1.1", "status": "success"},
+                {"host": "http://hit.example:443", "ip": "1.1.1.1", "status": "success"},
+            ],
+            "notes": "三个端口都打通，但其实是同一 IP",
+        },
+    )
+    assert out["ok"] is False
+    assert "不同 IP" in out["error"]
+
+
+def test_fofa_search_drops_same_ip_different_ports(tmp_env, project, monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "error": False,
+                "size": 4,
+                "results": [
+                    ["a.example:80", "1.1.1.1", "80", "A", "example.com", "Org", "http"],
+                    ["a.example:8080", "1.1.1.1", "8080", "A-alt", "example.com", "Org", "http"],
+                    ["b.example:443", "2.2.2.2", "443", "B", "example.com", "Org", "https"],
+                    ["cdn.example:8443", "2.2.2.2", "8443", "B-cdn", "example.com", "Org", "https"],
+                ],
+            },
+        )
+
+    monkeypatch.setattr(
+        "app.services.fofa.http_client",
+        lambda timeout=30.0: httpx.Client(transport=httpx.MockTransport(handler), timeout=timeout),
+    )
+    monkeypatch.setattr("app.services.fofa.resolve_fofa_key", lambda: "test-key")
+    vuln_id, _ = _submit_and_confirm(project, enable_verifier=True)
+    ctx = _ctx(project, "verifier", vuln_id=vuln_id)
+    out = registry.dispatch(ctx, "FofaSearch", {"query": 'title="demo"'})
+    assert out["ok"] is True
+    ips = [row["ip"] for row in out["sample"]]
+    assert ips == ["1.1.1.1", "2.2.2.2"]
+    assert out["returned"] == 2
+    assert "同 IP" in (out.get("guidance") or "")
+    cache = load_project_fofa_cache(project)
+    assert cache is not None
+    assert [row["ip"] for row in cache["sample"]] == ["1.1.1.1", "2.2.2.2"]
+
+
+def test_fofa_search_expand_skips_same_ip_new_port(tmp_env, project, monkeypatch):
+    pages: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = dict(request.url.params).get("page") or "1"
+        pages.append(page)
+        if page == "1":
+            results = [
+                ["host1.example", "1.1.1.1", "80", "A", "example.com", "Org", "http"],
+                ["host2.example", "1.1.1.2", "443", "B", "example.com", "Org", "https"],
+            ]
+        else:
+            results = [
+                ["host1.example:8080", "1.1.1.1", "8080", "A-dup", "example.com", "Org", "http"],
+                ["host3.example", "1.1.1.3", "80", "C", "example.com", "Org", "http"],
+            ]
+        return httpx.Response(200, json={"error": False, "size": 10, "results": results})
+
+    monkeypatch.setattr(
+        "app.services.fofa.http_client",
+        lambda timeout=30.0: httpx.Client(transport=httpx.MockTransport(handler), timeout=timeout),
+    )
+    monkeypatch.setattr("app.services.fofa.resolve_fofa_key", lambda: "test-key")
+    vuln_id, _ = _submit_and_confirm(project, enable_verifier=True)
+    ctx = _ctx(project, "verifier", vuln_id=vuln_id)
+    first = registry.dispatch(ctx, "FofaSearch", {"query": 'title="demo"'})
+    assert first["ok"] is True
+    expanded = registry.dispatch(ctx, "FofaSearch", {"query": 'title="demo"', "expand": True})
+    assert expanded["ok"] is True
+    assert pages == ["1", "2"]
+    ips = [row["ip"] for row in expanded["sample"]]
+    assert ips == ["1.1.1.1", "1.1.1.2", "1.1.1.3"]
+    new_ips = [row["ip"] for row in expanded.get("new_sample") or []]
+    assert new_ips == ["1.1.1.3"]
 
 
 def test_finish_verifier_fail_requires_expand_when_first_batch_short(tmp_env, project, monkeypatch):
@@ -1526,3 +1661,220 @@ def test_verifier_consent_api_list_and_skip(tmp_env, project):
         assert skipped.json()["verifier_status"] == "skipped"
         empty = client.get("/api/vulns/verifier-consent")
         assert all(row["id"] != vuln_id for row in empty.json())
+
+
+def test_apply_verifier_timeout_fail_closes_pending(tmp_env, project):
+    vuln_id, _ = _submit_and_confirm(project, enable_verifier=True)
+    save_project_fofa_cache(
+        project,
+        query='title="demo"',
+        sample=[{"host": "a.example", "title": "Demo"}, {"host": "b.example", "title": "Demo"}],
+        size=2,
+        frozen=True,
+        page=1,
+    )
+    out = apply_verifier_timeout_fail(
+        project,
+        vuln_id,
+        state={"targets": [{"host": "a.example", "status": "fail", "note": "404"}]},
+    )
+    assert out["applied"] is True
+    assert out["verdict"] == "fail"
+    with _db() as db:
+        v = db.get(Vuln, vuln_id)
+        assert v.verifier_status == "failed"
+        assert v.verifier_fofa_query == 'title="demo"'
+    from app.services.paths import vuln_dir
+    from app.services.verifier import verifier_report_path
+
+    report = verifier_report_path(project, vuln_id).read_text(encoding="utf-8")
+    assert "超时" in report
+    assert "不再为同一条漏洞新开验证轮" in report
+    assert "a.example" in report
+    assert pending_verifier_count(project) == 0
+    again = apply_verifier_timeout_fail(project, vuln_id)
+    assert again["applied"] is False
+    body = (vuln_dir(project, vuln_id) / "report.md").read_text(encoding="utf-8")
+    assert "互联网验证" in body
+    assert "超时" in body
+
+
+def test_apply_verifier_timeout_fail_skips_non_pending(tmp_env, project):
+    vuln_id, _ = _submit_and_confirm(project, enable_verifier=True)
+    with _db() as db:
+        v = db.get(Vuln, vuln_id)
+        v.verifier_status = "verified"
+        db.commit()
+    out = apply_verifier_timeout_fail(project, vuln_id)
+    assert out["applied"] is False
+    with _db() as db:
+        assert db.get(Vuln, vuln_id).verifier_status == "verified"
+
+
+def test_run_verifier_once_timeout_auto_fails_without_retry(tmp_env, project, monkeypatch):
+    from app.agent.loop import LoopResult
+    from app.services import pipeline
+
+    vuln_id, _ = _submit_and_confirm(project, enable_verifier=True)
+    monkeypatch.setattr(
+        "app.services.asset_proof.ensure_project_fingerprints",
+        lambda project_id, force=False: {},
+    )
+    monkeypatch.setattr(
+        "app.services.asset_proof.load_project_fingerprints",
+        lambda project_id: {"collected": True, "fofa": 'title="demo"'},
+    )
+    monkeypatch.setattr("app.services.asset_proof.fofa_search_variants", lambda fp: [])
+
+    class TimeoutLoop:
+        def __init__(self, **kwargs):  # noqa: ANN003
+            self.state = {}
+
+        def run(self) -> LoopResult:
+            return LoopResult(ok=False, stop_reason="timeout", timed_out=True, state=self.state)
+
+    monkeypatch.setattr(pipeline, "AgentLoop", TimeoutLoop)
+    pipeline._run_verifier_once(project)
+    with _db() as db:
+        assert db.get(Vuln, vuln_id).verifier_status == "failed"
+    assert pending_verifier_count(project) == 0
+
+    calls: list[object] = []
+
+    class ShouldNotRun:
+        def __init__(self, **kwargs):  # noqa: ANN003
+            calls.append(kwargs)
+
+        def run(self) -> LoopResult:
+            raise AssertionError("timeout fail must not start another verifier round")
+
+    monkeypatch.setattr(pipeline, "AgentLoop", ShouldNotRun)
+    pipeline._run_verifier_once(project)
+    assert calls == []
+
+
+def test_manual_internet_verify_when_disabled(tmp_env, project, monkeypatch):
+    from app.main import app
+    from app.models import Project
+    from app.services import pipeline
+
+    kicked: list[int] = []
+    monkeypatch.setattr(pipeline, "start_audit", lambda pid: None)
+    monkeypatch.setattr(pipeline, "kick_verifier", lambda pid: kicked.append(pid))
+
+    first_id, _ = _submit_and_confirm(project, enable_verifier=False, root_cause_key="unauthorized_access:A")
+    second_id, _ = _submit_and_confirm(
+        project,
+        enable_verifier=False,
+        title="另一条前台",
+        root_cause_key="unauthorized_access:B",
+        file_path="b.java",
+    )
+    with TestClient(app) as client:
+        detail = client.get(f"/api/vulns/{first_id}")
+        assert detail.status_code == 200
+        assert detail.json()["can_internet_verify"] is True
+        assert detail.json()["internet_verify_queued"] is False
+
+        queued = client.post(f"/api/vulns/{first_id}/internet-verify")
+        assert queued.status_code == 200
+        body = queued.json()
+        assert body["ok"] is True
+        assert body["vuln_id"] == first_id
+        assert body["verifier_status"] == "pending"
+        assert body["verifier_enabled"] is True
+        assert kicked == [project]
+
+        again = client.post(f"/api/vulns/{first_id}/internet-verify")
+        assert again.status_code == 409
+
+        refreshed = client.get(f"/api/vulns/{first_id}")
+        assert refreshed.json()["internet_verify_queued"] is True
+        assert refreshed.json()["can_internet_verify"] is True
+
+        sibling = client.get(f"/api/vulns/{second_id}")
+        assert sibling.json()["verifier_status"] in ("none", None)
+        assert sibling.json()["internet_verify_queued"] is False
+        assert sibling.json()["can_internet_verify"] is True
+
+    with _db() as db:
+        proj = db.get(Project, project)
+        assert proj.verifier_enabled is True
+        assert db.get(Vuln, first_id).verifier_status == "pending"
+        assert db.get(Vuln, second_id).verifier_status == "none"
+
+
+def test_manual_internet_verify_rejects_backend_and_requeues_skipped(tmp_env, project, monkeypatch):
+    from app.main import app
+    from app.models import Project
+    from app.services import pipeline
+
+    monkeypatch.setattr(pipeline, "start_audit", lambda pid: None)
+    monkeypatch.setattr(pipeline, "kick_verifier", lambda pid: None)
+
+    backend_id, _ = _submit_and_confirm(project, surface="backend", enable_verifier=False)
+    skipped_id, _ = _submit_and_confirm(
+        project,
+        enable_verifier=False,
+        title="跳过的前台",
+        root_cause_key="unauthorized_access:Skip",
+        file_path="skip.java",
+    )
+    with _db() as db:
+        row = db.get(Vuln, skipped_id)
+        row.verifier_status = "skipped"
+        db.commit()
+
+    with TestClient(app) as client:
+        blocked = client.post(f"/api/vulns/{backend_id}/internet-verify")
+        assert blocked.status_code == 400
+        assert "前台" in blocked.json()["detail"]
+        assert client.get(f"/api/vulns/{backend_id}").json()["can_internet_verify"] is False
+
+        queued = client.post(f"/api/vulns/{skipped_id}/internet-verify")
+        assert queued.status_code == 200
+        assert queued.json()["verifier_status"] == "pending"
+
+    with _db() as db:
+        assert db.get(Vuln, skipped_id).verifier_status == "pending"
+        assert db.get(Project, project).verifier_enabled is True
+
+
+def test_manual_internet_verify_awaiting_user_and_completed_project(tmp_env, project, monkeypatch):
+    from app.main import app
+    from app.models import Project
+    from app.services import pipeline
+
+    monkeypatch.setattr(pipeline, "start_audit", lambda pid: None)
+    monkeypatch.setattr(pipeline, "kick_verifier", lambda pid: None)
+
+    awaiting_id, _ = _submit_and_confirm(project, enable_verifier=True)
+    done_id, _ = _submit_and_confirm(
+        project,
+        enable_verifier=True,
+        title="已完成项目上的前台",
+        root_cause_key="unauthorized_access:Done",
+        file_path="done.java",
+    )
+    with _db() as db:
+        db.get(Vuln, awaiting_id).verifier_status = "awaiting_user"
+        db.get(Vuln, done_id).verifier_status = "failed"
+        proj = db.get(Project, project)
+        proj.status = "completed"
+        db.commit()
+
+    with TestClient(app) as client:
+        awaiting = client.post(f"/api/vulns/{awaiting_id}/internet-verify")
+        assert awaiting.status_code == 409
+        assert "验证确认" in awaiting.json()["detail"]
+
+        queued = client.post(f"/api/vulns/{done_id}/internet-verify")
+        assert queued.status_code == 200
+        assert queued.json()["verifier_status"] == "pending"
+
+    with _db() as db:
+        proj = db.get(Project, project)
+        assert proj.status == "auditing"
+        assert proj.phase == "verifier"
+        assert db.get(Vuln, done_id).verifier_status == "pending"
+        assert db.get(Vuln, awaiting_id).verifier_status == "awaiting_user"

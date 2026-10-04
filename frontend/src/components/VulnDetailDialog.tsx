@@ -1,5 +1,4 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
-import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { CheckIcon, CopyIcon, DownloadIcon, Loader2Icon } from 'lucide-react'
 import { api, formatApiError, type VulnDetail, type VulnTrackingStatus } from '../api'
@@ -34,6 +33,7 @@ import {
   severityScoreBadgeClass,
 } from '../lib/utils'
 import { startVisibilityPoll } from '../lib/visibilityPoll'
+import { useI18n } from '@/i18n'
 
 const MarkdownView = lazy(() => import('./MarkdownView'))
 
@@ -56,7 +56,7 @@ export default function VulnDetailDialog({
   onUpdated?: (detail: VulnDetail) => void
   showProjectLink?: boolean
 }) {
-  const { t } = useTranslation()
+    const { t } = useI18n()
   const [detail, setDetail] = useState<VulnDetail | null>(null)
   const [loadError, setLoadError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -64,6 +64,8 @@ export default function VulnDetailDialog({
   const [marking, setMarking] = useState(false)
   const [dynamicBusy, setDynamicBusy] = useState(false)
   const [dynamicError, setDynamicError] = useState('')
+  const [internetBusy, setInternetBusy] = useState(false)
+  const [internetError, setInternetError] = useState('')
   const [reportKind, setReportKind] = useState<'report' | 'advisory' | 'cve'>('report')
   const [advisoryCopied, setAdvisoryCopied] = useState(false)
   const [cveCopied, setCveCopied] = useState(false)
@@ -76,6 +78,8 @@ export default function VulnDetailDialog({
       activeVulnIdRef.current = null
       setDynamicError('')
       setDynamicBusy(false)
+      setInternetError('')
+      setInternetBusy(false)
       setReportKind('report')
       setAdvisoryCopied(false)
       setCveCopied(false)
@@ -90,6 +94,8 @@ export default function VulnDetailDialog({
     setCveCopied(false)
     setDynamicError('')
     setDynamicBusy(false)
+    setInternetError('')
+    setInternetBusy(false)
 
     async function loadDetail(id: number, initial: boolean) {
       try {
@@ -101,7 +107,7 @@ export default function VulnDetailDialog({
         if (activeVulnIdRef.current !== id) return
         if (initial) {
           const text = err instanceof Error ? err.message : String(err || '')
-          setLoadError(text || t('vulnDetail.loadFailed'))
+          setLoadError(text || t('comp.detail.loadFail'))
           setDetail(null)
         }
       } finally {
@@ -122,7 +128,7 @@ export default function VulnDetailDialog({
   const detailProject =
     projectName ||
     detail?.project_name ||
-    (detail ? t('fmt.projectRef', { id: detail.project_id }) : '')
+    (detail ? t('comp.filter.fallback', { id: detail.project_id }) : '')
   const detailVerifyMode = normalizeDynamicVerifyMode(dynamicVerifyMode, dynamicVerifyEnabled)
   const priorIsHarness = detail?.evidence_level === 'harness'
   const canIntegrationFollowup =
@@ -130,20 +136,38 @@ export default function VulnDetailDialog({
   const dynamicVerifyKind =
     detailVerifyMode === 'harness'
       ? canIntegrationFollowup
-        ? t('vulnDetail.kind.integration')
-        : t('vulnDetail.kind.harness')
+        ? t('comp.detail.integration')
+        : t('comp.detail.harness')
       : detailVerifyMode === 'lab'
-        ? t('vulnDetail.kind.lab')
-        : t('vulnDetail.kind.labOrHarness')
-  const priorConclusion = priorIsHarness ? t('vulnDetail.kind.harness') : t('vulnDetail.kind.staticShort')
+        ? t('comp.detail.lab')
+        : t('comp.detail.labOrHarness')
+  const priorConclusion = priorIsHarness ? t('comp.detail.harness') : t('comp.detail.static')
   const dynamicVerifyHint =
     detail?.dynamic_verify_queued || dynamicBusy
-      ? t('vulnDetail.hint.queued', { prior: priorConclusion, kind: dynamicVerifyKind })
+      ? t('comp.detail.continueNote', { prior: priorConclusion, kind: dynamicVerifyKind })
       : canIntegrationFollowup
-        ? t('vulnDetail.hint.integration')
+        ? t('comp.detail.l3Note')
         : priorIsHarness
-          ? t('vulnDetail.hint.harness')
-          : t('vulnDetail.hint.static', { kind: dynamicVerifyKind })
+          ? t('comp.detail.labOnHarness')
+          : t('comp.detail.staticAppend', { kind: dynamicVerifyKind })
+  const internetQueued = Boolean(detail?.internet_verify_queued) || internetBusy
+  const internetAwaiting = detail?.verifier_status === 'awaiting_user'
+  const internetLabel =
+    internetQueued
+      ? t('comp.detail.internetBusy')
+      : internetAwaiting
+        ? t('comp.detail.awaitUser')
+        : detail?.verifier_status === 'skipped' ||
+            detail?.verifier_status === 'failed' ||
+            detail?.verifier_status === 'verified'
+          ? t('comp.detail.internetAgain')
+          : t('comp.detail.internet')
+  const internetHint =
+    internetQueued
+      ? t('comp.detail.queued')
+      : internetAwaiting
+        ? t('comp.detail.needConsent')
+        : t('comp.detail.manualQueue')
 
   async function downloadReport(id: number, kind: 'report' | 'advisory' | 'cve' = 'report') {
     try {
@@ -203,9 +227,27 @@ export default function VulnDetailDialog({
       setDetail(next)
       onUpdated?.(next)
     } catch (err) {
-      setDynamicError(formatApiError(err, t('vulnDetail.startVerifyTimeout')))
+      setDynamicError(formatApiError(err, t('comp.detail.dynTimeout')))
     } finally {
       setDynamicBusy(false)
+    }
+  }
+
+  async function startInternetVerify() {
+    if (!detail || internetBusy || detail.internet_verify_queued || detail.verifier_status === 'awaiting_user') {
+      return
+    }
+    setInternetBusy(true)
+    setInternetError('')
+    try {
+      await api.requestInternetVerify(detail.id)
+      const next = await api.getVuln(detail.id)
+      setDetail(next)
+      onUpdated?.(next)
+    } catch (err) {
+      setInternetError(formatApiError(err, t('comp.detail.netFail')))
+    } finally {
+      setInternetBusy(false)
     }
   }
 
@@ -234,7 +276,7 @@ export default function VulnDetailDialog({
       <DialogContent className="flex max-h-[min(90vh,52rem)] w-full max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
         <DialogHeader className="shrink-0 border-b border-border px-5 py-4 pr-12">
           <DialogTitle className="text-lg leading-snug font-semibold">
-            {detail?.title || t('vulnDetail.title')}
+            {detail?.title || t('comp.detail.title')}
           </DialogTitle>
           <DialogDescription>
             {detail ? (
@@ -246,13 +288,12 @@ export default function VulnDetailDialog({
                 ) : (
                   formatProjectRef(detail.project_id, detailProject)
                 )}
-                {' · '}
-                {t('vulnDetail.producedAt', { time: formatDateTime(detail.created_at) })}
+                {' · '}{t('comp.detail.produced', { time: formatDateTime(detail.created_at) })}
               </>
             ) : loadError ? (
-              t('vulnDetail.loadFailedShort')
+              t('comp.detail.loadErr')
             ) : (
-              t('vulnDetail.loadingReport')
+              t('comp.detail.loadReport')
             )}
           </DialogDescription>
         </DialogHeader>
@@ -261,7 +302,7 @@ export default function VulnDetailDialog({
             <div className="space-y-3">
               <TooltipProvider delay={200}>
               <div className="flex flex-wrap gap-2 text-xs">
-                <Badge variant="outline">{t('fmt.projectRef', { id: detail.project_id })}</Badge>
+                <Badge variant="outline">{t('comp.detail.projectBadge', { id: detail.project_id })}</Badge>
                 <Badge variant="outline">{detail.vuln_type}</Badge>
                 {detailScore ? (
                   <Badge
@@ -328,25 +369,25 @@ export default function VulnDetailDialog({
               </TooltipProvider>
               {detail.verifier_status === 'awaiting_user' ? (
                 <div className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100/90">
-                  {t('vulnDetail.awaitingConsent')}
+                  {t('comp.detail.consentWait')}
                   <Link className="ml-2 underline" to="/verifier-consent">
-                    {t('vulnDetail.goConfirm')}
+                    {t('comp.detail.goConsent')}
                   </Link>
                 </div>
               ) : null}
               {detail.verifier_status === 'skipped' ? (
                 <div className="rounded border border-border/60 bg-muted/40 px-3 py-2 text-sm text-slate-300">
-                  {t('vulnDetail.verifySkipped')}
+                  {t('comp.detail.noInternet')}
                 </div>
               ) : null}
               {detail.verifier_targets && detail.verifier_targets.length > 0 ? (
                 <div className="space-y-2 rounded border border-border/60 bg-muted/30 px-3 py-2">
                   <div className="text-xs font-medium text-slate-300">
-                    {t('vulnDetail.fofaTargets', {
-                      total: detail.verifier_targets.length,
-                      success: detail.verifier_targets.filter((x) => x.status === 'success').length,
-                      fail: detail.verifier_targets.filter((x) => x.status === 'fail').length,
-                      untested: detail.verifier_targets.filter((x) => x.status === 'untested').length,
+                    {t('comp.detail.targets', { n: detail.verifier_targets.length })}
+                    {t('comp.detail.targetsStats', {
+                      ok: detail.verifier_targets.filter((row) => row.status === 'success').length,
+                      fail: detail.verifier_targets.filter((row) => row.status === 'fail').length,
+                      untested: detail.verifier_targets.filter((row) => row.status === 'untested').length,
                     })}
                   </div>
                   {detail.verifier_fofa_query ? (
@@ -356,10 +397,10 @@ export default function VulnDetailDialog({
                     <table className="w-full min-w-[28rem] text-left text-xs">
                       <thead className="text-slate-500">
                         <tr>
-                          <th className="py-1 pr-2 font-medium">{t('vulnDetail.col.status')}</th>
-                          <th className="py-1 pr-2 font-medium">{t('vulnDetail.col.target')}</th>
-                          <th className="py-1 pr-2 font-medium">{t('vulnDetail.col.title')}</th>
-                          <th className="py-1 font-medium">{t('vulnDetail.col.note')}</th>
+                          <th className="py-1 pr-2 font-medium">{t('comp.detail.colStatus')}</th>
+                          <th className="py-1 pr-2 font-medium">{t('comp.detail.colTarget')}</th>
+                          <th className="py-1 pr-2 font-medium">{t('comp.detail.colTitle')}</th>
+                          <th className="py-1 font-medium">{t('comp.detail.colNote')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -378,9 +419,9 @@ export default function VulnDetailDialog({
                                 {formatVerifierTargetStatus(tgt.status)}
                               </Badge>
                             </td>
-                            <td className="py-1.5 pr-2 break-all text-slate-200">{tgt.host || '-'}</td>
-                            <td className="py-1.5 pr-2 text-slate-400">{tgt.title || '-'}</td>
-                            <td className="py-1.5 text-slate-400">{tgt.note || '-'}</td>
+                            <td className="py-1.5 pr-2 break-all text-slate-200">{tgt.host || t('common.dash')}</td>
+                            <td className="py-1.5 pr-2 text-slate-400">{tgt.title || t('common.dash')}</td>
+                            <td className="py-1.5 text-slate-400">{tgt.note || t('common.dash')}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -390,29 +431,29 @@ export default function VulnDetailDialog({
               ) : null}
               {detail.verifier_status === 'verified' ? (
                 <div className="space-y-2 rounded border border-emerald-900/50 bg-emerald-950/20 px-3 py-2">
-                  <div className="text-xs font-medium text-emerald-300/90">{t('vulnDetail.reproEvidence')}</div>
+                  <div className="text-xs font-medium text-emerald-300/90">{t('comp.detail.evidence')}</div>
                   <div className="space-y-1 text-sm">
-                    <div className="text-xs text-slate-400">{t('vulnDetail.fofaQuery')}</div>
+                    <div className="text-xs text-slate-400">{t('comp.detail.fofaQuery')}</div>
                     <pre className="overflow-auto whitespace-pre-wrap rounded bg-black/40 p-3 text-xs text-slate-200">
-                      {detail.verifier_fofa_query || t('vulnDetail.notRecorded')}
+                      {detail.verifier_fofa_query || t('comp.detail.unlogged')}
                     </pre>
                   </div>
                   <div className="space-y-1 text-sm">
-                    <div className="text-xs text-slate-400">{t('vulnDetail.hitTarget')}</div>
+                    <div className="text-xs text-slate-400">{t('comp.detail.hitTarget')}</div>
                     <div className="break-all text-slate-200">
-                      {detail.verifier_verified_url || t('vulnDetail.noUrlRecorded')}
+                      {detail.verifier_verified_url || t('comp.detail.unloggedUrl')}
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <div className="text-xs text-slate-400">{t('vulnDetail.pocUsed')}</div>
+                    <div className="text-xs text-slate-400">{t('comp.detail.usedPoc')}</div>
                     <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded bg-black/40 p-3 text-xs text-slate-200">
-                      {detail.verifier_poc || t('vulnDetail.noRequestRecorded')}
+                      {detail.verifier_poc || t('comp.detail.unloggedReq')}
                     </pre>
                   </div>
                   <div className="space-y-1">
-                    <div className="text-xs text-slate-400">{t('vulnDetail.actualResponse')}</div>
+                    <div className="text-xs text-slate-400">{t('comp.detail.resp')}</div>
                     <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded bg-black/40 p-3 text-xs text-slate-200">
-                      {detail.verifier_response || t('vulnDetail.noResponseRecorded')}
+                      {detail.verifier_response || t('comp.detail.unloggedResp')}
                     </pre>
                   </div>
                 </div>
@@ -424,9 +465,7 @@ export default function VulnDetailDialog({
                   disabled={marking}
                   onClick={() => markDetail(detail.tracking_status === 'submitted' ? 'none' : 'submitted')}
                 >
-                  {detail.tracking_status === 'submitted'
-                    ? t('vulnDetail.unmarkSubmitted')
-                    : t('vulnsPage.markSubmitted')}
+                  {detail.tracking_status === 'submitted' ? t('comp.detail.unsubmit') : t('comp.detail.markSubmit')}
                 </Button>
                 <Button
                   size="sm"
@@ -434,9 +473,7 @@ export default function VulnDetailDialog({
                   disabled={marking}
                   onClick={() => markDetail(detail.tracking_status === 'ignored' ? 'none' : 'ignored')}
                 >
-                  {detail.tracking_status === 'ignored'
-                    ? t('vulnDetail.unmarkIgnored')
-                    : t('vulnsPage.markIgnored')}
+                  {detail.tracking_status === 'ignored' ? t('comp.detail.unignore') : t('comp.detail.markIgnore')}
                 </Button>
                 <Button
                   size="sm"
@@ -452,10 +489,10 @@ export default function VulnDetailDialog({
                 >
                   <DownloadIcon data-icon="inline-start" />
                   {reportKind === 'advisory'
-                    ? t('vulnDetail.downloadAdvisory')
+                    ? t('comp.detail.dlAdvisory')
                     : reportKind === 'cve'
-                      ? t('vulnDetail.downloadCve')
-                      : t('vulnDetail.downloadReport')}
+                      ? t('comp.detail.dlCve')
+                      : t('comp.detail.dlReport')}
                 </Button>
                 {detail.can_dynamic_verify || detail.dynamic_verify_queued ? (
                   <TooltipProvider delay={200}>
@@ -470,13 +507,33 @@ export default function VulnDetailDialog({
                           {dynamicBusy || detail.dynamic_verify_queued ? (
                             <Loader2Icon className="animate-spin" data-icon="inline-start" />
                           ) : null}
-                          {detail.dynamic_verify_queued || dynamicBusy
-                            ? t('vulnDetail.followupVerifying')
-                            : t('vulnDetail.followupVerify')}
+                          {detail.dynamic_verify_queued || dynamicBusy ? t('comp.detail.appendBusy') : t('comp.detail.append')}
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-xs text-left leading-relaxed whitespace-normal">
                         {dynamicVerifyHint}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : null}
+                {detail.can_internet_verify ? (
+                  <TooltipProvider delay={200}>
+                    <Tooltip>
+                      <TooltipTrigger render={<span className="inline-flex" />}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={internetQueued || internetAwaiting}
+                          onClick={() => startInternetVerify()}
+                        >
+                          {internetQueued ? (
+                            <Loader2Icon className="animate-spin" data-icon="inline-start" />
+                          ) : null}
+                          {internetLabel}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs text-left leading-relaxed whitespace-normal">
+                        {internetHint}
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -487,36 +544,36 @@ export default function VulnDetailDialog({
                   {dynamicError}
                 </div>
               ) : null}
+              {internetError ? (
+                <div className="rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {internetError}
+                </div>
+              ) : null}
               {detail.dynamic_verify_queued ? (
                 <div className="rounded border border-border/60 bg-muted/40 px-3 py-2 text-sm text-slate-300">
-                  {t('vulnDetail.queuedBanner', {
-                    prior:
-                      detail.evidence_level === 'harness'
-                        ? t('vulnDetail.kind.harness')
-                        : t('vulnDetail.kind.staticShort'),
-                  })}
+                  {t('comp.detail.continueHead')}
+                  {detail.evidence_level === 'harness' ? t('comp.detail.harness') : t('comp.detail.static')}
+                  {t('comp.detail.continueTail')}
                 </div>
               ) : null}
               {detail.submission_reason ? (
                 <div className="rounded border border-border/60 bg-muted/40 px-3 py-2 text-sm text-slate-300">
-                  <div className="text-xs text-slate-400">{t('vulnTags.attr.tierReason')}</div>
+                  <div className="text-xs text-slate-400">{t('attr.reason')}</div>
                   <div>{detail.submission_reason}</div>
                   {detail.root_cause_key ? (
-                    <div className="mt-1 text-xs text-slate-400">
-                      {t('vulnDetail.rootCauseKey', { key: detail.root_cause_key })}
-                    </div>
+                    <div className="mt-1 text-xs text-slate-400">{t('comp.detail.rootKey', { key: detail.root_cause_key })}</div>
                   ) : null}
                 </div>
               ) : null}
               {detail.merged_into_id ? (
                 <div className="rounded border border-cyan-900/50 bg-cyan-950/30 px-3 py-2 text-sm text-cyan-200/90">
-                  {t('vulnDetail.mergedInto')}{' '}
+                  {t('comp.detail.merged')}{' '}
                   <RelatedVulnLink id={detail.merged_into_id}>#{detail.merged_into_id}</RelatedVulnLink>
                 </div>
               ) : null}
               {detail.merged_from_ids && detail.merged_from_ids.length > 0 ? (
                 <div className="rounded border border-border/60 bg-muted/40 px-3 py-2 text-sm text-slate-300">
-                  <div className="text-xs text-slate-400">{t('vulnDetail.mergedFrom')}</div>
+                  <div className="text-xs text-slate-400">{t('comp.detail.mergedItems')}</div>
                   <div className="mt-1 flex flex-wrap gap-2">
                     {detail.merged_from_ids.map((mid) => (
                       <RelatedVulnLink key={mid} id={mid}>
@@ -532,7 +589,7 @@ export default function VulnDetailDialog({
                   variant={reportKind === 'report' ? 'default' : 'outline'}
                   onClick={() => setReportKind('report')}
                 >
-                  {t('followUp.reportKind.report')}
+                  {t('comp.detail.zhReport')}
                 </Button>
                 <Button
                   size="sm"
@@ -555,7 +612,7 @@ export default function VulnDetailDialog({
                     ) : (
                       <CopyIcon data-icon="inline-start" />
                     )}
-                    {advisoryCopied ? t('common.copied') : t('vulnDetail.copyToGithub')}
+                    {advisoryCopied ? t('comp.detail.copied') : t('comp.detail.copyGh')}
                   </Button>
                 ) : null}
                 {reportKind === 'cve' ? (
@@ -565,31 +622,26 @@ export default function VulnDetailDialog({
                     ) : (
                       <CopyIcon data-icon="inline-start" />
                     )}
-                    {cveCopied ? t('common.copied') : t('vulnDetail.copyCve')}
+                    {cveCopied ? t('comp.detail.copied') : t('comp.detail.copyCve')}
                   </Button>
                 ) : null}
               </div>
               {reportKind === 'advisory' ? (
                 <pre className="max-h-[min(70vh,48rem)] overflow-auto whitespace-pre-wrap rounded bg-black/40 p-3 text-xs leading-relaxed text-slate-200">
-                  {detail.advisory_md || t('vulnDetail.noAdvisory')}
+                  {detail.advisory_md || t('comp.detail.noAdvisory')}
                 </pre>
               ) : reportKind === 'cve' ? (
                 <pre className="max-h-[min(70vh,48rem)] overflow-auto whitespace-pre-wrap rounded bg-black/40 p-3 text-xs leading-relaxed text-slate-200">
-                  {detail.cve_json || t('vulnDetail.noCve')}
+                  {detail.cve_json ||
+                    t('comp.detail.noCve')}
                 </pre>
               ) : (
-                <Suspense fallback={<div className="text-sm text-muted-foreground">{t('vulnDetail.loadingReport')}</div>}>
-                  <MarkdownView content={detail.report_md || detail.source_sink || t('vulnDetail.noReport')} />
+                <Suspense fallback={<div className="text-sm text-muted-foreground">{t('comp.detail.loadReport')}</div>}>
+                  <MarkdownView content={detail.report_md || detail.source_sink || t('comp.detail.noReportMd')} />
                 </Suspense>
               )}
               {detail.http_request ? (
                 <pre className="overflow-auto rounded bg-black/40 p-3 text-xs text-slate-200">{detail.http_request}</pre>
-              ) : null}
-              {detail.poc_code ? (
-                <div>
-                  <div className="mb-1 text-xs text-slate-400">{t('vulnDetail.pocUsage')}</div>
-                  <pre className="overflow-auto rounded bg-black/40 p-3 text-xs text-slate-200">{detail.poc_code}</pre>
-                </div>
               ) : null}
               <VulnFollowUpPanel
                 vulnId={detail.id}
@@ -620,7 +672,7 @@ export default function VulnDetailDialog({
                     .catch((err) => {
                       if (activeVulnIdRef.current !== vulnId) return
                       const text = err instanceof Error ? err.message : String(err || '')
-                      setLoadError(text || t('vulnDetail.loadFailed'))
+                      setLoadError(text || t('comp.detail.loadFail'))
                     })
                     .finally(() => {
                       if (activeVulnIdRef.current === vulnId) setLoading(false)
@@ -631,9 +683,7 @@ export default function VulnDetailDialog({
               </Button>
             </div>
           ) : (
-            <div className="text-sm text-muted-foreground">
-              {loading ? t('vulnDetail.loadingReport') : t('vulnDetail.noData')}
-            </div>
+            <div className="text-sm text-muted-foreground">{loading ? t('comp.detail.loadReport') : t('comp.detail.noData')}</div>
           )}
         </div>
       </DialogContent>

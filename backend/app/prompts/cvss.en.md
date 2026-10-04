@@ -16,9 +16,9 @@ This is the **in-application privilege** the attacker needs before exploiting, a
 | Backend | ordinary user | PR:L |
 | Backend | administrator (admin) | PR:H |
 
-- Do not use "SNMP / device side / mail / callback injection needs no login" to write a **backend** finding as PR:N. If the attacker genuinely needs no account in this application to inject, and the victim's page is also unauthenticated, set `attack_surface=frontend` and then use PR:N.
+- Do not use "SNMP / unix-agent / device side / mail / callback injection needs no login" to write a **backend** finding as PR:N. If exploitation needs an administrator to first register the attacker-controlled device, mailbox, webhook, SNMP agent, unix-agent, etc. into the system and then relies on polling/callback injection, set `attack_surface=backend` + `required_account=admin` (PR:H), not `user`. An ordinary user opening a page and getting hit is not frontend and not PR:L. Mark `frontend` / PR:N only when the attacker can send the payload directly through this application's public/unauthenticated endpoint without an administrator first registering an attacker-controlled source.
 - Needing a login to change data or hit the endpoint → not PR:N. Needing an administrator account → PR:H, not PR:L.
-- Needing a login is not AC:H (that is PR).
+- Needing a login is not AC:H (that is PR). An administrator first adding the attacker's device is also not PR:N. An ordinary user opening a page and getting hit is not PR:N / PR:L.
 
 **Indirect consumer (exposure_mode=indirect_consumer)**
 - Applies to JDBC connection pools / SQL firewalls (such as Druid WallFilter) / codec libraries / middleware consumers - things with **no direct HTTP/RPC entry point of their own**, where the flaw is only exploitable once "an upstream application passes attacker input into the component API".
@@ -65,3 +65,18 @@ Type anchors (still adjust to the evidence; never use the type in reverse to inf
 - XSS written as `C:H/I:H` to reach 9.3/9.6.
 - Using S:C on a server-side finding with no cross-authority impact, to inflate the score.
 - Using a complex vector to paper over planting a file, swapping the sink, or chaining a second vulnerability.
+
+# CVSS 4.0 metrics
+
+ConfirmVuln must also pass `cvss4_vector` (11 base metrics); do not fill in a score by hand, the system scores it per FIRST CVSS 4.0 and writes it into advisory.md / cve.json.
+Vector: `CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N`
+Values: AV=N|A|L|P, AC=L|H, AT=N|P, PR=N|L|H, UI=N|P|A, VC/VI/VA/SC/SI/SA=H|L|N.
+PR rules are the same as 3.1. Score thresholds are the same.
+
+**Mapping from 3.1**
+- AT:N by default; AT:P only when exploitation also depends on a deployment condition the attacker cannot prepare alone (roughly the "extra condition" half of 3.1's AC:H).
+- UI:N no interaction; UI:P passive (opening a page / viewing an admin screen is enough, the XSS default); UI:A also requires an active click. Do not write 3.1's UI:R.
+- VC/VI/VA = vulnerable-system impact (corresponds to 3.1's C/I/A, and with S:U the subsequent systems are all N).
+- SC/SI/SA = subsequent systems. All N when there is no crossing of a security boundary. Do not mark the subsequent systems of an ordinary RCE/SQLi as H.
+- XSS defaults to `UI:P/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N`; do not mark VC/VI as H for cookie / account takeover.
+- Indirect consumer: AC:H, AV must not be N; at most one of VC/VI/VA is H when the upstream chain is unproven.

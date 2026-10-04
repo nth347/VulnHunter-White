@@ -1,17 +1,28 @@
 import type { ReactNode } from 'react'
-import { useTranslation } from 'react-i18next'
-import type { TFunction } from 'i18next'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn, formatAuditMode, formatMiningPaths } from '@/lib/utils'
+import { useI18n } from '@/i18n'
+import type { MessageVars } from '@/i18n/t'
 
-const RECON_STEP_IDS = ['map', 'source_ext', 'old_vulns', 'mark'] as const
+type Translate = (key: string, vars?: MessageVars) => string
+
+function reconSteps(t: Translate) {
+  return [
+    { id: 'map', label: t('flow.preview.map'), hint: t('flow.branch.map') },
+    { id: 'source_ext', label: t('flow.preview.ext'), hint: t('flow.branch.sourceExt') },
+    { id: 'old_vulns', label: t('flow.preview.oldVulns'), hint: t('flow.branch.oldVulns') },
+    { id: 'mark', label: t('flow.preview.mark'), hint: t('flow.branch.mark') },
+  ]
+}
 
 type PreviewProps = {
   auditMode: 'bounty' | 'full' | 'custom'
   dynamicVerifyEnabled: boolean
   dynamicVerifyMode?: 'off' | 'lab' | 'harness'
   manualLab: boolean
+  /** False on Docker Desktop - lab means manual target only. */
+  dockerLabBuildEnabled?: boolean
   verifierEnabled: boolean
   attackChainEnabled?: boolean
   codeIntelEnabled?: boolean
@@ -33,180 +44,211 @@ type FlowNode = {
   chips: { id: string; label: string; hint: string }[]
 }
 
-function buildNodes(props: PreviewProps, t: TFunction): FlowNode[] {
-  const {
-    auditMode,
-    dynamicVerifyEnabled,
-    dynamicVerifyMode,
-    manualLab,
-    verifierEnabled,
-    attackChainEnabled = false,
-    codeIntelEnabled = false,
-    heuristicEnabled = true,
-    heuristicLite = false,
-    fastEnabled = false,
-    bypassEnabled = false,
-    unconstrainedEnabled = false,
-  } = props
+function buildNodes(t: Translate, {
+  auditMode,
+  dynamicVerifyEnabled,
+  dynamicVerifyMode,
+  manualLab,
+  dockerLabBuildEnabled = true,
+  verifierEnabled,
+  attackChainEnabled = false,
+  codeIntelEnabled = false,
+  heuristicEnabled = true,
+  heuristicLite = false,
+  fastEnabled = false,
+  bypassEnabled = false,
+  unconstrainedEnabled = false,
+}: PreviewProps): FlowNode[] {
   const bounty = auditMode !== 'full'
-  const scope = bounty ? 'Bounty' : 'Full'
   const verifyMode = dynamicVerifyMode || (dynamicVerifyEnabled ? 'lab' : 'off')
-  const useManual = verifyMode === 'lab' && manualLab
+  const useManual = verifyMode === 'lab' && (manualLab || !dockerLabBuildEnabled)
   const labOn = verifyMode === 'lab'
   const harnessOn = verifyMode === 'harness'
+  const labTag = !dockerLabBuildEnabled && labOn ? t('verify.manual') : labOn ? t('verify.lab') : harnessOn ? t('verify.harness') : t('flow.preview.tag.static')
   const heuristicOn = heuristicEnabled !== false
   const liteOn = heuristicOn && heuristicLite === true
   const fastOn = fastEnabled === true
   const bypassOn = bypassEnabled === true
   const unconstrainedOn = unconstrainedEnabled === true
-
   const scopeChip = bounty
-    ? { id: 'scope', label: t('auditFlow.scopeChip.bounty.label'), hint: t('auditFlow.scopeChip.bounty.hint') }
-    : { id: 'scope', label: t('auditFlow.scopeChip.full.label'), hint: t('auditFlow.scopeChip.full.hint') }
+    ? { id: 'scope', label: t('flow.preview.scope.high'), hint: t('flow.preview.scope.highHint') }
+    : { id: 'scope', label: t('flow.preview.scope.low'), hint: t('flow.preview.scope.lowHint') }
   const unconstrainedScopeChip = {
     id: 'scope',
-    label: t('auditFlow.scopeChip.bounty.label'),
-    hint: t('auditFlow.scopeChip.unconstrained.hint'),
+    label: t('flow.preview.scope.high'),
+    hint: t('flow.preview.unconstScopeHint'),
   }
-  const tagBounty = bounty ? t('auditFlow.tag.bounty') : t('auditFlow.tag.full')
 
   const mines: FlowNode[] = []
   if (heuristicOn) {
     mines.push({
       id: 'heuristic',
-      title: liteOn ? t('auditFlow.heuristic.titleLite') : t('auditFlow.heuristic.title'),
-      tag: tagBounty,
-      body: t(`auditFlow.heuristic.body.${liteOn ? 'lite' : 'full'}${scope}`),
-      hint: t(`auditFlow.heuristic.hint.${liteOn ? 'lite' : 'full'}`),
+      title: liteOn ? t('mining.heuristicLite') : t('flow.reports.mine'),
+      tag: bounty ? t('flow.preview.tag.bounty') : t('flow.preview.tag.full'),
+      body: liteOn
+        ? bounty
+          ? t('flow.preview.heuristicLiteBounty')
+          : t('flow.preview.heuristicLiteFull')
+        : bounty
+          ? t('flow.preview.heuristicBounty')
+          : t('flow.preview.heuristicFull'),
+      hint: liteOn
+        ? t('flow.preview.heuristicLiteHint')
+        : t('flow.preview.heuristicHint'),
       chips: [scopeChip],
     })
   }
   if (fastOn) {
     mines.push({
       id: 'fast',
-      title: t('auditFlow.fast.title'),
-      tag: tagBounty,
-      body: t(`auditFlow.fast.body.${scope}`),
-      hint: t('auditFlow.fast.hint'),
+      title: t('mining.fast'),
+      tag: bounty ? t('flow.preview.tag.bounty') : t('flow.preview.tag.full'),
+      body: bounty
+        ? t('flow.preview.fastBounty')
+        : t('flow.preview.fastFull'),
+      hint: t('flow.preview.fastHint'),
       chips: [scopeChip],
     })
   }
   if (bypassOn) {
     mines.push({
       id: 'bypass',
-      title: t('auditFlow.bypass.title'),
-      tag: tagBounty,
-      body: t(`auditFlow.bypass.body.${scope}`),
-      hint: t('auditFlow.bypass.hint'),
+      title: t('mining.bypass'),
+      tag: bounty ? t('flow.preview.tag.bounty') : t('flow.preview.tag.full'),
+      body: bounty
+        ? t('flow.preview.bypassBounty')
+        : t('flow.preview.bypassFull'),
+      hint: t('flow.preview.bypassHint'),
       chips: [scopeChip],
     })
   }
   if (unconstrainedOn) {
     mines.push({
       id: 'unconstrained',
-      title: t('auditFlow.unconstrained.title'),
-      tag: t('auditFlow.tag.bounty'),
-      body: t('auditFlow.unconstrained.body'),
-      hint: t('auditFlow.unconstrained.hint'),
+      title: t('mining.unconstrained'),
+      tag: t('flow.preview.tag.bounty'),
+      body: t('flow.preview.unconstBody'),
+      hint: t('flow.preview.unconstHint'),
       chips: [unconstrainedScopeChip],
     })
   }
 
-  const reviewerVariant = labOn ? 'lab' : harnessOn ? 'harness' : 'static'
-  const reviewerBodyKey = labOn ? (useManual ? 'labManual' : 'lab') : harnessOn ? 'harness' : 'static'
-
   return [
     {
       id: 'recon',
-      title: t('auditFlow.recon.title'),
-      body: t('auditFlow.recon.body'),
-      hint: t('auditFlow.recon.hint'),
-      chips: RECON_STEP_IDS.map((id) => ({
-        id,
-        label: t(`auditFlow.recon.step.${id}`),
-        hint: t(`phaseFlow.branchHint.${id === 'map' ? 'map' : id}`),
-      })),
+      title: t('flow.phase.recon'),
+      body: t('flow.preview.reconBody'),
+      hint: t('flow.preview.reconHint'),
+      chips: [...reconSteps(t)],
     },
     {
       id: 'code_intel',
-      title: t('auditFlow.codeIntel.title'),
-      tag: codeIntelEnabled ? t('auditFlow.tag.codegraph') : t('auditFlow.tag.off'),
+      title: t('flow.phase.codeIntel'),
+      tag: codeIntelEnabled ? 'CodeGraph' : t('flow.preview.ciOff'),
       skipped: !codeIntelEnabled,
-      body: codeIntelEnabled ? t('auditFlow.codeIntel.bodyOn') : t('auditFlow.codeIntel.bodyOff'),
-      hint: codeIntelEnabled ? t('auditFlow.codeIntel.hintOn') : t('auditFlow.codeIntel.hintOff'),
+      body: codeIntelEnabled
+        ? t('flow.preview.ciOnBody')
+        : t('flow.preview.ciOffBody'),
+      hint: codeIntelEnabled
+        ? t('flow.preview.ciOnHint')
+        : t('flow.preview.ciOffHint'),
       chips: codeIntelEnabled
-        ? [{ id: 'src', label: t('auditFlow.codeIntel.chipSrc'), hint: t('auditFlow.codeIntel.chipSrcHint') }]
+        ? [{ id: 'src', label: t('flow.preview.srcOnly'), hint: t('flow.preview.srcHint') }]
         : [],
     },
     ...mines,
     {
       id: 'reviewer',
-      title: t('auditFlow.reviewer.title'),
-      tag: t(`auditFlow.reviewer.tag.${reviewerVariant}`),
-      body: t(`auditFlow.reviewer.body.${reviewerBodyKey}`),
-      hint: t(`auditFlow.reviewer.hint.${reviewerVariant}`),
+      title: t('flow.phase.reviewer'),
+      tag: labTag,
+      body: labOn
+        ? useManual
+          ? dockerLabBuildEnabled
+            ? t('flow.preview.reviewManualDocker')
+            : t('flow.preview.reviewManualOnly')
+          : t('flow.preview.reviewDocker')
+        : harnessOn
+          ? t('flow.preview.reviewHarness')
+          : t('flow.preview.reviewStatic'),
+      hint: labOn
+        ? dockerLabBuildEnabled
+          ? t('flow.preview.reviewLabHint')
+          : t('flow.preview.reviewManualHint')
+        : harnessOn
+          ? t('flow.preview.reviewHarnessHint')
+          : t('flow.preview.reviewStaticHint'),
       chips: labOn
         ? [
             {
               id: 'lab',
-              label: useManual ? t('auditFlow.reviewer.chip.manualLab') : t('auditFlow.reviewer.chip.lab'),
+              label: useManual ? t('verify.manual') : t('flow.preview.labSetup'),
               hint: useManual
-                ? t('auditFlow.reviewer.chip.manualLabHint')
-                : t('phaseFlow.branchHint.lab'),
+                ? dockerLabBuildEnabled
+                  ? t('flow.preview.labManualPrefer')
+                  : t('flow.preview.labManualOnly')
+                : t('flow.branch.lab'),
             },
             {
               id: 'poc',
               label: 'HTTP / MCP',
-              hint: t('auditFlow.reviewer.chip.pocHint'),
+              hint: t('flow.preview.pocHint'),
             },
           ]
         : harnessOn
           ? [
               {
                 id: 'harness',
-                label: t('auditFlow.reviewer.chip.harness'),
-                hint: t('auditFlow.reviewer.chip.harnessHint'),
+                label: t('flow.preview.sandbox'),
+                hint: t('flow.preview.sandboxHint'),
               },
             ]
-          : [{ id: 'static', label: 'static_only', hint: t('auditFlow.reviewer.chip.staticHint') }],
+          : [],
     },
     {
       id: 'verifier',
-      title: t('auditFlow.verifier.title'),
-      tag: verifierEnabled ? 'FOFA' : t('auditFlow.tag.off'),
+      title: t('flow.phase.verifier'),
+      tag: verifierEnabled ? 'FOFA' : t('flow.preview.ciOff'),
       skipped: !verifierEnabled,
-      body: verifierEnabled ? t('auditFlow.verifier.bodyOn') : t('auditFlow.verifier.bodyOff'),
-      hint: verifierEnabled ? t('auditFlow.verifier.hintOn') : t('auditFlow.verifier.hintOff'),
+      body: verifierEnabled
+        ? t('flow.preview.verifyOn')
+        : t('flow.preview.verifyOff'),
+      hint: verifierEnabled
+        ? t('flow.preview.verifyOnHint')
+        : t('flow.preview.verifyOffHint'),
       chips: verifierEnabled
         ? [
-            { id: 'frontend', label: t('auditFlow.verifier.chip.frontend'), hint: t('auditFlow.verifier.chip.frontendHint') },
-            { id: 'three', label: t('auditFlow.verifier.chip.three'), hint: t('auditFlow.verifier.chip.threeHint') },
-            { id: 'skip', label: t('auditFlow.verifier.chip.skip'), hint: t('auditFlow.verifier.chip.skipHint') },
+            { id: 'frontend', label: t('flow.preview.chip.frontend'), hint: t('flow.preview.chip.frontendHint') },
+            { id: 'three', label: t('flow.preview.chip.three'), hint: t('flow.preview.chip.threeHint') },
+            { id: 'skip', label: t('flow.preview.chip.skip'), hint: t('flow.preview.chip.skipHint') },
           ]
         : [],
     },
     {
       id: 'attack_chain',
-      title: t('auditFlow.attackChain.title'),
-      tag: attackChainEnabled ? t('auditFlow.tag.chain') : t('auditFlow.tag.off'),
+      title: t('flow.phase.attackChain'),
+      tag: attackChainEnabled ? t('flow.preview.chainTag') : t('flow.preview.ciOff'),
       skipped: !attackChainEnabled,
-      body: attackChainEnabled ? t('auditFlow.attackChain.bodyOn') : t('auditFlow.attackChain.bodyOff'),
-      hint: attackChainEnabled ? t('auditFlow.attackChain.hintOn') : t('auditFlow.attackChain.hintOff'),
+      body: attackChainEnabled
+        ? t('flow.preview.chainOn')
+        : t('flow.preview.chainOff'),
+      hint: attackChainEnabled
+        ? t('flow.preview.chainOnHint')
+        : t('flow.preview.chainOffHint'),
       chips: attackChainEnabled
         ? [
-            { id: 'confirmed', label: t('auditFlow.attackChain.chip.confirmed'), hint: t('auditFlow.attackChain.chip.confirmedHint') },
-            { id: 'min2', label: t('auditFlow.attackChain.chip.min2'), hint: t('auditFlow.attackChain.chip.min2Hint') },
+            { id: 'confirmed', label: t('flow.preview.chip.confirmed'), hint: t('flow.preview.chip.confirmedHint') },
+            { id: 'min2', label: t('flow.preview.chip.min2'), hint: t('flow.preview.chip.min2Hint') },
           ]
         : [],
     },
     {
       id: 'done',
-      title: t('auditFlow.done.title'),
+      title: t('flow.phase.done'),
       body:
         verifierEnabled || attackChainEnabled
-          ? t('auditFlow.done.bodyWithPost')
-          : t('auditFlow.done.body'),
-      hint: t('auditFlow.done.hint'),
+          ? t('flow.preview.donePost')
+          : t('flow.preview.doneOnly'),
+      hint: t('flow.preview.doneHint'),
       chips: [],
     },
   ]
@@ -328,21 +370,21 @@ function isMineNode(id: string) {
   return id === 'heuristic' || id === 'fast' || id === 'bypass' || id === 'unconstrained'
 }
 
-function summaryText(props: PreviewProps, t: TFunction): string {
-  const {
-    auditMode,
-    dynamicVerifyEnabled,
-    dynamicVerifyMode,
-    manualLab,
-    verifierEnabled,
-    attackChainEnabled = false,
-    codeIntelEnabled = false,
-    heuristicEnabled = true,
-    heuristicLite = false,
-    fastEnabled = false,
-    bypassEnabled = false,
-    unconstrainedEnabled = false,
-  } = props
+function summaryText(t: Translate, {
+  auditMode,
+  dynamicVerifyEnabled,
+  dynamicVerifyMode,
+  manualLab,
+  dockerLabBuildEnabled = true,
+  verifierEnabled,
+  attackChainEnabled = false,
+  codeIntelEnabled = false,
+  heuristicEnabled = true,
+  heuristicLite = false,
+  fastEnabled = false,
+  bypassEnabled = false,
+  unconstrainedEnabled = false,
+}: PreviewProps): string {
   const mode = formatAuditMode(auditMode)
   const paths = formatMiningPaths({
     heuristic_enabled: heuristicEnabled,
@@ -360,25 +402,26 @@ function summaryText(props: PreviewProps, t: TFunction): string {
   const verifyMode = dynamicVerifyMode || (dynamicVerifyEnabled ? 'lab' : 'off')
   const review =
     verifyMode === 'lab'
-      ? manualLab
-        ? t('auditFlow.summary.reviewLabManual')
-        : t('auditFlow.summary.reviewLab')
+      ? !dockerLabBuildEnabled || manualLab
+        ? dockerLabBuildEnabled
+          ? t('flow.preview.reviewLabManualFirst')
+          : t('verify.manual')
+        : t('verify.lab')
       : verifyMode === 'harness'
-        ? t('auditFlow.summary.reviewHarness')
-        : t('auditFlow.summary.reviewStatic')
+        ? t('verify.harness')
+        : t('flow.preview.reviewStaticReview')
   const post: string[] = []
-  if (verifierEnabled) post.push(t('auditFlow.summary.verifier'))
-  if (attackChainEnabled) post.push(t('auditFlow.summary.attackChain'))
-  const done = t('auditFlow.summary.done')
-  const tail = post.length > 0 ? `${post.join(' ∥ ')} → ${done}` : done
-  const head = codeIntelEnabled ? t('auditFlow.summary.headWithCi') : t('auditFlow.summary.head')
-  return t('auditFlow.summary.template', { head, mine, review, tail })
+  if (verifierEnabled) post.push(t('flow.preview.internetVerify'))
+  if (attackChainEnabled) post.push(t('flow.phase.attackChain'))
+  const tail = post.length > 0 ? t('flow.preview.tail', { post: post.join(' ∥ ') }) : t('flow.phase.done')
+  const head = codeIntelEnabled ? t('flow.preview.headBoth') : t('flow.phase.recon')
+  return t('flow.preview.summaryLine', { head, mine, review, tail })
 }
 
 export function AuditFlowPreview(props: PreviewProps) {
-  const { t } = useTranslation()
-  const nodes = buildNodes(props, t)
-  const summary = summaryText(props, t)
+  const { t } = useI18n()
+  const nodes = buildNodes(t, props)
+  const summary = summaryText(t, props)
   const recon = nodes.find((n) => n.id === 'recon')
   const codeIntel = nodes.find((n) => n.id === 'code_intel')
   const mines = nodes.filter((n) => isMineNode(n.id))
@@ -389,9 +432,9 @@ export function AuditFlowPreview(props: PreviewProps) {
     <TooltipProvider delay={200}>
       <section
         className={cn('rounded-xl bg-muted/25 p-3 ring-1 ring-foreground/10', props.className)}
-        aria-label={t('auditFlow.ariaLabel')}
+        aria-label={t('flow.preview.aria')}
       >
-        <h2 className="text-xs font-medium text-muted-foreground">{t('auditFlow.heading')}</h2>
+        <h2 className="text-xs font-medium text-muted-foreground">{t('flow.preview.title')}</h2>
         <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{summary}</p>
         <div className="mt-3">
           <div className="grid grid-cols-2 items-stretch gap-2">
@@ -403,9 +446,9 @@ export function AuditFlowPreview(props: PreviewProps) {
           {rest.map((node) => (
             <div key={node.id}>
               {node.id === 'reviewer' ? (
-                <FlowConnector down={t('auditFlow.connector.submit')} back={t('auditFlow.connector.debt')} />
+                <FlowConnector down={t('flow.preview.submit')} back={t('flow.preview.debt')} />
               ) : node.id === 'verifier' && node.skipped ? (
-                <FlowConnector down={t('auditFlow.connector.skip')} />
+                <FlowConnector down={t('flow.preview.skip')} />
               ) : (
                 <FlowConnector />
               )}
@@ -413,7 +456,9 @@ export function AuditFlowPreview(props: PreviewProps) {
             </div>
           ))}
         </div>
-        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">{t('auditFlow.footer')}</p>
+        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+          {t('flow.preview.footer')}
+        </p>
       </section>
     </TooltipProvider>
   )

@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { api, formatApiError } from '../api'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -12,6 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+import { useI18n } from '@/i18n'
 
 type DeleteProjectButtonProps = {
   projectId: number
@@ -28,7 +28,7 @@ export function DeleteProjectButton({
   variant = 'destructive',
   size = 'default',
 }: DeleteProjectButtonProps) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [acked, setAcked] = useState(false)
@@ -57,7 +57,7 @@ export function DeleteProjectButton({
       setAcked(false)
       onDeleted?.()
     } catch (e) {
-      setError(formatApiError(e, t('deleteProject.timeout')))
+      setError(formatApiError(e, t('comp.delete.timeout')))
     } finally {
       setBusy(false)
     }
@@ -69,7 +69,11 @@ export function DeleteProjectButton({
         type="button"
         variant={variant}
         size={size}
-        onClick={openDialog}
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          openDialog()
+        }}
       >
         {t('common.delete')}
       </Button>
@@ -82,8 +86,8 @@ export function DeleteProjectButton({
       >
         <DialogContent className="sm:max-w-lg" showCloseButton={!busy}>
           <DialogHeader>
-            <DialogTitle>{t('deleteProject.title')}</DialogTitle>
-            <DialogDescription>{t('deleteProject.description', { name: projectName })}</DialogDescription>
+            <DialogTitle>{t('comp.delete.title')}</DialogTitle>
+            <DialogDescription>{t('comp.delete.body', { name: projectName })}</DialogDescription>
           </DialogHeader>
           <Label className="items-start font-normal">
             <Checkbox
@@ -92,7 +96,7 @@ export function DeleteProjectButton({
               disabled={busy}
               onCheckedChange={(checked) => setAcked(checked === true)}
             />
-            <span className="min-w-0 text-sm leading-relaxed">{t('deleteProject.ack')}</span>
+            <span className="min-w-0 text-sm leading-relaxed">{t('comp.delete.ack')}</span>
           </Label>
           {error ? <p className="text-sm text-red-300">{error}</p> : null}
           <DialogFooter>
@@ -105,7 +109,7 @@ export function DeleteProjectButton({
               disabled={busy || !acked}
               onClick={() => void confirmDelete()}
             >
-              {busy ? t('common.deleting') : t('deleteProject.confirm')}
+              {busy ? t('comp.delete.deleting') : t('comp.delete.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

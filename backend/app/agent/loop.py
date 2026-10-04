@@ -15,8 +15,8 @@ from ..config import settings
 from ..models import PhaseRun, SessionLocal, TokenUsage, utcnow
 from ..services.http_client import chat_http_client, chat_http_timeout, conclude_http_timeout
 from ..services.live_log import live_log
-from ..services.llm_gate import llm_gate, llm_slot
-from ..services.llm_thread import SlotHandle, llm_thread_limiter, llm_thread_slot
+from ..services.llm_gate import llm_gate, llm_slot, resolve_min_request_interval_sec
+from ..services.llm_thread import SlotHandle, llm_thread_limiter
 from ..services.llm_settings import (
     ResolvedLlm,
     bind_llm_to_endpoint,
@@ -26,6 +26,10 @@ from ..services.llm_settings import (
 )
 from ..tools import ToolContext, registry
 from ..tools.common import load_todos
+from ..tools.phase_worker import (
+    UNCONSTRAINED_FINISH_ROUND_AFTER_COMPRESS,
+    unconstrained_finish_round_ready,
+)
 from .checkpoint import LoopCheckpoint, save_checkpoint
 from .anthropic_compat import (
     anthropic_headers,
@@ -42,6 +46,15 @@ from .llm_compat import (
     sampling_temperature,
     strip_reasoning_fields,
 )
+from .responses_compat import (
+    build_responses_body,
+    consume_responses_stream,
+    is_responses_wire,
+    looks_like_responses_payload,
+    responses_headers,
+    responses_to_openai,
+    responses_url,
+)
 from .chat_stream import (
     ChatStreamCancelled,
     ChatStreamProviderError,
@@ -51,6 +64,7 @@ from .compression import (
     attach_todo_list,
     build_compressed_messages,
     clip_messages_for_summary,
+    drop_orphan_tool_messages,
     estimate_tokens,
     format_todo_list_block,
     needs_compress,
@@ -154,7 +168,7 @@ def _sanitize_chat_messages(
         if nm.get("content") is None:
             nm["content"] = ""
         out.append(nm)
-    return out
+    return drop_orphan_tool_messages(out)
 
 
 def _reasoning_text(message: dict[str, Any]) -> str:
@@ -281,6 +295,8 @@ class AgentLoop:
         self._llm_injected = llm is not None
         self.llm = llm or resolve_llm(llm_role_for_agent(role), project_id=project_id or None)
         self._slot_handle: SlotHandle | None = None
+        self._sticky_endpoint = ""
+        self._sticky_model = ""
         self.state: dict[str, Any] = {}
         self.watchdog = AgentWatchdog(phase=phase, project_id=project_id)
         self._last_prompt_tokens = 0
@@ -289,6 +305,7 @@ class AgentLoop:
         self._announce_next_chat = bool(resumed)
         self._rate_limit_retries = 0
         self._transient_retries = 0
+        self._pace_waited = 0.0
         if self.silent and self.log_path:
             from ..services.cli_tool_index import file_event_log
 
@@ -296,19 +313,55 @@ class AgentLoop:
         else:
             self._live = live_log
 
+    def _pool_failover_enabled(self) -> bool:
+        """Whether this loop should bind/rebind across the settings-page endpoint pool.
+
+        Pipeline passes ``resolve_llm()`` into AgentLoop (``source`` is
+        ``provider:…`` / ``default``). That must still follow the pool: disable an
+        endpoint, add another, or hit 429, and the session has to switch. Only
+        test helpers that inject ``source='test'`` pin URL/key and skip failover.
+        """
+        if not self._llm_injected:
+            return True
+        src = (self.llm.source or "").strip()
+        return src.startswith("provider:") or src.startswith("default")
+
+    def _recon_mark_leftover_nudge(self) -> str:
+        """List still-unmarked paths in this 盖章 batch so the model cannot skip them."""
+        if self.phase not in ("recon-mark", "recon_mark"):
+            return ""
+        paths = [str(p) for p in (self.state.get("mark_paths") or []) if p]
+        if not paths:
+            return ""
+        from ..tools.phase_recon import unmarked_paths
+
+        leftover = unmarked_paths(self.project_id, paths)
+        if not leftover:
+            return ""
+        shown = leftover[:80]
+        extra = f"\n（另有 {len(leftover) - 80} 个未列出）" if len(leftover) > 80 else ""
+        lines = "\n".join(f"- {p}" for p in shown)
+        return (
+            f"本批仍有 {len(leftover)} 个未盖章文件，请立刻用 MarkWeight / MarkSource / MarkSkip "
+            f"处理（路径必须与下列完全一致，不要改扩展名；仅索引找不到才跳过）：\n{lines}{extra}"
+        )
+
     def _bind_slot_endpoint(self, handle: SlotHandle) -> None:
         """Apply acquired pool endpoint credentials onto self.llm."""
         self._slot_handle = handle
+        if not self._pool_failover_enabled():
+            return
         if self._llm_injected and not handle.endpoint_id.startswith("ep-"):
             # Test / anonymous override bucket - keep injected ResolvedLlm as-is
             if handle.endpoint_id == "_anon":
                 return
-        url, key, model = llm_thread_limiter.endpoint_creds(handle.endpoint_id)
+        url, key, model, wire = llm_thread_limiter.endpoint_creds(handle.endpoint_id)
         if not url:
             # Fall back to resolved pool entry
             for ep in pool_endpoints_resolved():
                 if ep.id == handle.endpoint_id:
                     self.llm = bind_llm_to_endpoint(self.llm, ep)
+                    self._remember_bound_llm(handle)
                     return
             return
         from ..services.llm_settings import PoolEndpoint
@@ -321,8 +374,23 @@ class AgentLoop:
                 api_key=key or self.llm.api_key,
                 model=model,
                 max_inflight=1,
+                wire_api=wire or self.llm.wire_api,
             ),
         )
+        self._remember_bound_llm(handle)
+
+    def _remember_bound_llm(self, handle: SlotHandle) -> None:
+        """Keep this round's model/endpoint so pause/resume and failover stay cache-friendly."""
+        self._sticky_endpoint = handle.endpoint_id or self._sticky_endpoint
+        model = (self.llm.model or "").strip()
+        if model:
+            self._sticky_model = model
+
+    def _prefer_model(self) -> str | None:
+        if not self._pool_failover_enabled():
+            return None
+        text = (self._sticky_model or "").strip()
+        return text or None
 
     @classmethod
     def from_checkpoint(
@@ -363,6 +431,8 @@ class AgentLoop:
         loop._last_prompt_tokens = cp.last_prompt_tokens
         loop._rate_limit_retries = cp.rate_limit_retries
         loop._transient_retries = cp.transient_retries
+        loop._sticky_endpoint = str(cp.llm_endpoint_id or "").strip()
+        loop._sticky_model = str(cp.llm_model or "").strip()
         return loop
 
     def _cancelled(self) -> bool:
@@ -394,6 +464,44 @@ class AgentLoop:
             time.sleep(0.05)
         return not self._cancelled()
 
+    def _acquire_llm_slot(self) -> bool:
+        prefer = None
+        if self._pool_failover_enabled():
+            prefer = self._sticky_endpoint or self.llm.endpoint_id or None
+        handle = llm_thread_limiter.acquire(
+            self.cancel_event,
+            project_id=self.project_id,
+            phase=self.phase,
+            role=self.role,
+            prefer_endpoint=prefer,
+            prefer_model=self._prefer_model(),
+        )
+        if handle is None:
+            return False
+        if self._pool_failover_enabled():
+            self._bind_slot_endpoint(handle)
+        else:
+            self._slot_handle = handle
+        return True
+
+    def _release_llm_slot(self, *, log: str = "") -> None:
+        handle = self._slot_handle
+        if handle is None:
+            return
+        llm_thread_limiter.release(handle)
+        self._slot_handle = None
+        if not log:
+            return
+        try:
+            self._live.system(
+                self.project_id,
+                log,
+                phase=self.phase,
+                role=self.role,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
     def _persist(self, messages: list[dict[str, Any]], *, status: str = "running") -> None:
         if not self.phase_run_id:
             return
@@ -419,6 +527,8 @@ class AgentLoop:
                         timeout_sec=self.timeout_sec,
                         rate_limit_retries=self._rate_limit_retries,
                         transient_retries=self._transient_retries,
+                        llm_endpoint_id=self._sticky_endpoint,
+                        llm_model=self._sticky_model,
                     ),
                     status=status,
                 )
@@ -455,24 +565,15 @@ class AgentLoop:
         return True
 
     def run(self) -> LoopResult:
-        prefer = self.llm.endpoint_id if (self.llm.endpoint_id and not self._llm_injected) else None
-        with llm_thread_slot(
-            self.cancel_event,
-            project_id=self.project_id,
-            phase=self.phase,
-            role=self.role,
-            prefer_endpoint=prefer,
-        ) as handle:
-            if handle is None:
-                result = LoopResult(ok=False, state=self.state)
-                result.cancelled = True
-                result.stop_reason = "cancelled"
-                return result
-            if not self._llm_injected:
-                self._bind_slot_endpoint(handle)
-            else:
-                self._slot_handle = handle
+        if not self._acquire_llm_slot():
+            result = LoopResult(ok=False, state=self.state)
+            result.cancelled = True
+            result.stop_reason = "cancelled"
+            return result
+        try:
             return self._run_loop()
+        finally:
+            self._release_llm_slot()
 
     def _run_loop(self) -> LoopResult:
         if not self.silent:
@@ -503,7 +604,7 @@ class AgentLoop:
     def _run_loop_inner(self) -> LoopResult:
         deadline = time.time() + max(60, self.timeout_sec)
         if self._initial_messages:
-            messages: list[dict[str, Any]] = list(self._initial_messages)
+            messages: list[dict[str, Any]] = drop_orphan_tool_messages(self._initial_messages)
         else:
             messages = [
                 {"role": "system", "content": self.system_prompt},
@@ -514,9 +615,6 @@ class AgentLoop:
             if last.get("role") != "user" or last.get("content") != INTERRUPT_RESUME:
                 messages.append({"role": "user", "content": INTERRUPT_RESUME})
             self._resumed = False
-        tools = registry.openai_tools_for_role(
-            self.role, project_id=self.project_id, vuln_id=self.vuln_id
-        )
         result = LoopResult(ok=False, state=self.state)
         self._persist(messages)
 
@@ -528,6 +626,9 @@ class AgentLoop:
             if self._paused():
                 self._persist(messages, status="paused")
                 paused_at = time.time()
+                self._release_llm_slot(
+                    log="已暂停，已释放 LLM 线程名额，续跑后重新排队",
+                )
                 if not self._wait_while_paused():
                     result.cancelled = True
                     result.stop_reason = "cancelled"
@@ -538,6 +639,10 @@ class AgentLoop:
                     return result
                 deadline += time.time() - paused_at
                 self._persist(messages, status="running")
+                if not self._acquire_llm_slot():
+                    result.cancelled = True
+                    result.stop_reason = "cancelled"
+                    return result
                 continue
             if self._enforce_token_budget():
                 continue
@@ -556,6 +661,7 @@ class AgentLoop:
                 self._rescue_conclude(messages)
                 return result
 
+            tools = self._openai_tools()
             est = estimate_tokens(messages, tools)
             if needs_compress(
                 messages,
@@ -575,17 +681,20 @@ class AgentLoop:
                 self._last_prompt_tokens = 0
                 self._persist(messages)
 
+            self._maybe_unlock_unconstrained_finish_round(messages)
+            tools = self._openai_tools()
             self._maybe_inject_todolist(messages)
             self._maybe_inject_steer(messages)
             self._maybe_inject_decompile_notices(messages)
 
+            self._pace_waited = 0.0
             try:
                 resp, usage, retry_after = self._chat(messages, tools, remaining)
             except AuthError as e:
                 eid = self.llm.endpoint_id or (self._slot_handle.endpoint_id if self._slot_handle else "")
                 llm_gate.note_error(eid, "auth", message=str(e))
                 # Try another endpoint before giving up
-                if self._slot_handle is not None and not self._llm_injected:
+                if self._slot_handle is not None and self._pool_failover_enabled():
                     rebound = llm_thread_limiter.rebind(
                         self._slot_handle,
                         cancel_event=self.cancel_event,
@@ -593,6 +702,7 @@ class AgentLoop:
                         phase=self.phase,
                         role=self.role,
                         reason="401 密钥无效",
+                        prefer_model=self._prefer_model(),
                     )
                     if rebound is not None and rebound.endpoint_id != self._slot_handle.endpoint_id:
                         self._bind_slot_endpoint(rebound)
@@ -626,7 +736,7 @@ class AgentLoop:
                     return result
                 self._rate_limit_retries += 1
                 # Prefer immediate failover to another healthy endpoint
-                if self._slot_handle is not None and not self._llm_injected:
+                if self._slot_handle is not None and self._pool_failover_enabled():
                     rebound = llm_thread_limiter.rebind(
                         self._slot_handle,
                         cancel_event=self.cancel_event,
@@ -634,6 +744,7 @@ class AgentLoop:
                         phase=self.phase,
                         role=self.role,
                         reason="额度用尽" if kind == "quota" else "429 限流",
+                        prefer_model=self._prefer_model(),
                     )
                     if rebound is not None:
                         if rebound.endpoint_id != eid:
@@ -675,6 +786,8 @@ class AgentLoop:
                     messages.append({"role": "user", "content": TRANSIENT_RESUME})
                 self._persist(messages)
                 continue
+            finally:
+                deadline += float(self._pace_waited or 0.0)
 
             self._transient_retries = 0
             self._accumulate_tokens(result, usage)
@@ -727,10 +840,13 @@ class AgentLoop:
                     result.ok = True
                     result.stop_reason = "stop_when"
                     return result
+                leftover = self._recon_mark_leftover_nudge()
                 nudge, kind = self.watchdog.nudge_for_text_turn()
+                if leftover:
+                    nudge = f"{leftover}\n\n{nudge}"
                 self._live.system(
                     self.project_id,
-                    self.watchdog.text_turn_log(kind),
+                    leftover.split("\n", 1)[0] if leftover else self.watchdog.text_turn_log(kind),
                     phase=self.phase,
                     role=self.role,
                 )
@@ -970,6 +1086,17 @@ class AgentLoop:
                     result.stop_reason = "round_finished"
                 return result
 
+            leftover = self._recon_mark_leftover_nudge()
+            if leftover:
+                self._live.system(
+                    self.project_id,
+                    leftover.split("\n", 1)[0],
+                    phase=self.phase,
+                    role=self.role,
+                )
+                messages.append({"role": "user", "content": leftover})
+                self._persist(messages)
+
             # Terminal tool flags
             if self.state.get("recon_finished") or self.state.get("audit_finished") or self.state.get("review_done") or self.state.get("fix_finished") or self.state.get("round_finished") or self.state.get("index_done"):
                 # round_finished alone shouldn't end entire worker process - scheduler decides
@@ -1043,6 +1170,7 @@ class AgentLoop:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
     ) -> tuple[bool, str, dict[str, str], dict[str, Any], Any]:
+        messages = _sanitize_chat_messages(messages, model=self.llm.model)
         anthropic = is_anthropic_wire(self.llm.wire_api)
         if anthropic:
             url = anthropic_url(self.llm.base_url)
@@ -1055,6 +1183,17 @@ class AgentLoop:
                 temperature=sampling_temperature(self.llm.model, settings.temperature),
             )
             return True, url, headers, body, consume_anthropic_stream
+        if is_responses_wire(self.llm.wire_api):
+            url = responses_url(self.llm.base_url)
+            headers = responses_headers(self.llm.api_key)
+            body = build_responses_body(
+                model=self.llm.model,
+                messages=messages,
+                tools=tools,
+                stream=True,
+                temperature=sampling_temperature(self.llm.model, settings.temperature),
+            )
+            return False, url, headers, body, consume_responses_stream
         url = self.llm.base_url.rstrip("/") + "/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.llm.api_key}",
@@ -1062,7 +1201,7 @@ class AgentLoop:
         }
         body = {
             "model": self.llm.model,
-            "messages": _sanitize_chat_messages(messages, model=self.llm.model),
+            "messages": messages,
             "tools": tools,
             "tool_choice": "auto",
             "stream": True,
@@ -1073,7 +1212,7 @@ class AgentLoop:
 
     def _try_rebind_endpoint(self, reason: str) -> bool:
         """Cool current endpoint already noted; switch slot to another if possible."""
-        if self._slot_handle is None or self._llm_injected:
+        if self._slot_handle is None or not self._pool_failover_enabled():
             return False
         old_id = self._slot_handle.endpoint_id
         rebound = llm_thread_limiter.rebind(
@@ -1083,6 +1222,7 @@ class AgentLoop:
             phase=self.phase,
             role=self.role,
             reason=reason,
+            prefer_model=self._prefer_model(),
         )
         if rebound is None:
             return False
@@ -1098,6 +1238,7 @@ class AgentLoop:
         remaining: float,
     ) -> tuple[dict[str, Any], dict[str, int], float | None]:
         last_err: Exception | None = None
+        self._pace_waited = 0.0
         est_tokens = estimate_tokens(messages, tools)
         # Allow extra attempts when failing over across endpoints
         max_attempts = max(
@@ -1107,6 +1248,13 @@ class AgentLoop:
         for attempt in range(max_attempts):
             if self._cancelled():
                 raise TransientError("cancelled")
+            if (
+                self._pool_failover_enabled()
+                and self._slot_handle is not None
+                and llm_thread_limiter.get_endpoint(self._slot_handle.endpoint_id) is None
+            ):
+                if self._try_rebind_endpoint("当前端点已禁用或已移出模型商池"):
+                    continue
             _anthropic, url, headers, body, consume = self._rebuild_chat_request(messages, tools)
             for drop_key in list(self.state.get("_chat_drop_keys") or []):
                 body.pop(drop_key, None)
@@ -1121,6 +1269,26 @@ class AgentLoop:
                     self._live.system(
                         self.project_id,
                         f"端点 {eid} 冷却中，约 {cd:.0f}s 后请求模型",
+                        phase=self.phase,
+                        role=self.role,
+                    )
+                waited, queued = llm_gate.wait_request_interval(
+                    eid,
+                    resolve_min_request_interval_sec(),
+                    self.cancel_event,
+                )
+                self._pace_waited += waited
+                if self._cancelled():
+                    raise TransientError("cancelled")
+                if waited >= 0.2:
+                    interval = resolve_min_request_interval_sec()
+                    extra = f"，前方 {queued} 个" if queued else ""
+                    self._live.system(
+                        self.project_id,
+                        (
+                            f"端点 {eid} 最小请求间隔 {interval:g}s，排队等待 {waited:.1f}s{extra}"
+                            "（不计入阶段超时与读超时）"
+                        ),
                         phase=self.phase,
                         role=self.role,
                     )
@@ -1148,7 +1316,7 @@ class AgentLoop:
                             client, url, headers, body, est_tokens, consume=consume
                         )
                 if status == 401:
-                    llm_gate.note_error(eid, "auth", message=(err_text or "")[:240])
+                    llm_gate.note_error(eid, "auth", message=err_text or "")
                     if self._try_rebind_endpoint("401 密钥无效"):
                         continue
                     raise AuthError("401 密钥无效，请检查设置页模型配置")
@@ -1159,7 +1327,7 @@ class AgentLoop:
                         phase=self.phase,
                         role=self.role,
                     )
-                    llm_gate.note_error(eid, "quota", message=(err_text or "")[:240])
+                    llm_gate.note_error(eid, "quota", message=err_text or "")
                     if self._try_rebind_endpoint("额度用尽"):
                         continue
                     raise RateLimitError("quota exhausted", quota=True)
@@ -1178,7 +1346,7 @@ class AgentLoop:
                         role=self.role,
                     )
                     llm_gate.note_error(
-                        eid, "rate_limit", retry_after=retry_after, message=(err_text or "")[:240]
+                        eid, "rate_limit", retry_after=retry_after, message=err_text or ""
                     )
                     if self._try_rebind_endpoint("429 限流"):
                         continue
@@ -1232,7 +1400,7 @@ class AgentLoop:
             except ChatStreamProviderError as e:
                 text = str(e)
                 if _looks_like_quota_exhausted(text):
-                    llm_gate.note_error(eid, "quota", message=text[:240])
+                    llm_gate.note_error(eid, "quota", message=text)
                     if self._try_rebind_endpoint("额度用尽"):
                         continue
                     raise RateLimitError("quota exhausted", quota=True) from e
@@ -1243,11 +1411,11 @@ class AgentLoop:
                         phase=self.phase,
                         role=self.role,
                     )
-                    llm_gate.note_error(eid, "rate_limit", message=text[:240])
+                    llm_gate.note_error(eid, "rate_limit", message=text)
                     if self._try_rebind_endpoint("429 限流"):
                         continue
                     raise RateLimitError("429 rate limited") from e
-                llm_gate.note_error(eid, "transient", message=text[:240])
+                llm_gate.note_error(eid, "transient", message=text)
                 if self._try_rebind_endpoint("流式错误"):
                     continue
                 last_err = e
@@ -1525,11 +1693,49 @@ class AgentLoop:
         )
         self._persist(messages)
 
+    def _is_unconstrained(self) -> bool:
+        role = (self.role or "").strip().lower()
+        phase = (self.phase or "").strip().lower()
+        return role in ("unconstrained_worker", "unconstrained-worker") or phase in (
+            "unconstrained-worker",
+            "unconstrained_worker",
+        )
+
+    def _openai_tools(self) -> list[dict[str, Any]]:
+        return registry.openai_tools_for_role(
+            self.role,
+            project_id=self.project_id,
+            vuln_id=self.vuln_id,
+            compress_count=int(self.state.get("compress_count") or 0),
+        )
+
+    def _maybe_unlock_unconstrained_finish_round(self, messages: list[dict[str, Any]]) -> None:
+        if not self._is_unconstrained():
+            return
+        if not unconstrained_finish_round_ready(self.state):
+            return
+        if self.state.get("finish_round_unlocked"):
+            return
+        self.state["finish_round_unlocked"] = True
+        notice = (
+            f"上下文已压缩满 {UNCONSTRAINED_FINISH_ROUND_AFTER_COMPRESS} 次，"
+            "FinishRound 现已加入工具列表。本趟探索收束后再调用；不要刚交洞就收工。"
+        )
+        messages.append({"role": "user", "content": notice})
+        self._live.system(
+            self.project_id,
+            "无约束扫描：FinishRound 已注入工具列表",
+            phase=self.phase,
+            role=self.role,
+        )
+        self._persist(messages)
+
     def _compress(self, messages: list[dict[str, Any]], force_summary: str | None = None) -> list[dict[str, Any]]:
         # Ask model briefly, or synthesize
         summary = self._attach_current_todos(force_summary or self._request_summary(messages))
         path = self._store_summary("compress" if self.silent else self.phase, summary)
         self._live.system(self.project_id, f"总结已落盘: {path}", phase=self.phase)
+        self.state["compress_count"] = int(self.state.get("compress_count") or 0) + 1
         bootstrap = self.user_prompt[:4000]
         return build_compressed_messages(self.system_prompt, summary, bootstrap, messages)
 
@@ -1575,6 +1781,15 @@ class AgentLoop:
                     temperature=sampling_temperature(self.llm.model, 0.2),
                     max_tokens=1024,
                 )
+            elif is_responses_wire(self.llm.wire_api):
+                url = responses_url(self.llm.base_url)
+                headers = responses_headers(self.llm.api_key)
+                payload = build_responses_body(
+                    model=self.llm.model,
+                    messages=prompt_msgs,
+                    temperature=sampling_temperature(self.llm.model, 0.2),
+                    max_output_tokens=1024,
+                )
             else:
                 url = self.llm.base_url.rstrip("/") + "/chat/completions"
                 headers = {
@@ -1594,6 +1809,10 @@ class AgentLoop:
                 isinstance(data, dict) and data.get("type") == "message"
             ):
                 data = anthropic_message_to_openai(data if isinstance(data, dict) else {})
+            elif is_responses_wire(self.llm.wire_api) or looks_like_responses_payload(
+                data if isinstance(data, dict) else None
+            ):
+                data = responses_to_openai(data if isinstance(data, dict) else {})
             summary = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "（空摘要）"
             return self._attach_current_todos(summary)
         except Exception as e:  # noqa: BLE001

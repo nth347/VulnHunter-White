@@ -39,6 +39,7 @@ class AppSettings(Base):
     worker_concurrency: Mapped[int] = mapped_column(Integer, default=1)
     fix_concurrency: Mapped[int] = mapped_column(Integer, default=1)
     llm_thread_limit: Mapped[int] = mapped_column(Integer, default=6)
+    llm_min_request_interval_sec: Mapped[float] = mapped_column(Float, default=2.0)
     github_pat: Mapped[str | None] = mapped_column(Text, nullable=True)
     fofa_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     fofa_base_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
@@ -51,6 +52,7 @@ class AppSettings(Base):
     cli_tools_dir: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     jadx_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     codegraph_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    jar_analyzer_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     # SHA-256 hex of the global access token. None = fall back to VULNHUNTER_ACCESS_TOKEN.
     access_token_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
@@ -111,6 +113,8 @@ class Project(Base):
     attack_chain_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     # 攻击链阶段是否已跑完（含 <2 条已确认时跳过）
     attack_chain_done: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 用户在攻击链日志输入框下暂停；全部续跑或单独恢复后继续
+    attack_chain_stopped: Mapped[bool] = mapped_column(Boolean, default=False)
     # Reviewer 动态验证（Docker 靶场 / 先 HTTP PoC，PoC 不可用再 debug MCP）；默认关闭，仅静态复核
     dynamic_verify_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     # off | lab | harness - 与 dynamic_verify_enabled 同步；旧库仅有布尔时 enabled=true 视为 lab
@@ -127,6 +131,11 @@ class Project(Base):
     # 无约束扫描：不注入权重，自主挖前台洞；Reviewer 判定达成 RCE 效果后结束
     unconstrained_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     unconstrained_done: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 用户在日志输入框下暂停某条挖掘路径；全部续跑或单独恢复后继续
+    heuristic_stopped: Mapped[bool] = mapped_column(Boolean, default=False)
+    fast_stopped: Mapped[bool] = mapped_column(Boolean, default=False)
+    bypass_stopped: Mapped[bool] = mapped_column(Boolean, default=False)
+    unconstrained_stopped: Mapped[bool] = mapped_column(Boolean, default=False)
     # 项目级模型；空则使用设置页全局 default_model
     llm_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
     # 挖掘 Worker 额外人工提示：注入启发式 / 快速扫描 / 历史漏洞绕过每轮用户消息
@@ -135,6 +144,10 @@ class Project(Base):
     recon_hint: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 项目 Token 上限（输入+输出合计）；0 = 不限制，到达后自动暂停
     max_token_usage: Mapped[int] = mapped_column(Integer, default=0)
+    # 重启时同步上游失败原因；成功或未检查则为空
+    source_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 最近一次成功拉取上游的说明（提交与变更摘要）；无更新则保留上次
+    source_sync_notice: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     language: Mapped[str] = mapped_column(String(8), default="en")
     worker_concurrency: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -454,6 +467,12 @@ REQUIRED_TABLES = (
 SQLITE_BUSY_TIMEOUT_MS = 30000
 _schema_lock = threading.Lock()
 
+# ORM 已删除、但旧库 create_all 仍可能留下的列。Mapped[str] + default= 在
+# SQLite 里是 NOT NULL 且没有库级 DEFAULT，当前模型 INSERT 不写这些列就会 500。
+_LEGACY_DROPPED_COLUMNS: dict[str, tuple[str, ...]] = {
+    "projects": ("source_baseline_status",),
+}
+
 # Windows: use forward slashes so sqlite3 does not mis-parse drive paths.
 # NullPool: check_same_thread=False otherwise selects QueuePool(5+10). Nested
 # SessionLocal (stale-claim release, ensure_schema inspect+begin) then deadlocks
@@ -487,6 +506,7 @@ def _ensure_columns() -> None:
         "app_settings": {
             "fix_concurrency": "INTEGER DEFAULT 1",
             "llm_thread_limit": "INTEGER DEFAULT 6",
+            "llm_min_request_interval_sec": "REAL DEFAULT 2.0",
             "fofa_key": "TEXT",
             "fofa_base_url": "VARCHAR(1024)",
             "http_proxy": "VARCHAR(1024)",
@@ -494,6 +514,7 @@ def _ensure_columns() -> None:
             "cli_tools_dir": "VARCHAR(1024)",
             "jadx_path": "VARCHAR(1024)",
             "codegraph_path": "VARCHAR(1024)",
+            "jar_analyzer_path": "VARCHAR(1024)",
             "access_token_hash": "TEXT",
         },
         "file_weights": {
@@ -513,6 +534,7 @@ def _ensure_columns() -> None:
             "verifier_enabled": "BOOLEAN DEFAULT 0",
             "attack_chain_enabled": "BOOLEAN DEFAULT 0",
             "attack_chain_done": "BOOLEAN DEFAULT 0",
+            "attack_chain_stopped": "BOOLEAN DEFAULT 0",
             "dynamic_verify_enabled": "BOOLEAN DEFAULT 0",
             "dynamic_verify_mode": "VARCHAR(32) DEFAULT 'off'",
             "heuristic_enabled": "BOOLEAN DEFAULT 1",
@@ -523,6 +545,10 @@ def _ensure_columns() -> None:
             "bypass_queue_frozen": "BOOLEAN DEFAULT 0",
             "unconstrained_enabled": "BOOLEAN DEFAULT 0",
             "unconstrained_done": "BOOLEAN DEFAULT 0",
+            "heuristic_stopped": "BOOLEAN DEFAULT 0",
+            "fast_stopped": "BOOLEAN DEFAULT 0",
+            "bypass_stopped": "BOOLEAN DEFAULT 0",
+            "unconstrained_stopped": "BOOLEAN DEFAULT 0",
             "llm_model": "VARCHAR(256)",
             "worker_hint": "TEXT",
             "recon_hint": "TEXT",
@@ -534,6 +560,8 @@ def _ensure_columns() -> None:
             "code_intel_error": "TEXT",
             "code_intel_source_hash": "VARCHAR(64)",
             "code_intel_version": "VARCHAR(64)",
+            "source_sync_error": "TEXT",
+            "source_sync_notice": "TEXT",
         },
         "vulns": {
             "attack_surface": "VARCHAR(32)",
@@ -581,6 +609,55 @@ def _ensure_columns() -> None:
             for name, ddl in cols.items():
                 if name not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+
+
+def _sql_ident(name: str) -> str:
+    if not name.isidentifier():
+        raise ValueError(f"invalid SQL identifier: {name!r}")
+    return name
+
+
+def _drop_legacy_columns() -> None:
+    """Drop leftover columns that the current ORM no longer maps.
+
+    Removing a required Python field does not change existing SQLite tables.
+    If that column was created as NOT NULL without a server default, later
+    INSERTs omit it and fail. Drop both known removals and any other unmapped
+    NOT NULL column that has no DEFAULT.
+    """
+    insp = inspect(engine)
+    insp.clear_cache()
+    tables = set(insp.get_table_names())
+    pending: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def _queue(table: str, name: str) -> None:
+        key = (table, name)
+        if key not in seen:
+            seen.add(key)
+            pending.append(key)
+
+    for table, names in _LEGACY_DROPPED_COLUMNS.items():
+        if table not in tables:
+            continue
+        existing = {c["name"] for c in insp.get_columns(table)}
+        for name in names:
+            if name in existing:
+                _queue(table, name)
+    for table in Base.metadata.tables.values():
+        if table.name not in tables:
+            continue
+        mapped = {c.name for c in table.columns}
+        for col in insp.get_columns(table.name):
+            name = col["name"]
+            if name in mapped or col.get("nullable", True) or col.get("default") is not None:
+                continue
+            _queue(table.name, name)
+    if not pending:
+        return
+    with engine.begin() as conn:
+        for table, name in pending:
+            conn.execute(text(f"ALTER TABLE {_sql_ident(table)} DROP COLUMN {_sql_ident(name)}"))
 
 
 def _migrate_submission_tiers() -> None:
@@ -710,6 +787,7 @@ def ensure_schema() -> None:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         Base.metadata.create_all(bind=engine)
         _ensure_columns()
+        _drop_legacy_columns()
         _migrate_submission_tiers()
         _backfill_tracking_status()
         _backfill_verifier_status()

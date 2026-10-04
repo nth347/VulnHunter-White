@@ -11,10 +11,13 @@ import pytest
 
 from app.agent.compression import (
     attach_todo_list,
+    build_compressed_messages,
     clip_messages_for_summary,
+    drop_orphan_tool_messages,
     estimate_tokens,
     format_todo_list_block,
     needs_compress,
+    recent_messages_for_compress,
 )
 from app.agent.loop import (
     AgentLoop,
@@ -194,6 +197,75 @@ def test_maybe_inject_todolist_disabled(tmp_env, project, monkeypatch):
     assert all("TodoList" not in str(m.get("content") or "") for m in messages)
 
 
+def _read_call(call_id: str) -> dict:
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {"name": "Read", "arguments": '{"path":"a.py"}'},
+    }
+
+
+def test_drop_orphan_tool_messages_keeps_paired_results():
+    messages = [
+        {"role": "user", "content": "go"},
+        {"role": "assistant", "content": "", "tool_calls": [_read_call("call_keep")]},
+        {"role": "tool", "tool_call_id": "call_keep", "content": "ok"},
+        {"role": "tool", "tool_call_id": "call_keep", "content": "dup"},
+    ]
+    out = drop_orphan_tool_messages(messages)
+    assert [m.get("role") for m in out] == ["user", "assistant", "tool"]
+    assert out[-1]["content"] == "ok"
+
+
+def test_recent_messages_for_compress_walks_back_to_assistant():
+    messages = [{"role": "user", "content": "task"}]
+    messages.append(
+        {"role": "assistant", "content": "", "tool_calls": [_read_call("call_keep")]}
+    )
+    messages.append({"role": "tool", "tool_call_id": "call_keep", "content": "body"})
+    messages.extend({"role": "assistant", "content": f"note {i}"} for i in range(11))
+    tail = recent_messages_for_compress(messages, last_n=12)
+    assert tail[0]["role"] == "assistant"
+    assert tail[1]["role"] == "tool"
+    assert tail[1]["tool_call_id"] == "call_keep"
+
+
+def test_build_compressed_messages_drops_unpaired_leading_tool():
+    messages = [{"role": "tool", "tool_call_id": "call_orphan", "content": "stale"}]
+    messages.extend({"role": "assistant", "content": f"note {i}"} for i in range(11))
+    out = build_compressed_messages("sys", "摘要", "注入", messages)
+    assert out[0]["role"] == "system"
+    assert out[1]["role"] == "user"
+    assert all(m.get("role") != "tool" for m in out)
+    assert "call_orphan" not in str(out)
+
+
+def test_compress_walks_back_to_keep_tool_pair(tmp_env, project):
+    loop = AgentLoop(
+        project_id=project,
+        role="unconstrained_worker",
+        phase="unconstrained-worker",
+        system_prompt="sys",
+        user_prompt="task",
+        worker_id="u1",
+    )
+    messages = [{"role": "user", "content": "task"}]
+    messages.append(
+        {"role": "assistant", "content": "", "tool_calls": [_read_call("call_keep")]}
+    )
+    messages.append({"role": "tool", "tool_call_id": "call_keep", "content": "body"})
+    messages.extend({"role": "assistant", "content": f"note {i}"} for i in range(11))
+    out = loop._compress(messages, force_summary="摘要")
+    tools = [m for m in out if m.get("role") == "tool"]
+    assert len(tools) == 1
+    assert tools[0]["tool_call_id"] == "call_keep"
+    idx = out.index(tools[0])
+    assert out[idx - 1]["role"] == "assistant"
+    assert _read_call("call_keep")["id"] in {
+        str(tc.get("id")) for tc in (out[idx - 1].get("tool_calls") or []) if isinstance(tc, dict)
+    }
+
+
 def test_compress_appends_todolist(tmp_env, project):
     loop = AgentLoop(
         project_id=project,
@@ -263,6 +335,39 @@ def test_compress_reads_todolist_from_workspace_file(tmp_env, project):
         force_summary="压缩摘要",
     )
     assert "文件中的待办" in out[1]["content"]
+
+
+def test_unconstrained_compress_unlocks_finish_round(tmp_env, project):
+    from app.tools.phase_worker import UNCONSTRAINED_FINISH_ROUND_AFTER_COMPRESS
+
+    loop = AgentLoop(
+        project_id=project,
+        role="unconstrained_worker",
+        phase="unconstrained-worker",
+        system_prompt="sys",
+        user_prompt="task",
+        worker_id="u1",
+    )
+    names = {t["function"]["name"] for t in loop._openai_tools()}
+    assert "FinishRound" not in names
+    assert "FinishFile" not in names
+    messages = [{"role": "user", "content": "task"}]
+    loop._compress(messages, force_summary="第一次压缩")
+    assert loop.state["compress_count"] == 1
+    loop._maybe_unlock_unconstrained_finish_round(messages)
+    assert loop.state.get("finish_round_unlocked") is None
+    names = {t["function"]["name"] for t in loop._openai_tools()}
+    assert "FinishRound" not in names
+    loop._compress(messages, force_summary="第二次压缩")
+    assert loop.state["compress_count"] == UNCONSTRAINED_FINISH_ROUND_AFTER_COMPRESS
+    loop._maybe_unlock_unconstrained_finish_round(messages)
+    assert loop.state["finish_round_unlocked"] is True
+    assert any("FinishRound 现已加入工具列表" in (m.get("content") or "") for m in messages)
+    names = {t["function"]["name"] for t in loop._openai_tools()}
+    assert "FinishRound" in names
+    before = len(messages)
+    loop._maybe_unlock_unconstrained_finish_round(messages)
+    assert len(messages) == before
 
 
 def test_chat_http_timeout_scales_and_caps(monkeypatch):
@@ -539,6 +644,12 @@ def test_llm_gate_compacts_json_error_and_keeps_reason_during_cooldown():
 
     raw = '{"error":{"message":"You exceeded your current quota","type":"insufficient_quota"}}'
     assert compact_llm_error(raw, "quota") == "You exceeded your current quota"
+    alibaba = (
+        '{"error":{"message":"Allocated quota exceeded, please increase your quota limit. '
+        'For details, see: https://www.alibabacloud.com/help/en/model-studio/error-code#token-limit",'
+        '"id":"681d8707-766f-98d0-841b-3951b22f94bc","type":"insufficient_qu'
+    )
+    assert compact_llm_error(alibaba, "quota").startswith("Allocated quota exceeded")
     prefixed = 'HTTP 429: {"error":{"message":"Rate limit reached"}}'
     assert compact_llm_error(prefixed, "rate_limit") == "Rate limit reached"
 
@@ -572,6 +683,74 @@ def test_llm_gate_quota_cooldown_is_five_minutes_not_half_hour():
     assert 8 <= float(snap["ep-5xx"]["cooldown_sec"]) <= 10
     assert float(snap["ep-401"]["cooldown_sec"]) < 0
     assert snap["ep-401"]["disabled"] is True
+
+
+def test_llm_gate_request_interval_zero_does_not_wait():
+    from app.services.llm_gate import LlmRequestGate
+
+    gate = LlmRequestGate()
+    t0 = time.time()
+    waited, queued = gate.wait_request_interval("ep-a", 0, None)
+    assert waited == 0.0
+    assert queued == 0
+    assert time.time() - t0 < 0.2
+
+
+def test_llm_gate_request_interval_queues_fifo():
+    from app.services.llm_gate import LlmRequestGate
+
+    gate = LlmRequestGate()
+    order: list[str] = []
+    starts: dict[str, float] = {}
+    interval = 0.12
+
+    def worker(name: str) -> None:
+        _waited, _queued = gate.wait_request_interval("ep-a", interval, None)
+        starts[name] = time.time()
+        order.append(name)
+
+    t_a = threading.Thread(target=worker, args=("a",))
+    t_a.start()
+    t_a.join(timeout=2)
+    t_b = threading.Thread(target=worker, args=("b",))
+    t_b.start()
+    time.sleep(0.03)
+    t_c = threading.Thread(target=worker, args=("c",))
+    t_c.start()
+    t_b.join(timeout=3)
+    t_c.join(timeout=3)
+    assert not t_b.is_alive() and not t_c.is_alive()
+    assert order == ["a", "b", "c"]
+    assert starts["b"] - starts["a"] >= interval - 0.04
+    assert starts["c"] - starts["b"] >= interval - 0.04
+
+
+def test_llm_gate_request_interval_cancel_releases_queue():
+    from app.services.llm_gate import LlmRequestGate
+
+    gate = LlmRequestGate()
+    cancel = threading.Event()
+    second_done = threading.Event()
+    waited_box: list[float] = []
+
+    def first() -> None:
+        gate.wait_request_interval("ep-a", 2.0, None)
+
+    def second() -> None:
+        waited, _queued = gate.wait_request_interval("ep-a", 2.0, cancel)
+        waited_box.append(waited)
+        second_done.set()
+
+    t1 = threading.Thread(target=first)
+    t1.start()
+    t1.join(timeout=2)
+    t2 = threading.Thread(target=second)
+    t2.start()
+    time.sleep(0.08)
+    cancel.set()
+    assert second_done.wait(timeout=2)
+    t2.join(timeout=2)
+    assert waited_box and waited_box[0] < 1.5
 
 
 def test_llm_gate_acquire_does_not_serialize():

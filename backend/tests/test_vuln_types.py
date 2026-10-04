@@ -11,13 +11,10 @@ from app.vuln_types import (
     resolve_vuln_type,
     suggest_submission_tier,
 )
-from app.vuln_types import normalize_submission_decision as _normalize_submission_decision
+from app.vuln_types import normalize_submission_decision as _nsd
 
-# The tier rules here are asserted with Chinese reasons, so the language is
-# pinned; the English rule is covered by tests/test_i18n_english.py.
-normalize_submission_decision = functools.partial(
-    _normalize_submission_decision, language="zh"
-)
+# Chinese-reason cases; English is the product default (test_i18n_english).
+normalize_submission_decision = functools.partial(_nsd, language="zh")
 
 
 def test_normalize_aliases():

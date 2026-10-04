@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from ..schemas import (
     GithubCandidateListOut,
     GithubCandidateOut,
+    GithubDiscoverDismissAllOut,
     GithubDiscoverSearchIn,
     GithubDiscoverSearchOut,
 )
@@ -29,19 +30,10 @@ def list_discoveries(
     )
 
 
-@router.post("/search", response_model=GithubDiscoverSearchOut)
-def search_discoveries(body: GithubDiscoverSearchIn | None = None) -> GithubDiscoverSearchOut:
-    limit = discover.clamp_search_limit(body.limit if body else discover.DEFAULT_SEARCH_LIMIT)
-    result = discover.search_candidates(limit=limit)
-    if not result.get("ok"):
-        # Still return structured body for UI; raise only on hard auth failure
-        err = str(result.get("error") or "搜索失败")
-        if "401" in err or "PAT" in err:
-            raise HTTPException(401, err)
-        raise HTTPException(502, err)
+def _search_out(result: dict, *, limit: int) -> GithubDiscoverSearchOut:
     return GithubDiscoverSearchOut(
-        ok=True,
-        error=None,
+        ok=bool(result.get("ok")),
+        error=result.get("error"),
         added=int(result.get("added") or 0),
         items=[GithubCandidateOut.model_validate(item) for item in (result.get("items") or [])],
         scanned_advisories=int(result.get("scanned_advisories") or 0),
@@ -51,7 +43,30 @@ def search_discoveries(body: GithubDiscoverSearchIn | None = None) -> GithubDisc
         authenticated=bool(result.get("authenticated")),
         warning=result.get("warning"),
         limit=int(result.get("limit") or limit),
+        prompt=result.get("prompt"),
+        timed_out=bool(result.get("timed_out")),
     )
+
+
+@router.post("/search", response_model=GithubDiscoverSearchOut)
+def search_discoveries(body: GithubDiscoverSearchIn | None = None) -> GithubDiscoverSearchOut:
+    limit = discover.clamp_search_limit(body.limit if body else discover.DEFAULT_SEARCH_LIMIT)
+    prompt = discover.clamp_user_prompt(body.prompt if body else None)
+    result = discover.search_candidates(limit=limit, prompt=prompt or None)
+    if not result.get("ok"):
+        err = str(result.get("error") or "搜索失败")
+        if "401" in err or "PAT" in err:
+            raise HTTPException(401, err)
+        if result.get("timed_out"):
+            return _search_out(result, limit=limit)
+        raise HTTPException(502, err)
+    return _search_out(result, limit=limit)
+
+
+@router.post("/dismiss-all", response_model=GithubDiscoverDismissAllOut)
+def dismiss_all_discoveries() -> GithubDiscoverDismissAllOut:
+    result = discover.dismiss_listable_candidates()
+    return GithubDiscoverDismissAllOut(dismissed=int(result.get("dismissed") or 0))
 
 
 @router.delete("/{candidate_id}", response_model=GithubCandidateOut)

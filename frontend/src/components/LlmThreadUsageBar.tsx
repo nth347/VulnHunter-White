@@ -1,27 +1,32 @@
 import { useEffect, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { CpuIcon } from 'lucide-react'
 import { api, type LlmEndpointUsage, type LlmThreadUsage } from '../api'
-import i18n from '../i18n'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { startVisibilityPoll } from '../lib/visibilityPoll'
+import { useI18n } from '@/i18n'
+import { t } from '@/i18n/t'
 
 const EMPTY: LlmThreadUsage = { used: 0, limit: 6, waiting: 0, endpoints: [] }
 
-const ERROR_KIND_KEYS = new Set(['rate_limit', 'quota', 'auth', 'transient'])
+const ERROR_KIND_KEY: Record<string, string> = {
+  rate_limit: 'llm.error.rate_limit',
+  quota: 'llm.error.quota',
+  auth: 'llm.error.auth',
+  transient: 'llm.error.transient',
+}
 
 export function errorKindLabel(kind?: string): string {
   const key = (kind || '').trim()
-  return key && ERROR_KIND_KEYS.has(key) ? i18n.t(`llmThreads.errorKind.${key}`) : ''
+  const msgKey = key ? ERROR_KIND_KEY[key] : ''
+  return msgKey ? t(msgKey) : ''
 }
 
 export function endpointSkipLabel(
   ep: Pick<LlmEndpointUsage, 'disabled' | 'cooldown_sec' | 'error_kind'>,
 ): string {
-  if (ep.disabled) return i18n.t('llmThreads.skip.disabled')
-  if (ep.cooldown_sec > 0) return i18n.t('llmThreads.skip.cooldown', { time: formatCooldownSec(ep.cooldown_sec) })
-  if ((ep.error_kind || '') === 'quota') return i18n.t('llmThreads.skip.quota')
+  if (ep.disabled) return t('llm.disabled')
+  if (ep.cooldown_sec > 0) return t('llm.cooldown', { time: formatCooldownSec(ep.cooldown_sec) })
   return ''
 }
 
@@ -44,7 +49,7 @@ export function formatCooldownSec(sec: number): string {
 export function endpointCooldownReason(ep: Pick<LlmEndpointUsage, 'error_kind' | 'last_error'>): string {
   const kind = errorKindLabel(ep.error_kind)
   const detail = (ep.last_error || '').trim()
-  if (kind && detail && detail !== ep.error_kind) return i18n.t('llmThreads.reasonPair', { kind, detail })
+  if (kind && detail && detail !== ep.error_kind) return t('llm.reasonWithDetail', { kind, detail })
   return detail || kind
 }
 
@@ -54,12 +59,12 @@ function clampPct(used: number, limit: number): number {
 }
 
 function shortUrl(url: string): string {
-  const t = (url || '').replace(/^https?:\/\//, '')
-  return t.length > 36 ? `${t.slice(0, 34)}…` : t || i18n.t('llmThreads.notConfigured')
+  const raw = (url || '').replace(/^https?:\/\//, '')
+  return raw.length > 36 ? `${raw.slice(0, 34)}…` : raw || t('llm.unconfigured')
 }
 
 export default function LlmThreadUsageBar({ className }: { className?: string }) {
-  const { t } = useTranslation()
+  const { t: tt } = useI18n()
   const [usage, setUsage] = useState<LlmThreadUsage>(EMPTY)
 
   useEffect(
@@ -98,19 +103,19 @@ export default function LlmThreadUsageBar({ className }: { className?: string })
           <div className="flex items-center justify-between gap-3 text-xs">
             <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
               <CpuIcon className="size-3.5 text-muted-foreground" />
-              {t('llmThreads.title')}
+              {tt('llm.thread')}
             </span>
             <span className={cn('tabular-nums', full ? 'text-amber-200' : 'text-muted-foreground')}>
               {used} / {limit}
               {waiting > 0 ? (
-                <span className="ml-1.5 text-amber-200">{t('llmThreads.queued', { n: waiting })}</span>
+                <span className="ml-1.5 text-amber-200">{tt('llm.waiting', { n: waiting })}</span>
               ) : null}
             </span>
           </div>
           <div
             className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted"
             role="progressbar"
-            aria-label={t('llmThreads.ariaLabel')}
+            aria-label={tt('llm.threadAria')}
             aria-valuemin={0}
             aria-valuemax={limit}
             aria-valuenow={used}
@@ -122,7 +127,7 @@ export default function LlmThreadUsageBar({ className }: { className?: string })
           </div>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="max-w-md text-left leading-relaxed whitespace-normal">
-          <p>{t('llmThreads.tooltip')}</p>
+          <p>{tt('llm.tooltip')}</p>
           {endpoints.length > 0 ? (
             <ul className="mt-2 space-y-1.5 border-t border-background/20 pt-2 text-[11px]">
               {endpoints.map((ep) => {
@@ -136,7 +141,7 @@ export default function LlmThreadUsageBar({ className }: { className?: string })
                       {ep.used}/{ep.limit}
                     </span>
                     {skip ? <span className="ml-1 font-medium">{skip}</span> : null}
-                    {reason ? (
+                    {skip && reason ? (
                       <span className="mt-0.5 block break-all whitespace-pre-wrap opacity-80">{reason}</span>
                     ) : null}
                   </li>

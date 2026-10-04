@@ -16,14 +16,21 @@ from ..agent.anthropic_compat import (
     is_anthropic_wire,
 )
 from ..agent.llm_compat import param_to_drop, prepare_chat_body, sampling_temperature
-from ..agent.checkpoint import LoopCheckpoint, load_checkpoint
+from ..agent.responses_compat import (
+    build_responses_body,
+    consume_responses_stream,
+    is_responses_wire,
+    responses_headers,
+    responses_url,
+)
+from ..agent.checkpoint import load_checkpoint
 from ..agent.chat_stream import ChatStreamError, ChatStreamProviderError, consume_chat_stream
 from ..agent.compression import estimate_tokens
 from ..config import settings
 from ..models import PhaseRun, SessionLocal, Vuln
 from ..prompts import load_prompt
 from ..services.http_client import chat_http_client, chat_http_timeout
-from ..services.llm_gate import llm_gate
+from ..services.llm_gate import llm_gate, resolve_min_request_interval_sec
 from ..services.llm_settings import resolve_llm
 from .cve_record import format_cve_record_json, write_cve_record
 from .paths import project_root, vuln_dir
@@ -713,7 +720,7 @@ def _bind_followup_llm(llm: Any, handle: Any) -> Any:
     if handle is None or not getattr(handle, "endpoint_id", ""):
         return llm
     eid = handle.endpoint_id
-    url, key, model = llm_thread_limiter.endpoint_creds(eid)
+    url, key, model, wire = llm_thread_limiter.endpoint_creds(eid)
     if url:
         return bind_llm_to_endpoint(
             llm,
@@ -723,6 +730,7 @@ def _bind_followup_llm(llm: Any, handle: Any) -> Any:
                 api_key=key or llm.api_key,
                 model=model,
                 max_inflight=1,
+                wire_api=wire or getattr(llm, "wire_api", "") or "chat",
             ),
         )
     for ep in pool_endpoints_resolved():
@@ -742,6 +750,16 @@ def _build_followup_request(llm: Any, messages: list[dict[str, str]], drop_keys:
             temperature=sampling_temperature(llm.model, settings.temperature),
         )
         consume = consume_anthropic_stream
+    elif is_responses_wire(llm.wire_api):
+        url = responses_url(llm.base_url)
+        headers = responses_headers(llm.api_key)
+        body = build_responses_body(
+            model=llm.model,
+            messages=list(messages),
+            stream=True,
+            temperature=sampling_temperature(llm.model, settings.temperature),
+        )
+        consume = consume_responses_stream
     else:
         url = llm.base_url.rstrip("/") + "/chat/completions"
         headers = {
@@ -789,6 +807,7 @@ def _call_reviewer_llm(project_id: int, messages: list[dict[str, str]]) -> str:
             role="reviewer",
             reason=reason,
             wait=False,
+            prefer_model=(getattr(llm, "model", None) or "").strip() or None,
         )
         if rebound is None or rebound.endpoint_id == handle.endpoint_id:
             return None
@@ -804,6 +823,12 @@ def _call_reviewer_llm(project_id: int, messages: list[dict[str, str]]) -> str:
             with chat_http_client(timeout=timeout) as client:
                 for _attempt in range(max(2, pool_n + 1)):
                     url, headers, body, consume = _build_followup_request(llm, messages, drop_keys)
+                    eid = llm.endpoint_id or handle.endpoint_id
+                    llm_gate.wait_request_interval(
+                        eid,
+                        resolve_min_request_interval_sec(),
+                        None,
+                    )
                     try:
                         with client.stream("POST", url, headers=headers, json=body) as res:
                             if res.status_code == 400:
@@ -816,7 +841,7 @@ def _call_reviewer_llm(project_id: int, messages: list[dict[str, str]]) -> str:
                                 raise FollowUpLlmError(f"LLM HTTP 400: {text[:300]}")
                             if res.status_code == 401:
                                 text = res.read().decode("utf-8", errors="replace")
-                                rebound = failover(handle, "auth", "401 密钥无效", text[:240])
+                                rebound = failover(handle, "auth", "401 密钥无效", text)
                                 if rebound is None:
                                     raise FollowUpLlmError("401 密钥无效，请检查设置页模型配置")
                                 handle = rebound
@@ -824,7 +849,7 @@ def _call_reviewer_llm(project_id: int, messages: list[dict[str, str]]) -> str:
                             if res.status_code >= 400:
                                 text = res.read().decode("utf-8", errors="replace")
                                 if _is_quota_response(res.status_code, text):
-                                    rebound = failover(handle, "quota", "额度用尽", text[:240])
+                                    rebound = failover(handle, "quota", "额度用尽", text)
                                     if rebound is None:
                                         raise FollowUpLlmError(f"LLM HTTP {res.status_code}: {text[:300]}")
                                     handle = rebound
@@ -843,7 +868,7 @@ def _call_reviewer_llm(project_id: int, messages: list[dict[str, str]]) -> str:
                                         handle,
                                         "rate_limit",
                                         "429 限流",
-                                        text[:240],
+                                        text,
                                         retry_after=retry_after,
                                     )
                                     if rebound is None:
@@ -877,7 +902,7 @@ def _call_reviewer_llm(project_id: int, messages: list[dict[str, str]]) -> str:
                     except ChatStreamProviderError as e:
                         text = str(e)
                         if _looks_like_quota_exhausted(text):
-                            rebound = failover(handle, "quota", "额度用尽", text[:240])
+                            rebound = failover(handle, "quota", "额度用尽", text)
                             if rebound is None:
                                 raise FollowUpLlmError(text) from e
                             handle = rebound

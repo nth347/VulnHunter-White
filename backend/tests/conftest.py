@@ -32,6 +32,7 @@ def tmp_env(tmp_path, monkeypatch):
     models.SessionLocal = Session
     models.Base.metadata.drop_all(bind=engine)
     models.Base.metadata.create_all(bind=engine)
+    models._ensure_columns()
 
     # Rebind every consumer that already imported SessionLocal
     import app.agent.checkpoint as agent_checkpoint
@@ -63,6 +64,7 @@ def tmp_env(tmp_path, monkeypatch):
     import app.tools.phase_reviewer as phase_reviewer
     import app.tools.phase_verifier as phase_verifier
     import app.tools.phase_attack_chain as phase_attack_chain
+    import app.tools.phase_vuln_dedup as phase_vuln_dedup
     import app.tools.phase_cve_record as phase_cve_record
     import app.tools.phase_worker as phase_worker
     import app.api.discoveries as api_discoveries
@@ -85,6 +87,7 @@ def tmp_env(tmp_path, monkeypatch):
         phase_reviewer,
         phase_verifier,
         phase_attack_chain,
+        phase_vuln_dedup,
         phase_cve_record,
         ingest,
         llm_settings,
@@ -121,6 +124,10 @@ def tmp_env(tmp_path, monkeypatch):
         monkeypatch.setattr(mod, "SessionLocal", Session, raising=False)
 
     monkeypatch.setattr("app.config.settings.access_token", "")
+    monkeypatch.setattr("app.config.settings.app_update_check", False)
+    from app.services.app_update import reset_app_update_state
+
+    reset_app_update_state()
     access_token.clear_access_token_cache()
     ingest.reset_indexed_weight_exts_cache()
 
@@ -145,6 +152,7 @@ def tmp_env(tmp_path, monkeypatch):
         row = db.query(models.AppSettings).first()
         if row is not None:
             row.cli_tools_dir = str(cli_tools)
+            row.llm_min_request_interval_sec = 0.0
             db.commit()
 
     from app.tools import register_all_tools
@@ -179,15 +187,10 @@ def project(tmp_env):
     models = tmp_env["models"]
     Session = tmp_env["Session"]
     with Session() as db:
-        # The existing suite asserts Chinese prompts, headings and gate
-        # messages, so it exercises the zh path explicitly. English-path
-        # behaviour is covered in tests/test_i18n_english.py.
+        # English is the product default; the existing suite asserts the
+        # Chinese prompts/reports/messages, so it runs on the zh path.
         p = models.Project(
-            name="demo",
-            source_type="zip",
-            status="recon",
-            phase="recon",
-            language="zh",
+            name="demo", source_type="zip", status="recon", phase="recon", language="zh"
         )
         db.add(p)
         db.commit()

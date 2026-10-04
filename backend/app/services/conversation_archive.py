@@ -30,6 +30,7 @@ LOG_PHASE_DB_PHASES: dict[str, tuple[str, ...]] = {
     "reviewer-review": ("reviewer",),
     "verifier": ("verifier",),
     "attack_chain": ("attack_chain",),
+    "vuln_dedup": ("vuln_dedup",),
 }
 
 DB_PHASE_TO_LOG_PHASE: dict[str, str] = {
@@ -49,6 +50,7 @@ DB_PHASE_TO_LOG_PHASE: dict[str, str] = {
     "reviewer": "reviewer-review",
     "verifier": "verifier",
     "attack_chain": "attack_chain",
+    "vuln_dedup": "vuln_dedup",
 }
 
 
@@ -62,6 +64,8 @@ def normalize_log_phase(raw: str) -> str:
         "reconsourceext": "recon-source-ext",
         "recon-old-vuln": "recon-old-vuln",
         "reconoldvuln": "recon-old-vuln",
+        "recon-old-vuln-ghsa": "recon-old-vuln",
+        "reconoldvulnghsa": "recon-old-vuln",
         "recon-mark": "recon-mark",
         "reconmark": "recon-mark",
         "code-intel": "code-intel",
@@ -83,6 +87,8 @@ def normalize_log_phase(raw: str) -> str:
         "verifier": "verifier",
         "attack-chain": "attack_chain",
         "attack_chain": "attack_chain",
+        "vuln-dedup": "vuln_dedup",
+        "vuln_dedup": "vuln_dedup",
     }
     return aliases.get(key, key)
 

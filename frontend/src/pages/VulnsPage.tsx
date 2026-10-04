@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeftIcon, ChevronRightIcon, SearchIcon, XIcon } from 'lucide-react'
 import { api, type ProjectName, type Vuln, type VulnDetail, type VulnTrackingStatus } from '../api'
@@ -12,19 +11,28 @@ import VulnCalendar from '../components/VulnCalendar'
 import VulnDetailDialog from '../components/VulnDetailDialog'
 import VulnGroupList from '../components/VulnGroupList'
 import { filterVulnGroups, groupVulnsByRootCause, vulnMatchesQuery, type VulnTierFilter } from '../lib/vulnGroups'
-import { formatVulnType, saveBlob, vulnTypeOptions } from '../lib/utils'
+import { useI18n } from '@/i18n'
+import { formatVulnType, getVulnTypeOptions, saveBlob } from '../lib/utils'
 import { readJsonCache, writeJsonCache } from '../lib/listCache'
 import { startVisibilityPoll } from '../lib/visibilityPoll'
 
 const PAGE_SIZE = 50
 
-const TIER_FILTER_KEYS: VulnTierFilter[] = ['all', 'cve_candidate', 'low_impact']
-const TRACKING_FILTER_KEYS: Array<'all' | VulnTrackingStatus> = ['all', 'none', 'submitted', 'ignored']
-const STATUS_FILTER_KEYS = ['all', 'confirmed', 'false_positive', 'pending_review'] as const
-
 export default function VulnsPage() {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const { id } = useParams()
+  const vulnTypeOptions = getVulnTypeOptions()
+  const tierFilterLabel: Record<VulnTierFilter, string> = {
+    all: t('vulns.tier.all'),
+    cve_candidate: t('tier.cve'),
+    low_impact: t('tier.low'),
+  }
+  const trackingFilterLabel: Record<'all' | VulnTrackingStatus, string> = {
+    all: t('vulns.track.all'),
+    none: t('track.none'),
+    submitted: t('track.submitted'),
+    ignored: t('track.ignored'),
+  }
   const navigate = useNavigate()
   const detailId = id ? Number(id) : null
   const [filter, setFilter] = useState<'all' | 'confirmed' | 'false_positive' | 'pending_review'>('all')
@@ -136,13 +144,10 @@ export default function VulnsPage() {
 
   const surfaceFilterLabel =
     surfaceFilter === 'frontend'
-      ? t('vulnsPage.surfaceFrontend')
+      ? t('vulns.surface.frontend')
       : surfaceFilter === 'backend'
-        ? t('vulnsPage.surfaceBackend')
-        : t('vulnsPage.surfaceAll')
-  const tierFilterLabel = (k: VulnTierFilter) => t(`vulnsPage.tier.${k}`)
-  const trackingFilterLabel = (k: 'all' | VulnTrackingStatus) => t(`vulnsPage.tracking.${k}`)
-  const statusFilterLabel = (k: string) => t(`vulnsPage.status.${k}`)
+        ? t('vulns.surface.backend')
+        : t('vulns.surface.all')
 
   async function downloadIds(ids: number[], filename: string) {
     if (!ids.length) return
@@ -224,7 +229,7 @@ export default function VulnsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">{t('nav.vulns')}</h1>
-          <p className="text-sm text-slate-400">{t('vulnsPage.subtitle')}</p>
+          <p className="text-sm text-slate-400">{t('vulns.subtitle')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -232,26 +237,26 @@ export default function VulnsPage() {
             disabled={!selected.length || marking}
             onClick={() => markSelected('submitted')}
           >
-            {t('vulnsPage.markSubmitted')}
+            {t('vulns.markSubmitted')}
           </Button>
           <Button
             variant="outline"
             disabled={!selected.length || marking}
             onClick={() => markSelected('ignored')}
           >
-            {t('vulnsPage.markIgnored')}
+            {t('vulns.markIgnored')}
           </Button>
           <Button
             variant="outline"
             disabled={!selected.length || marking}
             onClick={() => markSelected('none')}
           >
-            {t('vulnsPage.unmark')}
+            {t('vulns.clearMark')}
           </Button>
           <Button variant="outline" onClick={downloadCveCandidates} disabled={!selected.length && total === 0}>
-            {t('vulnsPage.downloadCveOnly')}
+            {t('vulns.downloadCve')}
           </Button>
-          <Button onClick={download}>{t('vulnsPage.batchDownload')}</Button>
+          <Button onClick={download}>{t('vulns.batchDownload')}</Button>
         </div>
       </div>
 
@@ -268,8 +273,8 @@ export default function VulnsPage() {
           className="pr-8 pl-8"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          placeholder={t('vulnsPage.searchPlaceholder')}
-          aria-label={t('vulnsPage.searchAria')}
+          placeholder={t('vulns.searchPlaceholder')}
+          aria-label={t('vulns.searchAria')}
         />
         {searchInput ? (
           <button
@@ -290,9 +295,9 @@ export default function VulnsPage() {
             <SelectValue>{surfaceFilterLabel}</SelectValue>
           </SelectTrigger>
           <SelectContent alignItemWithTrigger={false} align="start" className="w-(--anchor-width)">
-            <SelectItem value="all">{t('vulnsPage.surfaceAll')}</SelectItem>
-            <SelectItem value="frontend">{t('vulnsPage.surfaceFrontend')}</SelectItem>
-            <SelectItem value="backend">{t('vulnsPage.surfaceBackend')}</SelectItem>
+            <SelectItem value="all">{t('vulns.surface.all')}</SelectItem>
+            <SelectItem value="frontend">{t('vulns.surface.frontend')}</SelectItem>
+            <SelectItem value="backend">{t('vulns.surface.backend')}</SelectItem>
           </SelectContent>
         </Select>
         <Select
@@ -303,13 +308,11 @@ export default function VulnsPage() {
           }}
         >
           <SelectTrigger className="w-auto min-w-36">
-            <SelectValue>
-              {typeFilter === 'all' ? t('vulnsPage.allTypes') : formatVulnType(typeFilter)}
-            </SelectValue>
+            <SelectValue>{typeFilter === 'all' ? t('vulns.type.all') : formatVulnType(typeFilter)}</SelectValue>
           </SelectTrigger>
           <SelectContent alignItemWithTrigger={false} align="start" className="w-(--anchor-width)">
-            <SelectItem value="all">{t('vulnsPage.allTypes')}</SelectItem>
-            {vulnTypeOptions().map(({ id, label }) => (
+            <SelectItem value="all">{t('vulns.type.all')}</SelectItem>
+            {vulnTypeOptions.map(([id, label]) => (
               <SelectItem key={id} value={id}>
                 {label}
               </SelectItem>
@@ -318,12 +321,12 @@ export default function VulnsPage() {
         </Select>
         <Select value={tierFilter} onValueChange={(value) => setTierFilter(value as VulnTierFilter)}>
           <SelectTrigger className="w-auto min-w-36">
-            <SelectValue>{tierFilterLabel(tierFilter)}</SelectValue>
+            <SelectValue>{tierFilterLabel[tierFilter]}</SelectValue>
           </SelectTrigger>
           <SelectContent alignItemWithTrigger={false} align="start" className="w-(--anchor-width)">
-            {TIER_FILTER_KEYS.map((k) => (
+            {(Object.keys(tierFilterLabel) as VulnTierFilter[]).map((k) => (
               <SelectItem key={k} value={k}>
-                {tierFilterLabel(k)}
+                {tierFilterLabel[k]}
               </SelectItem>
             ))}
           </SelectContent>
@@ -336,19 +339,26 @@ export default function VulnsPage() {
           }}
         >
           <SelectTrigger className="w-auto min-w-32">
-            <SelectValue>{trackingFilterLabel(trackingFilter)}</SelectValue>
+            <SelectValue>{trackingFilterLabel[trackingFilter]}</SelectValue>
           </SelectTrigger>
           <SelectContent alignItemWithTrigger={false} align="start" className="w-(--anchor-width)">
-            {TRACKING_FILTER_KEYS.map((k) => (
+            {(Object.keys(trackingFilterLabel) as Array<keyof typeof trackingFilterLabel>).map((k) => (
               <SelectItem key={k} value={k}>
-                {trackingFilterLabel(k)}
+                {trackingFilterLabel[k]}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        {STATUS_FILTER_KEYS.map((k) => (
+        {(
+          [
+            ['all', t('filter.all')],
+            ['confirmed', t('vulns.status.confirmed')],
+            ['false_positive', t('vulnStatus.false_positive')],
+            ['pending_review', t('vulnStatus.pending_review')],
+          ] as const
+        ).map(([k, label]) => (
           <Button key={k} variant={filter === k ? 'default' : 'outline'} onClick={() => setFilter(k)}>
-            {statusFilterLabel(k)}
+            {label}
           </Button>
         ))}
       </div>
@@ -360,7 +370,7 @@ export default function VulnsPage() {
           activeId={detailId}
           selectedIds={selected}
           expandAll={Boolean(search.trim())}
-          emptyText={search.trim() ? t('vulnsPage.noMatch') : t('vulnGroup.empty')}
+          emptyText={search.trim() ? t('vulns.emptySearch') : t('vulns.empty')}
           onToggleSelect={(vid, checked) =>
             setSelected((prev) => (checked ? [...prev, vid] : prev.filter((x) => x !== vid)))
           }
@@ -371,7 +381,9 @@ export default function VulnsPage() {
 
       {total > PAGE_SIZE ? (
         <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-          <span>{t('vulnsPage.pageInfo', { page: page + 1, count: pageCount, total })}</span>
+          <span>
+            {t('page.infoItems', { page: page + 1, pageCount, total })}
+          </span>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"

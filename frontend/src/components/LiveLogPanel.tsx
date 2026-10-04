@@ -1,10 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type WheelEvent } from 'react'
-import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { LogEvent } from '../api'
-import i18n from '../i18n'
-import { translateBackendText } from '../i18n/backendText'
+import { useI18n } from '@/i18n'
+import { t as translate } from '@/i18n/t'
 
 type Props = {
   events: LogEvent[]
@@ -20,39 +19,46 @@ type Props = {
   session?: number
   sessionCount?: number
   onSessionChange?: (session: number | null) => void
+  /** 当前小阶段是否仍有 Agent 在跑；最新一轮仅在此时显示「运行中」。 */
+  phaseRunning?: boolean | null
 }
 
-const PHASE_LABEL_KEY: Record<string, string> = {
-  recon: 'reconMap',
-  'recon-map': 'reconMap',
-  'recon-source-ext': 'reconExt',
-  recon_source_ext: 'reconExt',
-  'recon-old-vuln': 'reconOld',
-  recon_old_vuln: 'reconOld',
-  'recon-old-vuln-ghsa': 'reconOldGhsa',
-  recon_old_vuln_ghsa: 'reconOldGhsa',
-  'recon-mark': 'reconMark',
-  recon_mark: 'reconMark',
-  'code-intel': 'codeIntel',
-  code_intel: 'codeIntel',
-  worker: 'worker',
-  'fast-worker': 'fast',
-  fast_worker: 'fast',
-  'bypass-worker': 'bypass',
-  bypass_worker: 'bypass',
-  'unconstrained-worker': 'unconstrained',
-  unconstrained_worker: 'unconstrained',
-  'sink-triage': 'sinkTriage',
-  sink_triage: 'sinkTriage',
-  reviewer: 'reviewer',
-  'reviewer-lab': 'reviewerLab',
-  reviewer_lab: 'reviewerLab',
-  'reviewer-review': 'reviewer',
-  verifier: 'verifier',
-  attack_chain: 'attackChain',
-  'attack-chain': 'attackChain',
-  fix: 'fix',
-  mine: 'worker',
+function phaseLabelMap(): Record<string, string> {
+  const t = translate
+  return {
+    recon: t('flow.log.reconMap'),
+    'recon-map': t('flow.log.reconMap'),
+    'recon-source-ext': t('flow.log.reconExt'),
+    recon_source_ext: t('flow.log.reconExt'),
+    'recon-old-vuln': t('flow.log.reconOld'),
+    recon_old_vuln: t('flow.log.reconOld'),
+    'recon-old-vuln-ghsa': t('flow.log.reconOldFill'),
+    recon_old_vuln_ghsa: t('flow.log.reconOldFill'),
+    'recon-mark': t('flow.log.reconMark'),
+    recon_mark: t('flow.log.reconMark'),
+    'code-intel': t('flow.phase.codeIntel'),
+    code_intel: t('flow.phase.codeIntel'),
+    worker: t('flow.phase.worker'),
+    'fast-worker': t('mining.fast'),
+    fast_worker: t('mining.fast'),
+    'bypass-worker': t('mining.bypass'),
+    bypass_worker: t('mining.bypass'),
+    'unconstrained-worker': t('mining.unconstrained'),
+    unconstrained_worker: t('mining.unconstrained'),
+    'sink-triage': t('flow.log.sinkTriage'),
+    sink_triage: t('flow.log.sinkTriage'),
+    reviewer: t('flow.phase.reviewer'),
+    'reviewer-lab': t('flow.log.reviewerLab'),
+    reviewer_lab: t('flow.log.reviewerLab'),
+    'reviewer-review': t('flow.phase.reviewer'),
+    verifier: t('flow.phase.verifier'),
+    attack_chain: t('flow.phase.attackChain'),
+    'attack-chain': t('flow.phase.attackChain'),
+    vuln_dedup: t('flow.log.dedup'),
+    'vuln-dedup': t('flow.log.dedup'),
+    fix: t('flow.log.fix'),
+    mine: t('flow.phase.worker'),
+  }
 }
 
 export function eventMatchesPhase(ev: LogEvent, phaseFilter?: string): boolean {
@@ -128,6 +134,9 @@ export function eventMatchesPhase(ev: LogEvent, phaseFilter?: string): boolean {
   if (phaseFilter === 'attack_chain' || phaseFilter === 'attack-chain') {
     return p === 'attack_chain' || p === 'attack-chain'
   }
+  if (phaseFilter === 'vuln_dedup' || phaseFilter === 'vuln-dedup') {
+    return p === 'vuln_dedup' || p === 'vuln-dedup'
+  }
   return p === phaseFilter
 }
 
@@ -138,8 +147,7 @@ export function eventVisibleInPhase(ev: LogEvent, phaseFilter?: string): boolean
 
 function phaseLabel(ev: LogEvent): string {
   const p = ev.role || ev.phase || ''
-  const key = PHASE_LABEL_KEY[p]
-  return key ? i18n.t(`liveLog.phase.${key}`) : p
+  return phaseLabelMap()[p] || p
 }
 
 function LogLine({ ev }: { ev: LogEvent }) {
@@ -166,7 +174,7 @@ function LogLine({ ev }: { ev: LogEvent }) {
     tag = ev.tool || 'tool_exec_error'
     body =
       (ev.command ? `$ ${ev.command}\n` : '') +
-      (ev.text || ev.output || i18n.t('liveLog.toolExecFailed')) +
+      (ev.text || ev.output || translate('flow.log.toolFail')) +
       (ev.traceback ? `\n${ev.traceback}` : '')
   } else if (k === 'tokens') {
     const cached = Number(ev.cached) || 0
@@ -175,10 +183,10 @@ function LogLine({ ev }: { ev: LogEvent }) {
       (cached > 0 ? ` / cache ${cached}` : '') +
       ')'
   } else if (k === 'error') {
-    body = translateBackendText(ev.text || '')
+    body = ev.text || ''
   } else if (k === 'system') {
     tag = ev.source || 'system'
-    body = translateBackendText(ev.text || '')
+    body = ev.text || ''
   } else {
     body = ev.text || JSON.stringify(ev)
   }
@@ -220,9 +228,7 @@ function LogLine({ ev }: { ev: LogEvent }) {
       </span>
       {collapsible ? (
         <>
-          {!expanded && hidden > 0 ? (
-            <span className="vh-line-hint">{i18n.t('liveLog.moreLines', { n: hidden })}</span>
-          ) : null}
+          {!expanded && hidden > 0 ? <span className="vh-line-hint">{translate('flow.log.hiddenLines', { hidden })}</span> : null}
           <span className="vh-caret" onClick={() => setExpanded((x) => !x)}>
             {expanded ? '▾' : '▸'}
           </span>
@@ -253,8 +259,9 @@ export default function LiveLogPanel({
   session = 1,
   sessionCount = 1,
   onSessionChange,
+  phaseRunning = null,
 }: Props) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const ref = useRef<HTMLDivElement>(null)
   const atBottomRef = useRef(true)
   const prevFirstSeq = useRef<number | undefined>(undefined)
@@ -378,7 +385,9 @@ export default function LiveLogPanel({
     setShowJump(false)
   }
 
-  const isLive = session >= sessionCount
+  const isLatest = session >= sessionCount
+  const isLive = isLatest && phaseRunning !== false
+  const sessionStatus = isLive ? t('flow.log.live') : isLatest ? t('flow.log.ended') : t('flow.log.history')
   const goSession = (n: number) => {
     if (n < 1 || n > sessionCount) return
     onSessionChange?.(n >= sessionCount ? null : n)
@@ -399,7 +408,7 @@ export default function LiveLogPanel({
   return (
     <div className="vh-task-log" data-log-window="100">
       <div className="vh-log-bar">
-        <span className="vh-log-bar-label">{t('liveLog.barLabel')}</span>
+        <span className="vh-log-bar-label">{t('flow.log.title')}</span>
         <span className="vh-log-pager">
           <Button
             type="button"
@@ -407,19 +416,19 @@ export default function LiveLogPanel({
             size="icon-xs"
             className="vh-log-pager-btn"
             disabled={session <= 1}
-            aria-label={t('liveLog.prevRound')}
+            aria-label={t('flow.log.prevRound')}
             onClick={() => goSession(session - 1)}
           >
             ‹
           </Button>
           <span className={'vh-log-pager-status' + (isLive ? ' live' : '')}>
-            {t('liveLog.roundPrefix')}
+            {t('flow.log.roundPrefix')}
             <Input
               className="vh-log-pager-input"
               type="text"
               inputMode="numeric"
               pattern="[0-9]*"
-              aria-label={t('liveLog.jumpToRound')}
+              aria-label={t('flow.log.jumpRound')}
               value={draft}
               size={Math.max(2, String(sessionCount).length)}
               onFocus={(e) => {
@@ -449,8 +458,7 @@ export default function LiveLogPanel({
                 }
               }}
             />
-            {t('liveLog.roundSuffix', { count: sessionCount })}
-            {isLive ? ` · ${t('liveLog.live')}` : ` · ${t('liveLog.history')}`}
+            {t('flow.log.roundStatus', { count: sessionCount, status: sessionStatus })}
           </span>
           <Button
             type="button"
@@ -458,16 +466,16 @@ export default function LiveLogPanel({
             size="icon-xs"
             className="vh-log-pager-btn"
             disabled={session >= sessionCount}
-            aria-label={t('liveLog.nextRound')}
+            aria-label={t('flow.log.nextRound')}
             onClick={() => goSession(session + 1)}
           >
             ›
           </Button>
         </span>
         <span className="vh-log-count">
-          {t('liveLog.recentCount', { n: visible.length })}
-          {moreHidden ? ` · ${t('liveLog.scrollUpForOlder')}` : ''}
-          {loadingOlder ? ` · ${t('liveLog.loading')}` : ''}
+          {t('flow.log.recent', { n: visible.length })}
+          {moreHidden ? t('flow.log.loadOlder') : ''}
+          {loadingOlder ? t('flow.log.loading') : ''}
         </span>
       </div>
       <div className="vh-log-wrap">
@@ -479,7 +487,7 @@ export default function LiveLogPanel({
           style={{ minHeight, maxHeight: Math.max(minHeight, 560) }}
         >
           {visible.length === 0 ? (
-            <div className="vh-log-empty">{t('liveLog.waiting')}</div>
+            <div className="vh-log-empty">{t('flow.log.empty')}</div>
           ) : (
             visible.map((ev, i) => (
               <LogLine key={ev.seq != null ? `s${ev.seq}` : `${ev.ts || i}-${ev.kind}-${i}`} ev={ev} />
@@ -488,7 +496,7 @@ export default function LiveLogPanel({
         </div>
         {showJump ? (
           <Button type="button" variant="outline" size="sm" className="vh-jump-btn" onClick={jumpToBottom}>
-            {t('liveLog.jumpToLatest')}
+            {t('flow.log.jumpLatest')}
           </Button>
         ) : null}
       </div>

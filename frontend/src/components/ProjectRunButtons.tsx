@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { PauseIcon, PlayIcon } from 'lucide-react'
 import { api, formatApiError, type Project } from '../api'
 import { applyProjectRunToListCaches } from '../lib/listCache'
 import { projectRunBucket, tokenBudgetReached } from '../lib/utils'
 import { Button } from '@/components/ui/button'
+import { useI18n } from '@/i18n'
 
 function optimisticPause(project: Project): Project {
   return { ...project, status: 'paused', project_paused: true }
@@ -29,7 +29,7 @@ function applyFresh(project: Project) {
 }
 
 export function ProjectRunButtons({ project, size = 'sm' }: { project: Project; size?: 'default' | 'sm' }) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const bucket = projectRunBucket(project.status, project.project_paused)
@@ -39,16 +39,16 @@ export function ProjectRunButtons({ project, size = 'sm' }: { project: Project; 
 
   const pauseTitle =
     bucket === 'completed'
-      ? t('runButtons.pauseCompleted')
+      ? t('comp.run.doneNoPause')
       : bucket === 'paused'
-        ? t('runButtons.alreadyPaused')
+        ? t('comp.run.alreadyPaused')
         : bucket === 'stopped'
-          ? t('runButtons.pauseStopped')
+          ? t('comp.run.stoppedNoPause')
           : undefined
   const startTitle = budgetBlocked
-    ? t('runButtons.budgetBlocked')
+    ? t('comp.run.tokenCap')
     : bucket === 'running'
-      ? t('runButtons.alreadyRunning')
+      ? t('comp.run.alreadyRunning')
       : undefined
 
   function runAction(kind: 'pause' | 'resume') {
@@ -76,7 +76,7 @@ export function ProjectRunButtons({ project, size = 'sm' }: { project: Project; 
         size={size}
         disabled={!canPause}
         title={pauseTitle}
-        aria-label={t('runButtons.pause')}
+        aria-label={t('comp.run.pauseAria')}
         onClick={(e) => {
           e.preventDefault()
           e.stopPropagation()
@@ -85,7 +85,7 @@ export function ProjectRunButtons({ project, size = 'sm' }: { project: Project; 
         }}
       >
         <PauseIcon />
-        {t('runButtons.pause')}
+        {t('comp.run.pause')}
       </Button>
       <Button
         type="button"
@@ -93,7 +93,7 @@ export function ProjectRunButtons({ project, size = 'sm' }: { project: Project; 
         size={size}
         disabled={!canStart}
         title={startTitle}
-        aria-label={t('runButtons.start')}
+        aria-label={t('comp.run.startAria')}
         onClick={(e) => {
           e.preventDefault()
           e.stopPropagation()
@@ -102,7 +102,7 @@ export function ProjectRunButtons({ project, size = 'sm' }: { project: Project; 
         }}
       >
         <PlayIcon />
-        {t('runButtons.start')}
+        {t('comp.run.start')}
       </Button>
       {error ? (
         <span className="max-w-40 truncate text-xs text-red-300" title={error}>

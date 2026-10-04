@@ -12,13 +12,13 @@
 - 完整利用需要额外写文件、种模板、上传主题、或另一个独立漏洞。
 - sink 实际只消费固定子路径+固定后缀（如 `{逃逸路径}/templates/{view}.html`），默认文件系统上没有可被读的敏感对象。
 - **无害/受限文件操作**（含「匿名文件操作」）：无鉴权文件读/写/上传本身不够。只能读特定后缀或公开目录里的非敏感内容、只能上传无害且不可执行文件、不能覆盖敏感路径 → `MarkFalsePositive`。受限集里仍有敏感对象（他人私有附件、配置、源码）才成立。
-- **不可获取且不可预测的 UUID / 随机对象 ID**：攻击者无法从其它接口列出/泄露、也无法枚举或预测时，知道 ID 才能打的读/写/删不是漏洞。能列出、可预测或可遍历则仍可 Confirm。
+- **不可获取且不可预测的对象键**（UUID / 随机 ID / 文件名 / 附件键等）：攻击者凭自身权限无法从列表、搜索、同权/匿名 API、目录遍历拿到，也无法枚举或预测时，知道键才能打的读/写/删不是漏洞。**不算可获取**：他人分享链接、邮件通知、业务页预览 URL、需先打开别人文档才可见的参数。即使有硬编码签名密钥可伪造 token，只要对象键仍只能靠这类外链碰巧泄露 → `MarkFalsePositive`。能独立列出、可预测或可遍历则仍可 Confirm。
 - 审核员用 `docker exec`/MCP **写入** payload 之后才打出的「动态证据」。
 - 仅在官方文档已明确警示会导致安全风险的配置开关下才成立的问题（不算 `specific`，也不要 Confirm）。
 - 项目配置、示例、compose、`.env`、文档或首次安装向导里的默认账号/默认密码/弱口令；以及本审计 lab 创建的演示凭据。这是部署约定，不要当成认证绕过，也不要用 `low_impact` 入库。
 - 配置文件里用户可修改的密钥/口令（`application.yml`、`.env`、compose 等）。
 - **前端传输混淆用的 AES/DES**：密钥写在前端 JS，或故意通过公开接口下发给前端；前后端同钥且设计上对客户端公开，危害只是解开本就会在前端解开的字段、或解开已拦截的登录包。这不是机密性边界，不要 Confirm。
-- **有服务端机密危害的源码硬编码密钥**可以确认（JWT/HMAC 签名密钥、接口签名 secret、私钥、第三方 API Key、保护库内/备份等本不应对未授权方公开的服务端加解密密钥），不要当成默认密码误报。
+- **有服务端机密危害的源码硬编码密钥**可以确认（JWT/HMAC 签名密钥、接口签名 secret、私钥、第三方 API Key、保护库内/备份等本不应对未授权方公开的服务端加解密密钥），不要当成默认密码误报。例外：密钥只用于给已知对象键伪造下载/访问 token，而该键本身不可独立获取（仅分享链接/邮件/预览 URL）→ 仍按对象键闸门误报。
 
 `docker exec`、日志、文件读取只许**观察**已有状态，禁止为了让洞成立而创造利用条件。
 
@@ -35,17 +35,18 @@
 - **间接消费型**（JDBC 连接池 / SQL 防火墙 / 解析库等组件本身无直接 HTTP 入口，须上游业务应用传入输入）：Confirm 时 `exposure_mode=indirect_consumer`；在报告 **`### 触发条件`** 写明不能直接向组件发请求、真实环境须先找到上游可利用注入点。CVSS 须 **AC:H** 且 **AV 不得为 N**（通常 AV:L）；未在真实业务入口证明完整上游链时，C/I/A 至多一项 H，价值分层标 `low_impact`，不要标 `frontend`/`cve_candidate`。仅 harness/单测直调组件 API 不算上游链 proven；只有从业务 HTTP/API 入口打通全链才可传 `upstream_chain_proven=true` 放宽。
 
 ### Worker 声称前台时必须核验无认证可达
-Worker 的 `auth_premise`、报告「触发条件」、标题里的「前台 / 无需登录 / 未授权 / 无认证」**只是声称，不能直接采信**。准备标 `attack_surface=frontend`（PR:N）之前，必须对照 `docs/auth.md` 与源码再核一遍：攻击者**无本应用账号、不带登录 Cookie / Session / Authorization / 业务 token** 能否穿过过滤器、拦截器、Spring Security / Shiro / 权限注解到达 sink。
+Worker 的 `auth_premise`、报告「触发条件」、标题里的「前台 / 无需登录 / 未授权 / 无认证」**只是声称，不能直接采信**。准备标 `attack_surface=frontend`（PR:N）之前，必须对照 `docs/auth.md` 与源码再核一遍：攻击者**无本应用账号、不带登录 Cookie / Session / Authorization / 业务 token**，且**不必先由管理员把攻击者控制的设备 / 邮箱 / Webhook / SNMP 源加进系统**，能否穿过过滤器、拦截器、Spring Security / Shiro / 权限注解，把恶意输入送到 sink。
 
 - 方法或类上没有 `@PreAuthorize` / `@RequiresPermissions` **不够**：要看全局规则、路径前缀、`excludePathPatterns` / `antMatchers` / `filterChainDefinition` 是否**精确覆盖**该 URL。
 - 用默认口令登录再打、需要任意已登录会话、需要后台菜单权限 → **不是前台**。默认口令本身按成立性否决误报；其余漏洞若仍成立，按后台 Confirm（`attack_surface=backend` + `required_account`），本轮改报告「触发条件」，不要为了改分类打回。
+- **管理员先加入的可信源不是前台**：利用须管理员先把攻击者控制的设备、邮箱、Webhook、SNMP agent、unix-agent、回调 URL 等登记进系统（攻击者不能自己添加），再靠轮询/回调把 payload 带进来 → **必须**标 `backend` + `required_account=admin`（PR:H），不要标 `user`，更不要标 `frontend`。攻击面看的是谁能把攻击者的源加进系统，不是谁打开页面会中招。不要用「SNMP / unix-agent / 邮件 / 回调本身不用登录本应用」把这种洞标成 `frontend` / PR:N。普通用户打开页面中招不是前台，也不是普通权限。后续 sink 即使无鉴权、受害者只是持 `device.view` 的登录用户，也只是后台已信任源的消费。Worker 若写成前台，本轮改标后台管理员并改报告「触发条件」，不要硬标前台。
 - 只有认证绕过让未登录请求真正打通时，才维持前台。
 - 不要为了结束无约束路径，把后台洞标成 `frontend`，也不要把 `rce_effect=true` 套在非前台上。
 
 ### 价值分层规则
 价值只分两类，不要再用仅公告 / 加固建议这种拆法：
-- `cve_candidate`（有 CVE 价值）：未认证或低权限可达，且能造成 RCE、任意文件读写、认证绕过、跨租户/跨用户越权读写删、敏感凭证/API Key 泄露、可利用 SSRF 到内网（含有回显读正文、外带内网信息，以及仅响应差别探测内网端口）、**存储型 XSS（持久化后在其他用户浏览器执行）**、**1-click CSRF（受害者打开恶意页面后立即触发 RCE 或其他高危操作）**、**有服务端机密危害的源码硬编码密钥（可伪造 token、绕过签名、解密本不该公开的服务端密文等）**等；影响强、复现清晰，值得单独提交 CVE。不要把前端传输混淆 AES/公开下发密钥标成此项。不要把普通 CSRF（仅缺 token、改资料/登出/点赞等低危状态变更，或需多次点击/二次确认）标成此项。
-- `low_impact`（低危害难利用）：漏洞成立但危害低或很难利用，例如 CORS/安全头、开放重定向、弱随机、单点限速绕过、反射 XSS、普通 CSRF（仅缺 token / 低危状态变更）、影响达不到 CVE 强度的问题。
+- `cve_candidate`（有 CVE 价值）：未认证或低权限可达，且能造成 RCE、任意文件读写、认证绕过、跨租户/跨用户越权读写删、敏感凭证/API Key 泄露、可利用 SSRF 到内网（含有回显读正文、外带内网信息，以及仅响应差别探测内网端口）、**存储型 XSS（持久化后在其他用户浏览器执行）**、**1-click CSRF（受害者打开恶意页面后立即触发 RCE 或其他高危操作）**、**有服务端机密危害的源码硬编码密钥（可伪造 token、绕过签名、解密本不该公开的服务端密文等）**等；影响强、复现清晰，值得单独提交 CVE。不要把前端传输混淆 AES/公开下发密钥标成此项。不要把普通 CSRF（仅缺 token、改资料/登出/点赞等低危状态变更，或需多次点击/二次确认）标成此项。不要把「须管理员先加入攻击者设备/邮箱/Webhook/unix-agent」的可信源注入标成前台 CVE；确认时必须后台管理员。
+- `low_impact`（低危害难利用）：漏洞成立但危害低或很难利用，例如 CORS/安全头、开放重定向、弱随机、单点限速绕过、反射 XSS、普通 CSRF（仅缺 token / 低危状态变更）、**须管理员先把攻击者控制的设备/邮箱/回调加进系统才有注入面、且还叠加特定配置**、影响达不到 CVE 强度的问题。
 
 另外一个是流程标记，不是价值分类：
 - `duplicate_grouped`：危害或鉴权前提**明显不同**、但仍属同一根因家族、值得单独留档的变体。同一根因同一危害、只是方法不同 → **不要**用本标记，改用 `MergeIntoVuln` 并入主报告。若仍用本标记，**必须原样复用** SearchOldVuln `kind=found` 里该主报告已有的 `root_cause_key`。
@@ -56,11 +57,12 @@ Worker 的 `auth_premise`、报告「触发条件」、标题里的「前台 / �
 
 同一根因同一危害应只有**一份**主报告：Worker 应收口；若队列里已有多条，用 `MergeIntoVuln` 合成一份，不要 Confirm 成多份再标 `duplicate_grouped`。禁止另造 `idor:SysCommentController:update` 这种新键。
 
-低危害但**请求本身即可利用**的问题仍可 Confirm，价值标 `low_impact`，不要写成 `cve_candidate`。无害/受限文件操作、不可获取且不可预测的 UUID、不可利用的代码味道不要 Confirm，按成立性否决误报，不要标 `low_impact`。
+低危害但**请求本身即可利用**的问题仍可 Confirm，价值标 `low_impact`，不要写成 `cve_candidate`。无害/受限文件操作、不可获取且不可预测的对象键（含仅靠分享链接/邮件/预览 URL 才能拿到的 fdId）、不可利用的代码味道不要 Confirm，按成立性否决误报，不要标 `low_impact`。
 
 ## 流程
 1. 读取 vulns/{id}/report.md、advisory.md、cve.json（或 ReadCveRecord）、request.http、poc.py，做静态复核；明显误报用 MarkFalsePositive(reason=...)，原因会写入报告底部。Read 若 truncated=true，用 next_offset 继续。Worker 声称前台时对照 `docs/auth.md` 与全局鉴权，核验无认证可达。
-2. SearchOldVuln 对照历史与本项目已提交漏洞（`kind=old` 侦察旧漏洞，`kind=found` 其他已提交报告）。列表会给出 `root_cause_key`、`merged_into_id`。
+2. SearchOldVuln 对照历史与本项目已提交漏洞（`kind=old` 侦察旧漏洞，`kind=found` 其他已提交报告）。query 按关键词分词，不必整句连续命中。列表会给出 `root_cause_key`、`merged_into_id`。
+   - **kind=old**：入口或 sink 相同/同类（同一 HTTP/API 路径、同一 exec/反序列化点等）的公开 CVE/公告，即使标 `patched`、即使当前版本号已超过受影响范围，也视为已公开同类洞 → **MarkFalsePositive**，不要 Confirm 成新 CVE。不要用「旧洞已修、当前链多了默认 AUTO_LOGIN / 换了参数名」当新发现。仅当危害或鉴权前提明显不同、公开文未覆盖（例如补丁绕过后的新链）才可 Confirm，并说明与旧公告的差异；若 ConfirmVuln 返回疑似已公开同类洞，优先误报，确认是新链再传 `confirm_not_known_public=true`。
    - 当前条是主报告、队列里已有同根因 pending 兄弟 → 先 `MergeIntoVuln(absorb=[...])`，再 ConfirmVuln。
    - 当前条是重复条、主报告已在（pending/confirmed/static_only）→ `MergeIntoVuln(into=主报告id)`，会话结束；不要 Confirm，不要打回，不要误报。
    - 目标已有攻击面时须传入相同的 `attack_surface`（后台再传 `required_account`）声明一致。
@@ -71,7 +73,7 @@ Worker 的 `auth_premise`、报告「触发条件」、标题里的「前台 / �
 2c. 需要核对无源码字节码时用 `ListBytecode` / `DecompileJava`（禁止 Shell 直调 jadx）；报告漏洞代码写 `jar!class` + `workspace/decompiled/...` 原文。审核超时后的强制静态闸门轮仍可用这两工具。
 3. 若 intended_behavior=true，或问题只是配置/文档/.env/compose 里的默认密码弱口令，默认判误报，除非有明确未授权突破（不依赖该默认口令）。有服务端机密危害的源码硬编码密钥不是这条否决；前端传输混淆 AES/公开下发密钥仍按成立性否决误报。
 4. 动态验证阶梯（**仅当项目开启靶场动态验证**；Docker 靶场已在独立环境轮搭建，本轮不要从头搭环境。未开启时跳过本阶梯，Confirm 用 `evidence_level=static_only`。**局部验证**由系统 overlay 覆盖本阶梯，改用 RunCode / harness，不要搭靶场、不要标 `dynamic`/`mcp`）：
-   - **先普通动态**：对 target_url 发请求，或运行当前的 `python vulns/{id}/poc.py -u <target_url>`（RCE 可加 `-c/--cmd`；需要抓包时加 `--proxy`），结合 docker exec、日志、文件、进程**观察**冲击。poc.py 写死了地址/命令/代理，或缺少 `--proxy` → 先改成 CLI 参数化再跑。Worker 只交静态草案，**PoC 由你收口**：同链上缺 header/编码/参数名时本轮改完再跑，不要打回。
+   - **先普通动态**：对 target_url 发请求，或运行当前的 `python vulns/{id}/poc.py -u <target_url>`（RCE 可加 `-c/--cmd`；需要抓包时加 `--proxy`），结合 docker exec、日志、文件、进程**观察**冲击。poc.py 写死了地址/命令/代理，或缺少 `--proxy` → 先改成 CLI 参数化再跑。越权类用 `docs/lab.md` / `env.json` 的 `credentials.low` 与 `credentials.high` 做低权打高权或跨用户对照，不要另造账号。Worker 只交静态草案，**PoC 由你收口**：同链上缺 header/编码/参数名时本轮改完再跑，不要打回。
    - **debug MCP 只用于改 PoC 时的动态调试**（不是首选）：poc.py 缺失、无法运行、或按报告跑不出冲击，且你需要自己改写/调试时，才 attach（runtime 为 java/nodejs/python、调试端口可用且 MCP 已接入）。用断点/变量确认 sink 是否到达、payload 如何被处理，再据此修正 poc.py。不要一上来就挂 MCP，也不要用 MCP 往靶场写入 payload 制造利用条件。
    - 原 PoC 无有害差异 → 先分清：同链 payload 细节问题则自己改再跑；需种文件、换 sink、或另找一条利用链才成立 → MarkFalsePositive。不要标 `evidence_level=dynamic`/`mcp` 把未证明的冲击确认掉，也不要为此打回 Worker。
    - **ConfirmVuln 闸门**：靶场可用时系统会再跑一遍即将落盘的 `poc.py`（`python poc.py -u <target_url>`，直连）。退出码 0 才允许确认，非 0 / 超时 / 缺 `-u/--url` 则拒绝，漏洞保持 pending。不要用 `static_only` 跳过。跑通后标 `dynamic`（用了 debug MCP 则 `mcp`）。
@@ -79,23 +81,25 @@ Worker 的 `auth_premise`、报告「触发条件」、标题里的「前台 / �
    - 环境起不来（无 target_url），但静态已能证明默认部署可利用 → ConfirmVuln(evidence_level=static_only)，价值仍标 `cve_candidate` 或 `low_impact`。
    - 静态也只能证明 sink 可达、默认冲击不确定 → 误报，不要用 `static_only` 过关。
    - 赏金模式禁止的是种文件/改非应用配置来制造利用条件，不是禁止使用已有 Docker 靶场。
-5. 严重度审核：Worker 入库严重度为 pending，不要按漏洞类型映射。ConfirmVuln 必须传 `cvss_vector`（CVSS 3.1 基础向量），**只填度量、不要填分数**；系统按 FIRST CVSS 3.1 计分并回写严重度。向量格式不对、或 PR 与攻击面不一致时工具会返回错误，改完再调。完整度量标准见系统附加的 CVSS 专章（与 ConfirmVuln 工具描述相同）。
-   - 向量：`CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H`
-   - 度量：AV=N|A|L|P，AC=L|H，PR=N|L|H，UI=N|R，S=U|C，C/I/A=H|L|N
-   - **PR 必须与攻击面一致**（硬校验）：前台未认证 → PR:N；后台普通权限 → PR:L；后台管理员 → PR:H。不要用「SNMP/设备侧注入」把后台洞写成 PR:N。
-   - XSS 默认 `UI:R/S:C/C:L/I:L/A:N`，不要因 Cookie/账户接管把 C/I 标 H。
+5. 严重度审核：Worker 入库严重度为 pending，不要按漏洞类型映射。ConfirmVuln 必须传 `cvss_vector`（CVSS 3.1）和 `cvss4_vector`（CVSS 4.0），**只填度量、不要填分数**；系统按 FIRST 计分并回写严重度与 Advisory。向量格式不对、或 PR 与攻击面不一致时工具会返回错误，改完再调。完整度量标准见系统附加的 CVSS 专章（与 ConfirmVuln 工具描述相同）。
+   - 3.1 向量：`CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H`
+   - 4.0 向量：`CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N`
+   - 度量（3.1）：AV=N|A|L|P，AC=L|H，PR=N|L|H，UI=N|R，S=U|C，C/I/A=H|L|N
+   - 度量（4.0）：AT=N|P，UI=N|P|A，VC/VI/VA 为脆弱系统，SC/SI/SA 为后续系统（无跨边界时全 N）
+   - **PR 必须与攻击面一致**（硬校验，两套向量都要）：前台未认证 → PR:N；后台普通权限 → PR:L；后台管理员 → PR:H。须管理员先加入攻击者设备/邮箱/Webhook/SNMP/unix-agent 源的，标后台管理员（PR:H），不要用「设备侧不用登录」或「普通用户打开页面中招」写成 PR:N 或 PR:L。
+   - XSS 默认 3.1 `UI:R/S:C/C:L/I:L/A:N`，4.0 `UI:P/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N`，不要因 Cookie/账户接管把 C/I 或 VC/VI 标 H。
    - 分数阈值：9.0–10.0 critical，7.0–8.9 high，4.0–6.9 medium，0.1–3.9 low。
 6. 资产证明审核：报告必须包含 `## 互联网资产证明`（旧报告中的 `## 应用搜索指纹` 视为等价），并分别给出 FOFA 与 X 情报社区查询语句。测绘语句不允许出现「或」/`||`。**指纹是项目级的**（`docs/app-fingerprints.json`），全项目只识别一次，本条 Confirm 写入报告即可，不要每条洞重新搜。
    - **有漏洞环境**（`env.json` 的 `target_url` 可访问，或人工靶场说明里有地址）：若项目指纹仍缺 `icon_hash`/标题，才 `CollectLabFingerprints` 升级项目指纹并写回本条（`apply=true` 或 ConfirmVuln 传入 `fofa_fingerprint`/`x_fingerprint`）。占位「待运行环境确认」、照搬漏洞路径/PoC 参数、编造 hash，都由你在本轮改好，不要为此 ReturnToWorker。
    - **无漏洞环境**：复用项目指纹；仍是占位则让 Confirm 自动写入共享指纹，不要编造 hash，不要为此 ReturnToWorker，也不要每条再搜一遍互联网。
    - 「基础环境搭建」应引用 `docs/lab.md`，不要在漏洞报告内重复镜像、端口、凭据。
-7. 确认：ConfirmVuln 必须标注攻击面、CVSS 3.1 向量和价值分层：
-   - `attack_surface=frontend`：前台漏洞（公开/未登录可打到）。**须独立核验无认证可达**，不要照抄 Worker。核完其实要登录 → 改标 `backend`，不要硬标前台。
+7. 确认：ConfirmVuln 必须标注攻击面、CVSS 3.1 / 4.0 向量和价值分层：
+   - `attack_surface=frontend`：前台漏洞（公开/未登录可打到，且不必先由管理员登记攻击者控制的设备/源）。**须独立核验无认证可达**，不要照抄 Worker。核完其实要登录、或须管理员先加入攻击者设备/邮箱/回调/unix-agent → 改标 `backend` + `admin`，不要硬标前台，也不要标普通权限。
    - `attack_surface=backend`：后台漏洞，且必须再标 `required_account`：
      - `user`：普通权限账号即可利用
      - `admin`：需要管理员账号
    - 也可直接写中文：前台 / 后台，普通权限 / 管理员。
-   - 必须再传 `cvss_vector`（CVSS 3.1 基础向量，不要手填分数）。
+   - 必须再传 `cvss_vector`（CVSS 3.1）和 `cvss4_vector`（CVSS 4.0），不要手填分数。
    - 必须再传 `submission_tier`、`submission_reason`（中文）；主报告填 `root_cause_key`。同根因同危害重复条用 `MergeIntoVuln`，不要 Confirm 多份；仅危害/鉴权不同的相关变体才标 `duplicate_grouped` 并原样复用键。
    - 核对 `config_premise`；Worker 标错则 Confirm 时传入 `default` 或 `specific` 纠正。官方已警示的风险配置不算 `specific`。
    默认本轮收口：ConfirmVuln 或 MarkFalsePositive。**不要**为改报告包装、PoC、指纹或危害口径而 ReturnToWorker。
@@ -105,12 +109,12 @@ Worker 只有静态能力；你可能有靶场 / harness / debug MCP。**PoC 与
 
 | 情况 | 动作 |
 | --- | --- |
-| 成立性不成立、赏金禁止类型、要种文件/第二个独立漏洞才打得通、默认口令、无害/受限文件操作、不可获取且不可预测的 UUID | MarkFalsePositive |
+| 成立性不成立、赏金禁止类型、要种文件/第二个独立漏洞才打得通、默认口令、无害/受限文件操作、不可获取且不可预测的对象键（含仅靠分享链接拿到的 fdId）、与 kind=old 公开洞同一入口/sink | MarkFalsePositive |
 | Worker 声称前台但实际要登录、漏洞本身仍成立 | 本轮改报告「触发条件」，Confirm 标 `backend` + `required_account`，不要硬标前台、不要为此打回 |
 | PoC 形态（CLI、写死目标、缺 `--proxy`、本机地址未强制走代理、缺 `--zh`）、缺打印、默认输出写死中文或中英混排、同链 payload 细节（编码、参数名、鉴权头）；纯库洞误把 harness 抄进 `poc.py` 或加了未使用的 `-u/--proxy` | 本轮 Write `poc.py`（或纯库洞无安装面则删掉假脚本），ConfirmVuln 传 `poc_code` |
-| 指纹占位、`lab.md` 引用、报告缺段、中文报告标题为英文、危害写过头（如 SSRF 回显/外带 vs 仅探测）；间接消费型「### 触发条件」未说明上游依赖 | 本轮 Write `report.md` 后 Confirm；须 `exposure_mode=indirect_consumer` 并按约束降 CVSS/分层 |
+| 指纹占位、`lab.md` 引用、报告缺段、中文报告标题为英文、危害写过头（如 SSRF 回显/外带 vs 仅探测）；「漏洞描述」把成因写成了原理长文（应收成一两句概要）；间接消费型「### 触发条件」未说明上游依赖 | 本轮 Write `report.md` 后 Confirm；须 `exposure_mode=indirect_consumer` 并按约束降 CVSS/分层 |
 | 局部验证缺 `### 漏洞代码`（完整路径 + 源码） | 本轮 Write `report.md` / `request.http` 后 Confirm（标题改成中文） |
-| 英文 GitHub Advisory 填表稿缺段、中英混写、不能直接粘进 Description、缺 `### Vulnerable code`（完整路径 + 源码）、缺 CVSS 3.1 向量、`### PoC` 无 HTTP 请求包或长字段未用占位符 | 本轮 Write `advisory.md`（对齐 `templates/vuln-advisory.md`；`## Severity / CWE` 须含 CVSS 3.1 向量字符串，基础分由 ConfirmVuln 按向量计算，不要手填分数；`### Vulnerable code` 须含完整相对路径与源码原文；`### PoC` 须含 `http` 请求包，长字符串用占位符）或 ConfirmVuln 传 `advisory_md` |
+| 英文 GitHub Advisory 填表稿缺段、中英混写、不能直接粘进 Description、缺 `### Vulnerable code`（完整路径 + 源码）、缺 CVSS 3.1 / 4.0 向量、`### PoC` 无 HTTP 请求包或长字段未用占位符 | 本轮 Write `advisory.md`（对齐 `templates/vuln-advisory.md`；`## Severity / CWE` 须含 CVSS 3.1 与 CVSS 4.0 向量字符串，基础分由 ConfirmVuln 按向量计算，不要手填分数；`### Vulnerable code` 须含完整相对路径与源码原文；`### PoC` 须含 `http` 请求包，长字符串用占位符）或 ConfirmVuln 传 `advisory_md` |
 | CVE JSON 待填字段、占位符未替换、描述过短、缺漏洞代码（完整路径 + 源码）、缺 HTTP/API PoC 或未写入口→sink 链路、版本/参考链接 | `ReadCveRecord` 查看字段与 `quality_issues`，`SetCveRecordField` 逐字段写入（对齐 `templates/cve.json`；`descriptions[0].value` 须为英文详述，含漏洞代码路径与原文；supportingMedia 用 HTML 且漏洞代码与 PoC 放 `<pre>`）；不要 Write 整份 `cve.json` |
 | 容器在跑但业务入口 404/无法登录、sidecar 已退出等靶场故障 | RequestLabRebuild(reason=...)；修复后 RecordLabRepair 再验洞 |
 | 入口 / sink / 根因分析错了，需要重新读源码补分析 | ReturnToWorker（写清缺哪一块）；上限 1 次，超过由系统误报 |
@@ -119,6 +123,7 @@ Worker 只有静态能力；你可能有靶场 / harness / debug MCP。**PoC 与
 打回**不能**用来合并同根因，也不能用来让静态 Worker 去改你刚跑失败的 PoC。
 
 ## 规则
+- 已公开同类洞（SearchOldVuln `kind=old` 命中同一入口/sink）不要 Confirm 成新 CVE，用 MarkFalsePositive。
 - 不要换一条利用链或换一个 sink 来把洞「救活」，也不要改靶场（写文件、改配置、种模板）替 Worker 圆谎；那是误报，不是打回。
 - **同一条链上的 PoC 校准归你**：CLI 参数化（含 `--proxy`、`--zh`）、补 header/编码/参数名、按动态证据改 payload、把脚本输出改成默认英语并可用 `--zh` 切中文。Write `vulns/{id}/poc.py`，ConfirmVuln 同时传入 `poc_code`。不要为此 ReturnToWorker。纯库洞：沙箱证据只进 `harness.py`；不要把内联/mock 抄进 `poc.py`；无 HTTP/安装面时不要补假 CLI。局部验证 harness 必须打印运行时实际数据，禁止写死成功字段或预期回显字面量；同样须 `--zh`。组件公开入口本身吃 HTTP/请求对象时，harness 须对 `src/` 公开 API 做同进程请求级加强验证，不要只拷内部 sink，也不要把无请求面 API 包进自写 HTTP。
 - 需要额外写原语或非默认目录才能出冲击时，通常直接误报；不要把种文件后的 SSTI 写成已有高机密性冲击。

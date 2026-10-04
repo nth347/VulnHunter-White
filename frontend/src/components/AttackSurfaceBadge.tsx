@@ -1,6 +1,6 @@
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import i18n from '../i18n'
+import { t } from '@/i18n/t'
 import { cn, formatAttackSurface } from '@/lib/utils'
 
 type AttackSurfaceBadgeProps = {
@@ -14,12 +14,16 @@ function attackSurfaceTooltip(
   requiredAccount: string | null | undefined,
 ): string | null {
   if (attackSurface === 'frontend') {
-    return i18n.t('attackSurfaceBadge.frontend')
+    return t('surface.tip.frontend')
   }
   if (attackSurface === 'backend') {
-    if (requiredAccount === 'admin') return i18n.t('attackSurfaceBadge.backendAdmin')
-    if (requiredAccount === 'user') return i18n.t('attackSurfaceBadge.backendUser')
-    return i18n.t('attackSurfaceBadge.backend')
+    if (requiredAccount === 'admin') {
+      return t('surface.tip.backendAdmin')
+    }
+    if (requiredAccount === 'user') {
+      return t('surface.tip.backendUser')
+    }
+    return t('surface.tip.backend')
   }
   return null
 }

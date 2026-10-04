@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     timeout_reviewer_wrapup_grace: int = 600
     timeout_verifier: int = 1800
     timeout_attack_chain: int = 1800
+    timeout_vuln_dedup: int = 1800
     timeout_docker: int = 2700
     timeout_semgrep: int = 1800
     timeout_sink_triage: int = 1800
@@ -50,6 +51,8 @@ class Settings(BaseSettings):
     # LLM error handling (AutoPoc-aligned)
     rate_limit_sleep_sec: int = 90
     rate_limit_max_retries: int = 20
+    # Min seconds between request *starts* on the same pool endpoint (0 = off).
+    llm_min_request_interval_sec: float = 2.0
     request_backoff_retries: int = 3
     phase_max_resumes: int = 2
     recon_max_resumes: int = 8
@@ -160,9 +163,12 @@ class Settings(BaseSettings):
     jadx_path: str = ""
     # CodeGraph CLI；空则 PATH / data/tools/codegraph，缺失时构建阶段自动安装
     codegraph_path: str = ""
+    jar_analyzer_path: str = ""
     timeout_codegraph_install: int = 300
     timeout_codegraph_index: int = 1800
     timeout_codegraph_query: int = 30
+    timeout_jar_analyzer_install: int = 300
+    timeout_jar_analyzer_index: int = 1800
     decompile_max_jar_bytes: int = 80 * 1024 * 1024
     decompile_max_output_bytes: int = 500 * 1024 * 1024
     decompile_timeout_sec: int = 1800
@@ -171,6 +177,11 @@ class Settings(BaseSettings):
     # Import bundled MemoBoard showcase (data/projects/11 + showcase/db-seed.json) on startup.
     # Set VULNHUNTER_DEMO_SEED=0 to disable.
     demo_seed: bool = True
+
+    # Self-update: check git upstream on startup and every interval. Set
+    # VULNHUNTER_APP_UPDATE_CHECK=0 to disable the background poll (API still works).
+    app_update_check: bool = True
+    app_update_interval_sec: int = 3600
 
     # Debug MCP directories (relative to repo root; env can override)
     mcp_java: str = "tools/mcp/java-debug"

@@ -1,9 +1,7 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-
-import i18n, { currentLocale } from '../i18n'
-
-const t = (key: string, options?: Record<string, unknown>) => i18n.t(key, options ?? {})
+import { dateLocale, getLocale } from '@/i18n/locale'
+import { t } from '@/i18n/t'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -13,11 +11,11 @@ export function formatAttackSurface(
   attackSurface: string | null | undefined,
   requiredAccount: string | null | undefined,
 ): string | null {
-  if (attackSurface === 'frontend') return t('enum.attackSurface.frontend')
+  if (attackSurface === 'frontend') return t('surface.frontend')
   if (attackSurface === 'backend') {
-    if (requiredAccount === 'admin') return t('enum.attackSurface.backendAdmin')
-    if (requiredAccount === 'user') return t('enum.attackSurface.backendUser')
-    return t('enum.attackSurface.backend')
+    if (requiredAccount === 'admin') return t('surface.backendAdmin')
+    if (requiredAccount === 'user') return t('surface.backendUser')
+    return t('surface.backend')
   }
   return null
 }
@@ -25,24 +23,24 @@ export function formatAttackSurface(
 export function formatSubmissionTier(value: string | null | undefined): string {
   switch (value) {
     case 'cve_candidate':
-      return t('enum.submissionTier.cveCandidate')
+      return t('tier.cve')
     case 'low_impact':
     case 'advisory_only':
     case 'hardening':
-      return t('enum.submissionTier.lowImpact')
+      return t('tier.low')
     case 'duplicate_grouped':
-      return t('enum.submissionTier.duplicateGrouped')
+      return t('tier.dup')
     default:
-      return t('enum.submissionTier.untiered')
+      return t('tier.unknown')
   }
 }
 
 export function formatExposureMode(value: string | null | undefined): string | null {
   switch (value) {
     case 'indirect_consumer':
-      return t('enum.exposureMode.indirectConsumer')
+      return t('exposure.indirect')
     case 'direct':
-      return t('enum.exposureMode.direct')
+      return t('exposure.direct')
     default:
       return null
   }
@@ -55,11 +53,9 @@ export function exposureModeTooltip(
 ): string | null {
   switch (mode) {
     case 'indirect_consumer':
-      return upstreamChainProven
-        ? t('fmt.exposureModeTooltip.indirectProven')
-        : t('fmt.exposureModeTooltip.indirectUnproven')
+      return upstreamChainProven ? t('exposure.tip.indirectProven') : t('exposure.tip.indirect')
     case 'direct':
-      return t('fmt.exposureModeTooltip.direct')
+      return t('exposure.tip.direct')
     default:
       return null
   }
@@ -68,11 +64,11 @@ export function exposureModeTooltip(
 export function formatTrackingStatus(value: string | null | undefined): string {
   switch (value) {
     case 'submitted':
-      return t('enum.trackingStatus.submitted')
+      return t('track.submitted')
     case 'ignored':
-      return t('enum.trackingStatus.ignored')
+      return t('track.ignored')
     default:
-      return t('enum.trackingStatus.unmarked')
+      return t('track.none')
   }
 }
 
@@ -90,7 +86,8 @@ export function harnessVerificationTier(
   return null
 }
 
-/** Returns the L1/L2/L3 tooltip text for confirmed vulns with harness/dynamic evidence. */
+/** Returns the L1/L2/L3 tooltip text for confirmed vulns with harness/dynamic evidence.
+ * L1: mock harness 直调 sink；L2: mock harness 调模块层；L3: 集成验证起服务并跑 poc.py。 */
 export function harnessTierTooltip(
   evidenceLevel?: string | null,
   harnessDepth?: string | null,
@@ -98,10 +95,10 @@ export function harnessTierTooltip(
   const tier = harnessVerificationTier(evidenceLevel, harnessDepth)
   const evidence = (evidenceLevel || '').trim().toLowerCase()
   if (evidence === 'harness') {
-    if (tier === 'L2') return t('fmt.harnessTier.l2')
-    return t('fmt.harnessTier.l1')
+    if (tier === 'L2') return t('harness.l2')
+    return t('harness.l1')
   }
-  if (evidence === 'dynamic' && tier === 'L3') return t('fmt.harnessTier.l3')
+  if (evidence === 'dynamic' && tier === 'L3') return t('harness.l3')
   return null
 }
 
@@ -112,27 +109,31 @@ export function formatEvidenceLevel(
   const tier = harnessVerificationTier(value, harnessDepth)
   switch (value) {
     case 'harness':
-      return tier ? `${t('enum.evidenceLevel.harness')}-${tier}` : t('enum.evidenceLevel.harness')
+      return tier ? t('evidence.harnessTier', { tier }) : t('evidence.harness')
     case 'dynamic':
-      return tier === 'L3' ? `${t('enum.evidenceLevel.dynamic')}-L3` : t('enum.evidenceLevel.dynamic')
+      return tier === 'L3' ? t('evidence.dynamicL3') : t('evidence.dynamic')
     case 'mcp':
-      return t('enum.evidenceLevel.mcp')
+      return t('evidence.mcp')
     default:
       return null
   }
 }
 
-const VULN_STATUS_KEY: Record<string, string> = {
-  pending_review: 'enum.vulnStatus.pendingReview',
-  false_positive: 'enum.vulnStatus.falsePositive',
-  returned: 'enum.vulnStatus.returned',
-  merged: 'enum.vulnStatus.merged',
-  fixing: 'enum.vulnStatus.fixing',
+const VULN_STATUS_KEYS: Record<string, string> = {
+  pending_review: 'vulnStatus.pending_review',
+  false_positive: 'vulnStatus.false_positive',
+  returned: 'vulnStatus.returned',
+  merged: 'vulnStatus.merged',
+  fixing: 'vulnStatus.fixing',
 }
 
 export const FP_KIND_TIMEOUT = 'timeout'
+export const FP_KIND_KNOWN_CVE_PATCHED = 'known_cve_patched'
+export const FP_KIND_KNOWN_PUBLIC = 'known_public'
+export const FP_KIND_SOURCE_FIXED = 'source_fixed'
 
-/** Confirmed vulns fold evidence into one badge; timeout give-ups get their own label. */
+/** Confirmed vulns fold evidence into one badge: 已确认-仅静态 / 局部验证 / 动态验证.
+ * Timeout give-ups show 误报-审核超时; dedup FPs are 误报-已公开 or 误报-已修复. */
 export function formatVulnStatus(
   status: string | null | undefined,
   evidenceLevel?: string | null,
@@ -141,26 +142,35 @@ export function formatVulnStatus(
 ): string {
   const s = (status || '').trim()
   if (s === 'confirmed' || s === 'static_only') {
-    const evidence = formatEvidenceLevel(evidenceLevel, harnessDepth) || t('enum.vulnStatus.staticOnly')
-    return `${t('enum.vulnStatus.confirmedPrefix')}-${evidence}`
+    const evidence = formatEvidenceLevel(evidenceLevel, harnessDepth)
+    return evidence ? t('vulnStatus.confirmedEvidence', { evidence }) : t('vulnStatus.confirmedStatic')
   }
   if (s === 'false_positive' && (fpKind || '').trim() === FP_KIND_TIMEOUT) {
-    return t('enum.vulnStatus.fpTimeout')
+    return t('vulnStatus.fpTimeout')
   }
-  const key = VULN_STATUS_KEY[s]
-  return key ? t(key) : s
+  if (s === 'false_positive' && (fpKind || '').trim() === FP_KIND_KNOWN_PUBLIC) {
+    return t('vulnStatus.fpPublic')
+  }
+  if (
+    s === 'false_positive' &&
+    ((fpKind || '').trim() === FP_KIND_SOURCE_FIXED ||
+      (fpKind || '').trim() === FP_KIND_KNOWN_CVE_PATCHED)
+  ) {
+    return t('vulnStatus.fpFixed')
+  }
+  return VULN_STATUS_KEYS[s] ? t(VULN_STATUS_KEYS[s]) : s
 }
 
 export function formatMiningPath(value: string | null | undefined): string | null {
   switch ((value || '').trim().toLowerCase()) {
     case 'heuristic':
-      return t('enum.miningPath.heuristic')
+      return t('mining.heuristic')
     case 'fast':
-      return t('enum.miningPath.fast')
+      return t('mining.fast')
     case 'bypass':
-      return t('enum.miningPath.bypass')
+      return t('mining.bypass')
     case 'unconstrained':
-      return t('enum.miningPath.unconstrained')
+      return t('mining.unconstrained')
     default:
       return null
   }
@@ -169,9 +179,9 @@ export function formatMiningPath(value: string | null | undefined): string | nul
 export function formatConfigPremise(value: string | null | undefined): string | null {
   switch ((value || '').trim().toLowerCase()) {
     case 'default':
-      return t('enum.configPremise.default')
+      return t('config.default')
     case 'specific':
-      return t('enum.configPremise.specific')
+      return t('config.specific')
     default:
       return null
   }
@@ -179,30 +189,35 @@ export function formatConfigPremise(value: string | null | undefined): string | 
 
 export function formatProjectRef(projectId: number, projectName?: string | null): string {
   const name = (projectName || '').trim()
-  const generic = [
-    `项目 ${projectId}`,
-    `项目 #${projectId}`,
-    `Project ${projectId}`,
-    `Project #${projectId}`,
-  ]
-  if (!name || generic.includes(name)) {
-    return t('fmt.projectRef', { id: projectId })
+  const fallbackZh = `项目 ${projectId}`
+  const fallbackHash = `项目 #${projectId}`
+  const fallbackEn = `Project ${projectId}`
+  const fallbackEnHash = `Project #${projectId}`
+  if (
+    !name ||
+    name === fallbackZh ||
+    name === fallbackHash ||
+    name === fallbackEn ||
+    name === fallbackEnHash ||
+    name === t('project.ref', { id: projectId })
+  ) {
+    return t('project.ref', { id: projectId })
   }
-  return t('fmt.projectRefNamed', { id: projectId, name })
+  return t('project.refNamed', { id: projectId, name })
 }
 
 export function formatVerifierStatus(value: string | null | undefined): string | null {
   switch (value) {
     case 'pending':
-      return t('enum.verifierStatus.pending')
+      return t('verifier.pending')
     case 'awaiting_user':
-      return t('enum.verifierStatus.awaitingUser')
+      return t('verifier.awaiting')
     case 'verified':
-      return t('enum.verifierStatus.verified')
+      return t('verifier.verified')
     case 'failed':
-      return t('enum.verifierStatus.failed')
+      return t('verifier.failed')
     case 'skipped':
-      return t('enum.verifierStatus.skipped')
+      return t('verifier.skipped')
     default:
       return null
   }
@@ -211,67 +226,93 @@ export function formatVerifierStatus(value: string | null | undefined): string |
 export function formatVerifierTargetStatus(value: string | null | undefined): string {
   switch (value) {
     case 'success':
-      return t('enum.verifierTargetStatus.success')
+      return t('verifier.target.success')
     case 'fail':
-      return t('enum.verifierTargetStatus.fail')
+      return t('verifier.target.fail')
     case 'untested':
-      return t('enum.verifierTargetStatus.untested')
+      return t('verifier.target.untested')
     default:
-      return value?.trim() || t('enum.verifierTargetStatus.untested')
+      return value?.trim() || t('verifier.target.untested')
   }
 }
 
 export const AUDIT_MODE_VALUES = ['bounty', 'full', 'custom'] as const
 export type AuditMode = (typeof AUDIT_MODE_VALUES)[number]
 
-export function auditModeOption(value: AuditMode): { value: AuditMode; label: string; short: string; hint: string } {
-  return {
-    value,
-    label: t(`enum.auditMode.${value}.label`),
-    short: t(`enum.auditMode.${value}.short`),
-    hint: t(`enum.auditMode.${value}.hint`),
-  }
+export function getAuditModeOptions() {
+  return [
+    {
+      value: 'bounty' as const,
+      label: t('audit.bounty'),
+      short: t('audit.bountyShort'),
+      hint: t('audit.bountyHint'),
+    },
+    {
+      value: 'full' as const,
+      label: t('audit.full'),
+      short: t('audit.fullShort'),
+      hint: t('audit.fullHint'),
+    },
+    {
+      value: 'custom' as const,
+      label: t('audit.custom'),
+      short: t('audit.customShort'),
+      hint: t('audit.customHint'),
+    },
+  ] as const
 }
 
-export function auditModeOptions(): { value: AuditMode; label: string; short: string; hint: string }[] {
-  return AUDIT_MODE_VALUES.map(auditModeOption)
-}
+/** @deprecated use getAuditModeOptions() so labels follow UI locale */
+export const AUDIT_MODE_OPTIONS = getAuditModeOptions()
 
 export const TARGET_KIND_VALUES = ['web', 'library', 'mixed'] as const
 export type TargetKind = (typeof TARGET_KIND_VALUES)[number]
 
-export function targetKindOption(value: TargetKind): { value: TargetKind; label: string; short: string; hint: string } {
-  return {
-    value,
-    label: t(`enum.targetKind.${value}.label`),
-    short: t(`enum.targetKind.${value}.short`),
-    hint: t(`enum.targetKind.${value}.hint`),
-  }
+export function getTargetKindOptions() {
+  return [
+    {
+      value: 'web' as const,
+      label: t('kind.web'),
+      short: t('kind.webShort'),
+      hint: t('kind.webHint'),
+    },
+    {
+      value: 'library' as const,
+      label: t('kind.library'),
+      short: t('kind.libraryShort'),
+      hint: t('kind.libraryHint'),
+    },
+    {
+      value: 'mixed' as const,
+      label: t('kind.mixed'),
+      short: t('kind.mixedShort'),
+      hint: t('kind.mixedHint'),
+    },
+  ] as const
 }
 
-export function targetKindOptions(): { value: TargetKind; label: string; short: string; hint: string }[] {
-  return TARGET_KIND_VALUES.map(targetKindOption)
-}
+/** @deprecated use getTargetKindOptions() so labels follow UI locale */
+export const TARGET_KIND_OPTIONS = getTargetKindOptions()
 
 export function formatTargetKind(value: string | null | undefined): string {
-  const v = normalizeTargetKind(value)
-  return t(`enum.targetKind.${v}.label`)
+  const opts = getTargetKindOptions()
+  return opts.find((o) => o.value === value)?.label ?? opts[0].label
 }
 
 export function formatTargetKindShort(value: string | null | undefined): string {
-  if (value === 'library') return t('enum.targetKind.library.tag')
-  if (value === 'mixed') return t('enum.targetKind.mixed.tag')
-  return t('enum.targetKind.web.tag')
+  if (value === 'library') return t('kind.libraryShort')
+  if (value === 'mixed') return t('kind.mixedShort')
+  return t('kind.webShort')
 }
 
 export function formatVulnProjectName(name: string, kind?: string | null): string {
-  const label = (name || '').trim() || t('common.project')
-  return `${label}(${formatTargetKindShort(kind)})`
+  const label = (name || '').trim() || t('project.fallback')
+  return t('project.namedKind', { name: label, kind: formatTargetKindShort(kind) })
 }
 
 export function formatTargetKindHint(value: string | null | undefined): string {
-  const v = normalizeTargetKind(value)
-  return t(`enum.targetKind.${v}.hint`)
+  const opts = getTargetKindOptions()
+  return opts.find((o) => o.value === value)?.hint ?? opts[0].hint
 }
 
 export function normalizeTargetKind(value: string | null | undefined): TargetKind {
@@ -279,44 +320,46 @@ export function normalizeTargetKind(value: string | null | undefined): TargetKin
   return 'web'
 }
 
-/** type/note text lives in i18n `bountyScope.rows.<key>`. */
-export const BOUNTY_SCOPE_ROWS = [
-  { key: 'rce', included: true },
-  { key: 'ssti', included: true },
-  { key: 'deser_jndi', included: true },
-  { key: 'sqli', included: true },
-  { key: 'xxe', included: true },
-  { key: 'file_op', included: true },
-  { key: 'file_upload', included: true },
-  { key: 'file_include', included: true },
-  { key: 'ssrf_internal', included: true },
-  { key: 'info_disclosure', included: true },
-  { key: 'auth_bypass', included: true },
-  { key: 'privilege_escalation', included: true },
-  { key: 'dos', included: true },
-  { key: 'stored_xss', included: true },
-  { key: 'csrf_1click', included: true },
-  { key: 'hardcoded_secret', included: true },
-  { key: 'other_impact', included: true },
-  { key: 'ssrf_public', included: false },
-  { key: 'reflected_xss', included: false },
-  { key: 'plain_csrf', included: false },
-  { key: 'cors_headers', included: false },
-  { key: 'open_redirect', included: false },
-  { key: 'rate_limit', included: false },
-  { key: 'weak_random', included: false },
-  { key: 'frontend_aes', included: false },
-  { key: 'config_default_password', included: false },
-  { key: 'hardening_only', included: false },
-] as const
-
-export function bountyScopeRowText(key: string): { type: string; note: string } {
-  return { type: t(`bountyScope.rows.${key}.type`), note: t(`bountyScope.rows.${key}.note`) }
+export function getBountyScopeRows() {
+  return [
+    { type: 'RCE', included: true, note: t('bounty.rce') },
+    { type: 'SSTI', included: true, note: '' },
+    { type: t('bounty.row.deser'), included: true, note: '' },
+    { type: t('bounty.row.sqli'), included: true, note: '' },
+    { type: t('bounty.row.xml'), included: true, note: '' },
+    { type: t('bounty.row.fileops'), included: true, note: t('bounty.fileops') },
+    { type: t('bounty.row.upload'), included: true, note: '' },
+    { type: t('bounty.row.lfi'), included: true, note: '' },
+    { type: t('bounty.row.ssrfIn'), included: true, note: t('bounty.ssrfIn') },
+    { type: t('bounty.row.leak'), included: true, note: '' },
+    { type: t('bounty.row.auth'), included: true, note: '' },
+    { type: t('bounty.row.idor'), included: true, note: '' },
+    { type: 'DoS', included: true, note: '' },
+    { type: t('bounty.row.storedXss'), included: true, note: t('bounty.xss') },
+    { type: t('bounty.row.csrf'), included: true, note: t('bounty.csrf') },
+    { type: t('bounty.row.secret'), included: true, note: t('bounty.secret') },
+    { type: t('bounty.row.other'), included: true, note: t('bounty.other') },
+    { type: t('bounty.row.ssrfOut'), included: false, note: t('bounty.ssrfOut') },
+    { type: t('bounty.row.rxss'), included: false, note: '' },
+    { type: t('bounty.row.csrfLow'), included: false, note: t('bounty.csrfLow') },
+    { type: t('bounty.row.cors'), included: false, note: t('bounty.cors') },
+    { type: t('bounty.row.redirect'), included: false, note: t('bounty.redirect') },
+    { type: t('bounty.row.rate'), included: false, note: t('bounty.rate') },
+    { type: t('bounty.row.prng'), included: false, note: t('bounty.token') },
+    { type: t('bounty.row.aes'), included: false, note: t('bounty.aes') },
+    { type: t('bounty.row.passwd'), included: false, note: t('bounty.passwd') },
+    { type: t('bounty.row.hardening'), included: false, note: t('bounty.hardening') },
+  ] as const
 }
 
-export function bountyScopePremise(): string {
-  return t('bountyScope.premise')
+/** @deprecated use getBountyScopeRows() */
+export const BOUNTY_SCOPE_ROWS = getBountyScopeRows()
+
+export function getBountyScopePremise() {
+  return t('bounty.premise')
 }
+
+export const BOUNTY_SCOPE_PREMISE = getBountyScopePremise()
 
 export function formatAuditMode(
   value: string | null | undefined,
@@ -324,22 +367,22 @@ export function formatAuditMode(
 ): string {
   if (value === 'custom') {
     const name = (customName || '').trim()
-    return name ? t('fmt.auditModeCustomNamed', { name }) : t('enum.auditMode.custom.label')
+    return name ? t('audit.customNamed', { name }) : t('audit.custom')
   }
-  const v: AuditMode = value === 'full' ? 'full' : value === 'custom' ? 'custom' : 'bounty'
-  return t(`enum.auditMode.${v}.label`)
+  const opts = getAuditModeOptions()
+  return opts.find((o) => o.value === value)?.label ?? opts[0].label
 }
 
 export function formatAuditModeHint(
   value: string | null | undefined,
   customName?: string | null,
 ): string {
+  const opts = getAuditModeOptions()
   if (value === 'custom') {
     const name = (customName || '').trim()
-    return name ? t('fmt.auditModeCustomHint', { name }) : t('enum.auditMode.custom.hint')
+    return name ? t('audit.customActiveHint', { name }) : opts.find((o) => o.value === 'custom')!.hint
   }
-  const v: AuditMode = value === 'full' ? 'full' : 'bounty'
-  return t(`enum.auditMode.${v}.hint`)
+  return opts.find((o) => o.value === value)?.hint ?? opts[0].hint
 }
 
 export function projectRunBucket(
@@ -356,62 +399,60 @@ export function formatProjectRunStatus(
   status: string | null | undefined,
   projectPaused?: boolean,
 ): string {
-  return t(`enum.projectRunStatus.${projectRunBucket(status, projectPaused)}`)
-}
-
-export function projectRunTone(
-  status: string | null | undefined,
-  projectPaused?: boolean,
-): 'info' | 'success' | 'warning' | 'destructive' {
-  switch (projectRunBucket(status, projectPaused)) {
-    case 'completed':
-      return 'success'
-    case 'paused':
-      return 'warning'
-    case 'stopped':
-      return 'destructive'
-    default:
-      return 'info'
-  }
+  const bucket = projectRunBucket(status, projectPaused)
+  if (bucket === 'completed') return t('run.completed')
+  if (bucket === 'paused') return t('run.paused')
+  if (bucket === 'stopped') return t('run.stopped')
+  return t('run.running')
 }
 
 export function formatProjectStatus(status: string | null | undefined): string {
-  const keys: Record<string, string> = {
-    pending: 'enum.projectStatus.pending',
-    ingesting: 'enum.projectStatus.ingesting',
-    recon: 'enum.projectStatus.recon',
-    auditing: 'enum.projectStatus.auditing',
-    reviewing: 'enum.projectStatus.reviewing',
-    paused: 'enum.projectStatus.paused',
-    completed: 'enum.projectStatus.completed',
-    cancelled: 'enum.projectStatus.cancelled',
-    error: 'enum.projectStatus.error',
+  switch (status) {
+    case 'pending':
+      return t('projStatus.pending')
+    case 'ingesting':
+      return t('projStatus.ingesting')
+    case 'recon':
+      return t('projStatus.recon')
+    case 'auditing':
+      return t('projStatus.auditing')
+    case 'reviewing':
+      return t('projStatus.reviewing')
+    case 'paused':
+      return t('projStatus.paused')
+    case 'completed':
+      return t('projStatus.completed')
+    case 'cancelled':
+      return t('projStatus.cancelled')
+    case 'error':
+      return t('projStatus.error')
+    default:
+      return status?.trim() || t('common.dash')
   }
-  const key = keys[status || '']
-  return key ? t(key) : status?.trim() || '-'
 }
 
 export function projectStatusBadgeVariant(
   status: string | null | undefined,
   projectPaused?: boolean,
 ): 'info' | 'success' | 'warning' | 'destructive' {
-  return projectRunTone(status, projectPaused)
+  const bucket = projectRunBucket(status, projectPaused)
+  if (bucket === 'completed') return 'success'
+  if (bucket === 'paused') return 'warning'
+  if (bucket === 'stopped') return 'destructive'
+  return 'info'
 }
 
 export function formatDateTime(value: string | null | undefined): string {
-  if (!value) return '-'
+  if (!value) return t('common.dash')
   let s = value.trim()
   if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(s) && !/(?:Z|[+-]\d{2}:?\d{2})$/i.test(s)) {
     s = `${s.replace(' ', 'T')}Z`
   }
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return value
-  // Backend timestamps are UTC; keep the wall clock in Shanghai and only vary the format by locale.
-  const locale = currentLocale() === 'en' ? 'en-GB' : 'zh-CN'
-  return d.toLocaleString(locale, { timeZone: 'Asia/Shanghai' })
+  return d.toLocaleString(dateLocale(getLocale()), { timeZone: 'Asia/Shanghai' })
 }
 
-/** labels resolve through i18n `enum.vulnType.<id>` */
 export const VULN_TYPE_IDS = [
   'rce',
   'ssti',
@@ -436,31 +477,47 @@ export const VULN_TYPE_IDS = [
   'other',
 ] as const
 
+const VULN_TYPE_FIXED: Record<string, string> = {
+  rce: 'RCE',
+  ssti: 'SSTI',
+  xxe: 'XXE',
+  ssrf: 'SSRF',
+  dos: 'DoS',
+  xss: 'XSS',
+  csrf: 'CSRF',
+}
+
+export function getVulnTypeOptions(): [string, string][] {
+  return VULN_TYPE_IDS.map((id) => {
+    if (VULN_TYPE_FIXED[id]) return [id, VULN_TYPE_FIXED[id]]
+    return [id, t(`vulnType.${id}`)]
+  })
+}
+
+/** @deprecated use getVulnTypeOptions() */
+export const VULN_TYPE_OPTIONS = getVulnTypeOptions()
+
 export function formatVulnType(value: string | null | undefined): string {
   const key = (value || '').trim()
   if (!key) return ''
-  const hit = (VULN_TYPE_IDS as readonly string[]).includes(key)
-  return hit ? t(`enum.vulnType.${key}`) : key
-}
-
-export function vulnTypeOptions(): { id: string; label: string }[] {
-  return VULN_TYPE_IDS.map((id) => ({ id, label: t(`enum.vulnType.${id}`) }))
+  const hit = getVulnTypeOptions().find(([id]) => id === key)
+  return hit ? hit[1] : key
 }
 
 export function formatSeverity(value: string | null | undefined): string {
   switch (value) {
     case 'critical':
-      return t('enum.severity.critical')
+      return t('severity.critical')
     case 'high':
-      return t('enum.severity.high')
+      return t('severity.high')
     case 'medium':
-      return t('enum.severity.medium')
+      return t('severity.medium')
     case 'low':
-      return t('enum.severity.low')
+      return t('severity.low')
     case 'pending':
-      return t('enum.severity.pending')
+      return t('severity.pending')
     case 'none':
-      return t('enum.severity.none')
+      return t('severity.none')
     default:
       return value || ''
   }
@@ -504,7 +561,7 @@ export function formatFileProgress(p: {
   files_skipped?: number | null
   files_total?: number | null
 }): string {
-  return t('fmt.fileProgress', {
+  return t('progress.files', {
     audited: p.files_audited ?? 0,
     weighted: p.files_weighted ?? 0,
     skipped: p.files_skipped ?? 0,
@@ -516,14 +573,14 @@ export function formatSinkProgress(p: {
   sinks_done?: number | null
   sinks_queued?: number | null
 }): string {
-  return t('fmt.sinkProgress', { done: p.sinks_done ?? 0, queued: p.sinks_queued ?? 0 })
+  return t('progress.sinks', { done: p.sinks_done ?? 0, queued: p.sinks_queued ?? 0 })
 }
 
 export function formatBypassProgress(p: {
   bypass_done?: number | null
   bypass_queued?: number | null
 }): string {
-  return t('fmt.bypassProgress', { done: p.bypass_done ?? 0, queued: p.bypass_queued ?? 0 })
+  return t('progress.bypass', { done: p.bypass_done ?? 0, queued: p.bypass_queued ?? 0 })
 }
 
 export function formatMiningPaths(p: {
@@ -539,11 +596,11 @@ export function formatMiningPaths(p: {
   const bypassOn = p.bypass_enabled === true
   const unconstrainedOn = p.unconstrained_enabled === true
   const parts: string[] = []
-  if (heuristicOn) parts.push(liteOn ? t('enum.miningPath.heuristicLite') : t('enum.miningPath.heuristic'))
-  if (fastOn) parts.push(t('enum.miningPath.fast'))
-  if (bypassOn) parts.push(t('enum.miningPath.bypass'))
-  if (unconstrainedOn) parts.push(t('enum.miningPath.unconstrained'))
-  return parts.join(' + ') || t('enum.miningPath.heuristic')
+  if (heuristicOn) parts.push(liteOn ? t('mining.heuristicLite') : t('mining.heuristic'))
+  if (fastOn) parts.push(t('mining.fast'))
+  if (bypassOn) parts.push(t('mining.bypass'))
+  if (unconstrainedOn) parts.push(t('mining.unconstrained'))
+  return parts.join(' + ') || t('mining.heuristic')
 }
 
 export function formatMiningProgress(p: {
@@ -571,25 +628,20 @@ export function formatMiningProgress(p: {
   const unconstrainedOn = p.unconstrained_enabled === true
   const parts: string[] = []
   if (heuristicOn && liteOn) {
-    parts.push(
-      t('fmt.liteEntryProgress', {
-        audited: p.files_weight100_audited ?? 0,
-        total: p.files_weight100 ?? 0,
-      }),
-    )
+    parts.push(t('progress.lite', { done: p.files_weight100_audited ?? 0, total: p.files_weight100 ?? 0 }))
   } else if (heuristicOn) {
     parts.push(formatFileProgress(p))
   }
   if (fastOn) parts.push(formatSinkProgress(p))
   if (bypassOn) parts.push(formatBypassProgress(p))
   if (unconstrainedOn) {
-    parts.push(p.unconstrained_done ? t('fmt.unconstrainedDone') : t('enum.miningPath.unconstrained'))
+    parts.push(p.unconstrained_done ? t('progress.unconstrainedDone') : t('mining.unconstrained'))
   }
   return parts.join(' · ')
 }
 
 export function formatTokens(n: number | null | undefined): string {
-  if (n == null || Number.isNaN(n)) return '-'
+  if (n == null || Number.isNaN(n)) return t('common.dash')
   const v = Math.round(n)
   if (v < 1000) return String(v)
   if (v < 1_000_000) {
@@ -605,7 +657,7 @@ export function formatCacheRate(
 ): string {
   const c = cached ?? 0
   const i = input ?? 0
-  if (i <= 0) return '-'
+  if (i <= 0) return t('common.dash')
   const pct = (c / i) * 100
   if (pct >= 10) return `${Math.round(pct)}%`
   return `${pct.toFixed(1).replace(/\.0$/, '')}%`
@@ -621,12 +673,12 @@ export function formatTokenUsage(p: {
   const output = p.tokens_output ?? 0
   const cached = p.tokens_cached ?? 0
   const cap = p.max_token_usage ?? 0
-  const used = t('fmt.tokenUsage', {
+  const used = t('tokens.usage', {
     input: formatTokens(input),
     output: formatTokens(output),
-    cacheRate: formatCacheRate(cached, input),
+    cache: formatCacheRate(cached, input),
   })
-  if (cap > 0) return t('fmt.tokenUsageWithCap', { used, cap: formatTokens(cap) })
+  if (cap > 0) return t('tokens.usageCap', { used, cap: formatTokens(cap) })
   return used
 }
 
@@ -650,7 +702,7 @@ export function saveBlob(blob: Blob, filename: string) {
 }
 
 export function formatBytes(bytes: number | null | undefined): string {
-  if (bytes == null || Number.isNaN(Number(bytes))) return '-'
+  if (bytes == null || Number.isNaN(Number(bytes))) return t('common.dash')
   const n = Number(bytes)
   if (n < 1024) return `${Math.round(n)} B`
   const mb = n / (1024 * 1024)

@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { Loader2Icon, RefreshCw, Square, Trash2 } from 'lucide-react'
-import i18n from '../i18n'
-import { translateBackendText } from '../i18n/backendText'
 import {
   api,
   formatApiError,
@@ -22,23 +19,18 @@ import {
   formatBytes,
   formatDateTime,
 } from '../lib/utils'
+import { useI18n } from '@/i18n'
 import { startVisibilityPoll } from '../lib/visibilityPoll'
-
-const KIND_KEYS = new Set(['lab', 'sidecar', 'sandbox', 'other', 'dependency'])
-
-function kindLabel(kind: string | null | undefined): string {
-  if (!kind) return '-'
-  return KIND_KEYS.has(kind) ? i18n.t(`containers.kind.${kind}`) : kind
-}
 
 function summarizeBatchErrors(
   results: Array<{ id: string; error: string | null }>,
+  t: (key: string, vars?: Record<string, string | number>) => string,
   slice = 12,
 ): string | null {
   const failed = results.filter((r) => r.error)
   if (failed.length === 0) return null
-  return i18n.t('containers.partialFailure', {
-    list: failed.map((r) => `${r.id.slice(0, slice)} (${translateBackendText(r.error || '')})`).join('; '),
+  return t('containers.batchFail', {
+    detail: failed.map((r) => `${r.id.slice(0, slice)} (${r.error})`).join('；'),
   })
 }
 
@@ -70,6 +62,7 @@ function TableLoading({ label }: { label: string }) {
 }
 
 export default function ContainersPage() {
+  const { t } = useI18n()
   const [containers, setContainers] = useState<DockerContainer[]>([])
   const [images, setImages] = useState<DockerImage[]>([])
   const [usage, setUsage] = useState<DockerImageUsage | null>(null)
@@ -82,6 +75,15 @@ export default function ContainersPage() {
   const [containersReady, setContainersReady] = useState(false)
   const [imagesReady, setImagesReady] = useState(false)
   const refreshGen = useRef(0)
+
+  const kindLabel = (kind: string | null | undefined): string => {
+    if (!kind) return t('common.dash')
+    const key = `containers.kind.${kind}`
+    const label = t(key)
+    return label === key ? kind : label
+  }
+
+  const dockerTimeout = () => t('containers.timeout')
 
   const refresh = useCallback(async () => {
     const gen = ++refreshGen.current
@@ -100,7 +102,7 @@ export default function ContainersPage() {
       if (gen !== refreshGen.current) return
       setContainersReady(true)
       setImagesReady(true)
-      setError(formatApiError(err, i18n.t('containers.dockerTimeout')))
+      setError(formatApiError(err, dockerTimeout()))
       return
     }
     try {
@@ -117,7 +119,7 @@ export default function ContainersPage() {
     } catch (err) {
       if (gen !== refreshGen.current) return
       setImagesReady(true)
-      setError(formatApiError(err, i18n.t('containers.dockerTimeout')))
+      setError(formatApiError(err, dockerTimeout()))
     }
   }, [runningOnly])
 
@@ -178,7 +180,7 @@ export default function ContainersPage() {
         return next
       })
     } catch (err) {
-      setError(formatApiError(err, i18n.t('containers.dockerTimeout')))
+      setError(formatApiError(err, dockerTimeout()))
     } finally {
       setBusy(false)
     }
@@ -191,7 +193,7 @@ export default function ContainersPage() {
       await api.startContainer(id)
       await refresh()
     } catch (err) {
-      setError(formatApiError(err, i18n.t('containers.dockerTimeout')))
+      setError(formatApiError(err, dockerTimeout()))
     } finally {
       setBusy(false)
     }
@@ -204,12 +206,12 @@ export default function ContainersPage() {
     setError(null)
     try {
       const { results } = await api.stopContainers(ids)
-      const message = summarizeBatchErrors(results)
+      const message = summarizeBatchErrors(results, t)
       if (message) setError(message)
       setSelectedContainers(new Set())
       await refresh()
     } catch (err) {
-      setError(formatApiError(err, i18n.t('containers.dockerTimeout')))
+      setError(formatApiError(err, dockerTimeout()))
     } finally {
       setBusy(false)
     }
@@ -222,12 +224,12 @@ export default function ContainersPage() {
     setError(null)
     try {
       const { results } = await api.startContainers(ids)
-      const message = summarizeBatchErrors(results)
+      const message = summarizeBatchErrors(results, t)
       if (message) setError(message)
       setSelectedContainers(new Set())
       await refresh()
     } catch (err) {
-      setError(formatApiError(err, i18n.t('containers.dockerTimeout')))
+      setError(formatApiError(err, dockerTimeout()))
     } finally {
       setBusy(false)
     }
@@ -243,7 +245,7 @@ export default function ContainersPage() {
       setSelectedContainers(new Set())
       await refresh()
     } catch (err) {
-      setError(formatApiError(err, i18n.t('containers.dockerTimeout')))
+      setError(formatApiError(err, dockerTimeout()))
     } finally {
       setBusy(false)
     }
@@ -255,12 +257,12 @@ export default function ContainersPage() {
     setError(null)
     try {
       const { results } = await api.removeDockerImages(ids)
-      const message = summarizeBatchErrors(results)
+      const message = summarizeBatchErrors(results, t)
       if (message) setError(message)
       setSelectedImages(new Set())
       await refresh()
     } catch (err) {
-      setError(formatApiError(err, i18n.t('containers.dockerTimeout')))
+      setError(formatApiError(err, dockerTimeout()))
     } finally {
       setBusy(false)
     }
@@ -269,17 +271,19 @@ export default function ContainersPage() {
   const removeSelectedImages = async () => {
     const ids = images.filter((img) => selectedImages.has(img.id) && img.deletable).map((img) => img.id)
     if (ids.length === 0) return
-    if (!window.confirm(i18n.t('containers.confirmRemoveSelected', { count: ids.length }))) return
+    if (!window.confirm(t('containers.confirmDeleteSelected', { n: ids.length }))) return
     await removeImagesByIds(ids)
   }
 
   const removeOneImage = async (id: string) => {
-    if (!window.confirm(i18n.t('containers.confirmRemoveOne'))) return
+    if (!window.confirm(t('containers.confirmDeleteOne'))) return
     await removeImagesByIds([id])
   }
 
   const pruneImages = async () => {
-    if (!window.confirm(i18n.t('containers.confirmPrune'))) {
+    if (
+      !window.confirm(t('containers.confirmPrune'))
+    ) {
       return
     }
     setBusy(true)
@@ -290,31 +294,30 @@ export default function ContainersPage() {
       setPruneResult(result)
       await refresh()
     } catch (err) {
-      setError(formatApiError(err, i18n.t('containers.dockerTimeout')))
+      setError(formatApiError(err, dockerTimeout()))
     } finally {
       setBusy(false)
     }
   }
 
-  const { t } = useTranslation()
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{t('containers.title')}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t('containers.subtitle')}
+            {t('containers.lead')}
             {containersReady
               ? runningOnly
-                ? ` · ${t('containers.runningCount', { n: runningCount })}`
-                : ` · ${t('containers.totalCount', { total: containers.length, running: runningCount })}`
-              : ` · ${t('common.loading')}`}
+                ? t('containers.stat.running', { n: runningCount })
+                : t('containers.stat.all', { total: containers.length, running: runningCount })
+              : t('containers.stat.loading')}
             {imagesReady && usage
-              ? ` · ${t('containers.imageSummary', {
+              ? t('containers.stat.images', {
                   count: usage.image_count,
                   gb: usage.total_gb,
                   dangling: usage.dangling_count,
-                })}`
+                })
               : ''}
           </p>
         </div>
@@ -323,7 +326,7 @@ export default function ContainersPage() {
             {t('containers.runningOnly')}
           </Button>
           <Button variant={!runningOnly ? 'default' : 'outline'} size="sm" onClick={() => setRunningOnly(false)}>
-            {t('common.all')}
+            {t('filter.all')}
           </Button>
           <Button
             variant="outline"
@@ -334,11 +337,11 @@ export default function ContainersPage() {
             }}
           >
             <RefreshCw className={`size-3.5 ${containersReady ? '' : 'animate-spin'}`} />
-            {t('common.refresh')}
+            {t('containers.refresh')}
           </Button>
           <Button variant="outline" size="sm" disabled={busy} onClick={() => void pruneImages()}>
             <Trash2 className="size-3.5" />
-            {t('containers.pruneUnused')}
+            {t('containers.prune')}
           </Button>
         </div>
       </div>
@@ -351,7 +354,7 @@ export default function ContainersPage() {
             mb: pruneResult.freed_mb,
           })}
           {pruneResult.errors.length > 0
-            ? t('containers.pruneErrors', { list: pruneResult.errors.join('; ') })
+            ? t('containers.prunePartial', { errors: pruneResult.errors.join('；') })
             : ''}
         </p>
       )}
@@ -364,8 +367,8 @@ export default function ContainersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{t('containers.containerListTitle')}</CardTitle>
-          <CardDescription>{t('containers.containerListDesc')}</CardDescription>
+          <CardTitle className="text-base">{t('containers.listTitle')}</CardTitle>
+          <CardDescription>{t('containers.listDesc')}</CardDescription>
           <CardAction>
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" variant="outline" disabled={busy || selectedContainers.size === 0} onClick={() => void startSelected()}>
@@ -395,10 +398,10 @@ export default function ContainersPage() {
                     checked={allContainersSelected}
                     onCheckedChange={(v) => toggleAllContainers(v === true)}
                     disabled={containers.length === 0}
-                    aria-label={t('containers.selectAllContainers')}
+                    aria-label={t('containers.selectAll')}
                   />
                 </TableHead>
-                <TableHead className="w-28">ID</TableHead>
+                <TableHead className="w-28">{t('containers.col.id')}</TableHead>
                 <TableHead>{t('containers.col.name')}</TableHead>
                 <TableHead className="w-24">{t('containers.col.status')}</TableHead>
                 <TableHead className="w-24">{t('containers.col.kind')}</TableHead>
@@ -412,7 +415,7 @@ export default function ContainersPage() {
               {!containersReady ? (
                 <TableRow>
                   <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
-                    <TableLoading label={t('containers.loadingContainers')} />
+                    <TableLoading label={t('containers.load')} />
                   </TableCell>
                 </TableRow>
               ) : containers.length === 0 ? (
@@ -431,7 +434,7 @@ export default function ContainersPage() {
                       <Checkbox
                         checked={selectedContainers.has(c.id)}
                         onCheckedChange={(v) => toggleOneContainer(c.id, v === true)}
-                        aria-label={t('containers.selectOne', { name: c.name })}
+                        aria-label={t('containers.select', { name: c.name })}
                       />
                     </TableCell>
                     <TableCell className="font-mono text-xs">{c.short_id}</TableCell>
@@ -448,14 +451,14 @@ export default function ContainersPage() {
                           {c.project_name || `#${c.project_id}`}
                         </Link>
                       ) : (
-                        <span className="text-sm text-muted-foreground">-</span>
+                        <span className="text-sm text-muted-foreground">{t('common.dash')}</span>
                       )}
                     </TableCell>
                     <TableCell className="max-w-0 truncate text-xs text-muted-foreground" title={c.image}>
                       {c.image}
                     </TableCell>
                     <TableCell className="max-w-0 truncate font-mono text-xs" title={portsText || undefined}>
-                      {c.ports.length > 0 ? portsText : <span className="text-muted-foreground">-</span>}
+                      {c.ports.length > 0 ? portsText : <span className="text-muted-foreground">{t('common.dash')}</span>}
                     </TableCell>
                     <TableCell className="pr-4 text-right whitespace-nowrap">
                       {c.status === 'running' ? (
@@ -478,8 +481,8 @@ export default function ContainersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{t('containers.imageListTitle')}</CardTitle>
-          <CardDescription>{t('containers.imageListDesc')}</CardDescription>
+          <CardTitle className="text-base">{t('containers.imagesTitle')}</CardTitle>
+          <CardDescription>{t('containers.imagesDesc')}</CardDescription>
           <CardAction>
             <Button
               size="sm"
@@ -517,7 +520,7 @@ export default function ContainersPage() {
               {!imagesReady ? (
                 <TableRow>
                   <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
-                    <TableLoading label={t('containers.loadingImages')} />
+                    <TableLoading label={t('containers.loadImages')} />
                   </TableCell>
                 </TableRow>
               ) : images.length === 0 ? (
@@ -534,7 +537,7 @@ export default function ContainersPage() {
                       checked={selectedImages.has(img.id)}
                       onCheckedChange={(v) => toggleOneImage(img.id, v === true)}
                       disabled={!img.deletable}
-                      aria-label={t('containers.selectOne', { name: img.label })}
+                      aria-label={t('containers.select', { name: img.label })}
                     />
                   </TableCell>
                   <TableCell className="max-w-0 truncate font-mono text-xs" title={img.tags.join(', ') || img.label}>
@@ -543,11 +546,7 @@ export default function ContainersPage() {
                   <TableCell className="text-xs text-muted-foreground">{kindLabel(img.kind)}</TableCell>
                   <TableCell>
                     <Badge variant={img.in_use ? 'info' : img.dangling ? 'warning' : 'secondary'}>
-                      {img.in_use
-                        ? t('containers.imageInUse')
-                        : img.dangling
-                          ? t('containers.imageDangling')
-                          : t('containers.imageUnused')}
+                      {img.in_use ? t('containers.inUse') : img.dangling ? t('containers.dangling') : t('containers.unused')}
                     </Badge>
                   </TableCell>
                   <TableCell className="max-w-0 truncate">
@@ -556,7 +555,7 @@ export default function ContainersPage() {
                         {img.project_name || `#${img.project_id}`}
                       </Link>
                     ) : (
-                      <span className="text-sm text-muted-foreground">-</span>
+                      <span className="text-sm text-muted-foreground">{t('common.dash')}</span>
                     )}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{formatBytes(img.size_bytes)}</TableCell>

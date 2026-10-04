@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { api, formatApiError, type CodeIntelSymbol } from '../api'
-import { translateBackendText } from '../i18n/backendText'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -11,6 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { useI18n } from '@/i18n'
 
 function loc(item: CodeIntelSymbol): string {
   const file = item.file || ''
@@ -59,7 +58,7 @@ export function CodeGraphExplorer({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -88,7 +87,7 @@ export function CodeGraphExplorer({
       .then((out) => {
         if (!out.ok) {
           setHits([])
-          setError(translateBackendText(out.error || t('codeGraph.queryFailed')))
+          setError(out.error || t('comp.graph.queryFail'))
           return
         }
         setHits(out.items || [])
@@ -107,13 +106,13 @@ export function CodeGraphExplorer({
     ])
       .then(([from, to]) => {
         if (!from.ok) {
-          setError(translateBackendText(from.error || t('codeGraph.callersFailed')))
+          setError(from.error || t('comp.graph.callersFail'))
           setCallers([])
         } else {
           setCallers(from.callers || [])
         }
         if (!to.ok) {
-          setError((prev) => prev || translateBackendText(to.error || t('codeGraph.calleesFailed')))
+          setError((prev) => prev || to.error || t('comp.graph.calleesFail'))
           setCallees([])
         } else {
           setCallees(to.callees || [])
@@ -127,8 +126,10 @@ export function CodeGraphExplorer({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[min(90vh,44rem)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
         <DialogHeader className="shrink-0 border-b border-border px-5 py-4 pr-12">
-          <DialogTitle>{t('codeGraph.title')}</DialogTitle>
-          <DialogDescription>{t('codeGraph.description')}</DialogDescription>
+          <DialogTitle>{t('comp.graph.title')}</DialogTitle>
+          <DialogDescription>
+            {t('comp.graph.body')}
+          </DialogDescription>
         </DialogHeader>
         <div className="flex min-h-0 flex-1 flex-col gap-3 px-5 py-3">
           <form
@@ -141,46 +142,45 @@ export function CodeGraphExplorer({
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={t('codeGraph.searchPlaceholder')}
+              placeholder={t('comp.graph.ph')}
               disabled={busy}
             />
             <Button type="submit" size="sm" disabled={busy || !query.trim()}>
-              {busy ? t('codeGraph.querying') : t('codeGraph.query')}
+              {busy ? t('comp.graph.querying') : t('comp.graph.query')}
             </Button>
           </form>
           {error ? <p className="text-xs text-red-300">{error}</p> : null}
           <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-3">
             <section className="flex min-h-0 flex-col rounded-lg border border-border/80">
               <h3 className="shrink-0 border-b border-border px-2 py-1.5 text-xs text-muted-foreground">
-                {t('codeGraph.symbols')} {hits.length ? `(${hits.length})` : ''}
+                {t('comp.graph.symbols')} {hits.length ? `(${hits.length})` : ''}
               </h3>
-              <SymbolList items={hits} empty={t('codeGraph.symbolsEmpty')} onPick={inspect} />
+              <SymbolList items={hits} empty={t('comp.graph.symbolsEmpty')} onPick={inspect} />
             </section>
             <section className="flex min-h-0 flex-col rounded-lg border border-border/80">
               <h3 className="shrink-0 border-b border-border px-2 py-1.5 text-xs text-muted-foreground">
-                {t('codeGraph.callers')} {selected ? `(${callers.length})` : ''}
+                {t('comp.graph.callers')} {selected ? `(${callers.length})` : ''}
               </h3>
               <SymbolList
                 items={callers}
-                empty={selected ? t('codeGraph.noCallers') : t('codeGraph.pickSymbol')}
+                empty={selected ? t('comp.graph.noCallers') : t('comp.graph.pickSymbol')}
                 onPick={inspect}
               />
             </section>
             <section className="flex min-h-0 flex-col rounded-lg border border-border/80">
               <h3 className="shrink-0 border-b border-border px-2 py-1.5 text-xs text-muted-foreground">
-                {t('codeGraph.callees')} {selected ? `(${callees.length})` : ''}
+                {t('comp.graph.callees')} {selected ? `(${callees.length})` : ''}
               </h3>
               <SymbolList
                 items={callees}
-                empty={selected ? t('codeGraph.noCallees') : t('codeGraph.pickSymbol')}
+                empty={selected ? t('comp.graph.noCallees') : t('comp.graph.pickSymbol')}
                 onPick={inspect}
               />
             </section>
           </div>
           {selected ? (
             <p className="shrink-0 truncate font-mono text-[11px] text-muted-foreground">
-              {t('codeGraph.current')}
-              {selected.name}
+              {t('comp.graph.current', { name: selected.name })}
               {loc(selected) ? ` · ${loc(selected)}` : ''}
             </p>
           ) : null}

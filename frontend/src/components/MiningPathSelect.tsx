@@ -1,6 +1,6 @@
-import { useTranslation } from 'react-i18next'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
+import { useI18n } from '@/i18n'
 
 type MiningPathValue = {
   heuristicEnabled: boolean
@@ -29,7 +29,7 @@ export function MiningPathSelect({
   onChange,
   disabled = false,
 }: Props) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const emit = (next: Partial<MiningPathValue>) =>
     onChange({
       heuristicEnabled,
@@ -71,7 +71,7 @@ export function MiningPathSelect({
 
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium">{t('miningPath.section')}</p>
+      <p className="text-sm font-medium">{t('comp.mine.title')}</p>
       <Label className="items-start font-normal">
         <Checkbox
           className="mt-0.5"
@@ -80,9 +80,9 @@ export function MiningPathSelect({
           onCheckedChange={(checked) => setHeuristic(checked === true)}
         />
         <span className="min-w-0">
-          <span className="font-medium">{t('miningPath.heuristic.label')}</span>
+          <span className="font-medium">{t('comp.mine.heuristic')}</span>
           <span className="mt-0.5 block text-xs font-normal leading-relaxed text-muted-foreground">
-            {t('miningPath.heuristic.hint')}
+            {t('comp.mine.heuristicHint')}
           </span>
         </span>
       </Label>
@@ -94,9 +94,9 @@ export function MiningPathSelect({
           onCheckedChange={(checked) => setLite(checked === true)}
         />
         <span className="min-w-0">
-          <span className="font-medium">{t('miningPath.lite.label')}</span>
+          <span className="font-medium">{t('comp.mine.lite')}</span>
           <span className="mt-0.5 block text-xs font-normal leading-relaxed text-muted-foreground">
-            {t('miningPath.lite.hint')}
+            {t('comp.mine.liteHint')}
           </span>
         </span>
       </Label>
@@ -108,9 +108,9 @@ export function MiningPathSelect({
           onCheckedChange={(checked) => setFast(checked === true)}
         />
         <span className="min-w-0">
-          <span className="font-medium">{t('miningPath.fast.label')}</span>
+          <span className="font-medium">{t('mining.fast')}</span>
           <span className="mt-0.5 block text-xs font-normal leading-relaxed text-muted-foreground">
-            {t('miningPath.fast.hint')}
+            {t('comp.mine.fastHint')}
           </span>
         </span>
       </Label>
@@ -122,9 +122,9 @@ export function MiningPathSelect({
           onCheckedChange={(checked) => setBypass(checked === true)}
         />
         <span className="min-w-0">
-          <span className="font-medium">{t('miningPath.bypass.label')}</span>
+          <span className="font-medium">{t('mining.bypass')}</span>
           <span className="mt-0.5 block text-xs font-normal leading-relaxed text-muted-foreground">
-            {t('miningPath.bypass.hint')}
+            {t('comp.mine.bypassHint')}
           </span>
         </span>
       </Label>
@@ -136,9 +136,9 @@ export function MiningPathSelect({
           onCheckedChange={(checked) => setUnconstrained(checked === true)}
         />
         <span className="min-w-0">
-          <span className="font-medium">{t('miningPath.unconstrained.label')}</span>
+          <span className="font-medium">{t('mining.unconstrained')}</span>
           <span className="mt-0.5 block text-xs font-normal leading-relaxed text-muted-foreground">
-            {t('miningPath.unconstrained.hint')}
+            {t('comp.mine.unconstHint')}
           </span>
         </span>
       </Label>

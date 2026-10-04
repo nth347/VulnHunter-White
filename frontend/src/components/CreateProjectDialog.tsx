@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { api, formatApiError, type CustomAuditMode } from '../api'
-import i18n from '../i18n'
 import { AuditModeSelect } from './AuditModeSelect'
 import { AttackChainToggle } from './AttackChainToggle'
 import { AuditFlowPreview } from './AuditFlowPreview'
@@ -24,10 +22,15 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { type AuditMode, type TargetKind } from '@/lib/utils'
+import { useRuntime } from '@/lib/runtime'
+import { useI18n } from '@/i18n'
+import { dockerManualLabHint } from './dockerLabCopy'
+import { manualLabPlaceholder } from './ManualLabFields'
 
-function formatUploadError(e: unknown): string {
-  return formatApiError(e, i18n.t('createProject.uploadTimeout'))
+function formatUploadError(e: unknown, fallback: string): string {
+  return formatApiError(e, fallback)
 }
 
 type Props = {
@@ -47,7 +50,7 @@ export function CreateProjectDialog({
   initialUrl = '',
   initialTargetKind,
 }: Props) {
-  const { t } = useTranslation()
+  const { dockerLabBuildEnabled } = useRuntime()
   const [url, setUrl] = useState('')
   const [auditMode, setAuditMode] = useState<AuditMode>('bounty')
   const [targetKind, setTargetKind] = useState<TargetKind>('web')
@@ -75,8 +78,16 @@ export function CreateProjectDialog({
   const [uploadingFile, setUploadingFile] = useState<File | null>(null)
   const [error, setError] = useState('')
   const dynamicVerifyEnabled = dynamicVerifyMode !== 'off'
+  const { t } = useI18n()
   const labMode = dynamicVerifyMode === 'lab'
   const selectedCustomName = customModes.find((m) => m.id === customModeId)?.name
+
+  useEffect(() => {
+    // Docker Desktop default: harness (sandboxes are auto-built).
+    if (!dockerLabBuildEnabled && !verifyTouched && targetKind === 'web') {
+      setDynamicVerifyMode('harness')
+    }
+  }, [dockerLabBuildEnabled, verifyTouched, targetKind])
 
   useEffect(() => {
     advancedOpenRef.current = advancedOpen
@@ -113,6 +124,9 @@ export function CreateProjectDialog({
       setDynamicVerifyMode('harness')
       setVerifierEnabled(false)
       setManualLab(false)
+    } else if (!dockerLabBuildEnabled) {
+      setDynamicVerifyMode('harness')
+      setVerifierEnabled(false)
     } else {
       setDynamicVerifyMode('off')
       setVerifierEnabled(false)
@@ -125,11 +139,15 @@ export function CreateProjectDialog({
   }
 
   function createOpts() {
+    if (labMode && !dockerLabBuildEnabled && !manualLabPrompt.trim()) {
+      throw new Error(t('comp.create.needManual'))
+    }
+    const useManual = labMode && (dockerLabBuildEnabled ? manualLab : true)
     return {
       target_kind: targetKind,
       custom_audit_mode_id: auditMode === 'custom' ? customModeId : null,
-      manual_lab: labMode && manualLab,
-      manual_lab_prompt: labMode && manualLab ? manualLabPrompt : '',
+      manual_lab: useManual,
+      manual_lab_prompt: useManual ? manualLabPrompt : '',
       verifier_enabled: verifierEnabled,
       attack_chain_enabled: attackChainEnabled,
       code_intel_enabled: codeIntelEnabled,
@@ -150,7 +168,7 @@ export function CreateProjectDialog({
   async function createGithub() {
     if (!url.trim()) return
     if (auditMode === 'custom' && customModeId == null) {
-      setError(t('createProject.pickCustomFirst'))
+      setError(t('comp.create.needCustom'))
       return
     }
     let opts
@@ -177,7 +195,7 @@ export function CreateProjectDialog({
   async function onZip(file: File | null) {
     if (!file) return
     if (auditMode === 'custom' && customModeId == null) {
-      setError(t('createProject.pickCustomFirst'))
+      setError(t('comp.create.needCustom'))
       return
     }
     let opts
@@ -195,7 +213,7 @@ export function CreateProjectDialog({
       onOpenChange(false)
       await onCreated()
     } catch (e) {
-      setError(formatUploadError(e))
+      setError(formatUploadError(e, t('comp.create.zipTimeout')))
     } finally {
       setBusy(false)
       setUploadingFile(null)
@@ -217,8 +235,10 @@ export function CreateProjectDialog({
         showCloseButton={!busy}
       >
         <DialogHeader className="shrink-0 border-b border-border px-5 py-4 pr-12">
-          <DialogTitle>{t('createProject.title')}</DialogTitle>
-          <DialogDescription>{t('createProject.description')}</DialogDescription>
+          <DialogTitle>{t('comp.create.title')}</DialogTitle>
+          <DialogDescription>
+            {t('comp.create.body')}
+          </DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <div className="grid gap-4 xl:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] xl:items-start">
@@ -263,18 +283,38 @@ export function CreateProjectDialog({
               />
               <DynamicVerifyToggle
                 mode={dynamicVerifyMode}
+                dockerLabBuildEnabled={dockerLabBuildEnabled}
                 onModeChange={(mode) => {
                   setVerifyTouched(true)
                   setDynamicVerifyMode(mode)
+                  if (mode === 'lab' && !dockerLabBuildEnabled) {
+                    setManualLab(true)
+                  }
                 }}
               />
-              {labMode ? (
+              {labMode && dockerLabBuildEnabled ? (
                 <ManualLabToggle
                   enabled={manualLab}
                   prompt={manualLabPrompt}
                   onEnabledChange={setManualLab}
                   onPromptChange={setManualLabPrompt}
                 />
+              ) : null}
+              {labMode && !dockerLabBuildEnabled ? (
+                <div className="space-y-2">
+                  <Label htmlFor="create-manual-lab" className="font-medium">
+                    {t('comp.create.manualLabel')}
+                  </Label>
+                  <p className="text-xs leading-relaxed text-muted-foreground">{dockerManualLabHint()}</p>
+                  <Textarea
+                    id="create-manual-lab"
+                    value={manualLabPrompt}
+                    onChange={(e) => setManualLabPrompt(e.target.value)}
+                    placeholder={manualLabPlaceholder()}
+                    rows={4}
+                    disabled={busy}
+                  />
+                </div>
               ) : null}
               <VerifierToggle
                 enabled={verifierEnabled}
@@ -290,7 +330,8 @@ export function CreateProjectDialog({
               auditMode={auditMode}
               dynamicVerifyEnabled={dynamicVerifyEnabled}
               dynamicVerifyMode={dynamicVerifyMode}
-              manualLab={manualLab}
+              manualLab={labMode && (dockerLabBuildEnabled ? manualLab : true)}
+              dockerLabBuildEnabled={dockerLabBuildEnabled}
               verifierEnabled={verifierEnabled}
               attackChainEnabled={attackChainEnabled}
               codeIntelEnabled={codeIntelEnabled}
@@ -317,10 +358,10 @@ export function CreateProjectDialog({
               }}
             />
             <Button disabled={busy} onClick={() => void createGithub()}>
-              {t('createProject.fromGithub')}
+              {t('comp.create.github')}
             </Button>
             <Label className="inline-flex h-8 cursor-pointer items-center justify-center rounded-lg border border-input px-3 text-sm font-medium hover:bg-muted">
-              {t('createProject.uploadZip')}
+              {t('comp.create.zip')}
               <Input
                 type="file"
                 accept=".zip"

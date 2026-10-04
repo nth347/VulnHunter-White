@@ -13,15 +13,14 @@ from app.services.report import (
 )
 from app.services.report import ensure_search_fingerprint_section as _ensure_fp
 from app.services.report import replace_search_fingerprint_section as _replace_fp
-from app.services.report import stamp_produced_at as _stamp_produced_at
+from app.services.report import stamp_produced_at as _stamp
 from app.services.report import write_report_md as _write_report_md
 
-# This module asserts Chinese report structure, so it pins the language instead
-# of taking the default (English); the English report is covered by
-# tests/test_i18n_english.py.
+# This module asserts the Chinese report structure, so pin the language; English
+# is the product default and is covered by tests/test_i18n_english.py.
 ensure_search_fingerprint_section = functools.partial(_ensure_fp, language="zh")
 replace_search_fingerprint_section = functools.partial(_replace_fp, language="zh")
-stamp_produced_at = functools.partial(_stamp_produced_at, language="zh")
+stamp_produced_at = functools.partial(_stamp, language="zh")
 write_report_md = functools.partial(_write_report_md, language="zh")
 from app.services.paths import vuln_dir
 from app.tools import ToolContext, registry
@@ -98,7 +97,7 @@ def test_chinese_title_block_reason_unit():
     assert (
         chinese_title_block_reason(
             "登录处 SQL 注入",
-            report_md="# SQL Injection in login\n\n## 摘要\nx\n",
+            report_md="# SQL Injection in login\n\n## 漏洞描述\nx\n",
         )
         == CHINESE_TITLE_ERROR
     )
@@ -142,7 +141,7 @@ def test_submit_vuln_rejects_english_report_h1(tmp_env, project):
         "poc_code": "print(1)\n",
         "expected_evidence": "ok",
         "config_premise": "default",
-        "report_md": "# SQL Injection in login\n\n## 摘要\nx\n",
+        "report_md": "# SQL Injection in login\n\n## 漏洞描述\nx\n",
     }
     out = registry.dispatch(
         ToolContext(project_id=project, role="worker", phase="worker"),
@@ -253,9 +252,11 @@ def test_finish_fix_keeps_original_produced_at(tmp_env, project):
         {"vuln_id": vuln_id, "report_md": "# 待修复\n\nupdated\n"},
     )
     report = (vuln_dir(project, vuln_id) / "report.md").read_text(encoding="utf-8")
-    from app.services.report import produced_at_line
+    import functools as _ft
+    from app.services.report import produced_at_line as _pal
+    produced_at_line = _ft.partial(_pal, language="zh")
 
-    assert produced_at_line(created, "zh") in report
+    assert produced_at_line(created) in report
     assert "updated" in report
 
 
@@ -290,6 +291,7 @@ def test_submit_and_confirm_write_custom_advisory(tmp_env, project):
             "attack_surface": "frontend",
             "evidence_level": "static_only",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
             "submission_tier": "cve_candidate",
             "submission_reason": "有 CVE 价值，未认证可达",
             "advisory_md": "# GitHub Security Advisory\n\n## Title\n\n```\nreviewed title\n```\n",
@@ -338,6 +340,7 @@ def test_default_advisory_md_includes_cvss_fields():
 
     text = default_advisory_md({"title": "demo", "cwe": "CWE-89", "file_path": "app/Db.java"})
     assert "**CVSS 3.1:**" in text
+    assert "**CVSS 4.0:**" in text
     assert "### Vulnerable code" in text
     assert "app/Db.java" in text
 
@@ -403,15 +406,12 @@ def test_extract_product_hints_skips_placeholders():
 
 
 def test_missing_report_headings_bypass_requires_patch_section():
-    import functools
-
-    from app.services.report import missing_report_headings as _missing
-
-    missing_report_headings = functools.partial(_missing, language="zh")
+    import functools as _ft
+    from app.services.report import missing_report_headings as _mrh
+    missing_report_headings = _ft.partial(_mrh, language="zh")
 
     minimal = "\n".join(
         [
-            "## 摘要",
             "## 漏洞描述",
             "## 漏洞危害",
             "## 漏洞厂商全称",
@@ -471,7 +471,7 @@ def test_cve_record_initialize_and_fill(tmp_env, project):
         "poc_code": "print(1)\n",
         "expected_evidence": "500",
         "config_premise": "default",
-        "report_md": "# SQL 注入演示\n\n## 摘要\nx\n## 漏洞描述\nx\n## 漏洞危害\nx\n## 漏洞厂商全称\nx\n## 已知受影响产品及版本\nx\n## 互联网资产证明\nx\n## 漏洞技术细节\nx\n## 同根因受影响点\nx\n## 复现证明\nx\n## 修复方案\nx\n## 备注\nx\n",
+        "report_md": "# SQL 注入演示\n\n## 漏洞描述\nx\n## 漏洞危害\nx\n## 漏洞厂商全称\nx\n## 已知受影响产品及版本\nx\n## 互联网资产证明\nx\n## 漏洞技术细节\nx\n## 同根因受影响点\nx\n## 复现证明\nx\n## 修复方案\nx\n## 备注\nx\n",
     }
     out = registry.dispatch(
         ToolContext(project_id=project, role="worker", phase="worker"),
@@ -622,6 +622,22 @@ def test_set_cve_record_field_cvss_vector_computes_score(tmp_env, project):
     assert metric["baseScore"] == 7.5
     assert metric["baseSeverity"] == "HIGH"
     assert metric["vectorString"] == ok["cvss_vector"]
+
+    v4 = registry.dispatch(
+        ctx,
+        "SetCveRecordField",
+        {
+            "path": "containers.cna.metrics[0].cvssV4_0.vectorString",
+            "value": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+        },
+    )
+    assert v4["ok"] is True
+    assert v4["cvss4_score"] == 8.7
+    metric4 = json.loads(cve_record_path(project, vid).read_text(encoding="utf-8"))[
+        "containers"
+    ]["cna"]["metrics"][0]["cvssV4_0"]
+    assert metric4["baseScore"] == 8.7
+    assert metric4["vectorString"] == v4["cvss4_vector"]
 
 
 def test_cve_record_initialize_standalone(tmp_env, project):

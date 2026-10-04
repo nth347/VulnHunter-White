@@ -133,7 +133,6 @@ def any_heading_re(level: int | str = 2) -> re.Pattern[str]:
 # The output-language contract is rendered from this, so the headings the model
 # is told to emit can never drift from the ones the parsers look for.
 REPORT_OUTLINE: tuple[tuple[str, int], ...] = (
-    ("summary", 2),
     ("description", 2),
     ("impact", 2),
     ("vendor", 2),

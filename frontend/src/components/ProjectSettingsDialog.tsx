@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { api, formatApiError, type Project } from '../api'
 import { DynamicVerifyToggle, normalizeDynamicVerifyMode, type DynamicVerifyMode } from './DynamicVerifyToggle'
+import { manualLabHint, manualLabPlaceholder } from './ManualLabFields'
+import { dockerManualLabHint } from './dockerLabCopy'
 import { MiningPathSelect } from './MiningPathSelect'
 import { ProjectModelSelect } from './ProjectModelSelect'
 import { MaxTokenUsageField, formatMaxTokenUsageInput, parseMaxTokenUsageInput } from './MaxTokenUsageField'
@@ -23,6 +24,8 @@ import {
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { normalizeTargetKind, type TargetKind } from '@/lib/utils'
+import { useRuntime } from '@/lib/runtime'
+import { useI18n } from '@/i18n'
 
 export function ProjectSettingsButton({
   project,
@@ -33,7 +36,8 @@ export function ProjectSettingsButton({
   onSaved: (project: Project) => void
   disabled?: boolean
 }) {
-  const { t } = useTranslation()
+  const { dockerLabBuildEnabled } = useRuntime()
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [prompt, setPrompt] = useState(project.manual_lab_prompt || '')
   const [targetKind, setTargetKind] = useState<TargetKind>(normalizeTargetKind(project.target_kind))
@@ -103,6 +107,9 @@ export function ProjectSettingsButton({
     setSaving(true)
     setError('')
     try {
+      if (dynamicVerifyMode === 'lab' && !dockerLabBuildEnabled && !prompt.trim()) {
+        throw new Error(t('comp.settings.needManual'))
+      }
       const text = dynamicVerifyMode === 'lab' ? prompt.trim() : ''
       const canEditPaths = project.status === 'paused' || project.status === 'completed'
       const next = await api.updateProject(project.id, {
@@ -146,10 +153,10 @@ export function ProjectSettingsButton({
       <Button
         variant="outline"
         disabled={disabled}
-        title={disabled ? t('projectSettings.loading') : undefined}
+        title={disabled ? t('comp.settings.loading') : undefined}
         onClick={() => setOpen(true)}
       >
-        {t('projectSettings.button')}
+        {t('comp.settings.btn')}
       </Button>
       <Dialog
         open={open}
@@ -160,8 +167,12 @@ export function ProjectSettingsButton({
       >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg" showCloseButton={!saving}>
           <DialogHeader>
-            <DialogTitle>{t('projectSettings.title')}</DialogTitle>
-            <DialogDescription>{t('projectSettings.description')}</DialogDescription>
+            <DialogTitle>{t('comp.settings.title')}</DialogTitle>
+            <DialogDescription>
+              {t('comp.settings.bodyHead')}
+              {dockerLabBuildEnabled ? t('comp.settings.bodyDocker') : t('comp.settings.bodyManual')}
+              {t('comp.settings.bodyTail')}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <TargetKindSelect
@@ -199,18 +210,24 @@ export function ProjectSettingsButton({
                 setUnconstrainedEnabled(nextU)
               }}
             />
-            <DynamicVerifyToggle mode={dynamicVerifyMode} onModeChange={setDynamicVerifyMode} />
+            <DynamicVerifyToggle
+              mode={dynamicVerifyMode}
+              dockerLabBuildEnabled={dockerLabBuildEnabled}
+              onModeChange={setDynamicVerifyMode}
+            />
             {dynamicVerifyMode === 'lab' ? (
               <div className="space-y-2">
                 <Label htmlFor="manual-lab-prompt" className="font-medium">
-                  {t('projectSettings.manualLabTitle')}
+                  {t('comp.settings.manualDesc')}
                 </Label>
-                <p className="text-xs leading-relaxed text-muted-foreground">{t('manualLab.hint')}</p>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {dockerLabBuildEnabled ? manualLabHint() : dockerManualLabHint()}
+                </p>
                 <Textarea
                   id="manual-lab-prompt"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder={t('manualLab.placeholder')}
+                  placeholder={manualLabPlaceholder()}
                   rows={5}
                 />
               </div>
@@ -224,7 +241,7 @@ export function ProjectSettingsButton({
               {t('common.cancel')}
             </Button>
             <Button disabled={saving} onClick={() => void save()}>
-              {saving ? t('common.saving') : t('common.save')}
+              {saving ? t('comp.settings.saving') : t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>

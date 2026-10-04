@@ -1,6 +1,13 @@
-import { useTranslation } from 'react-i18next'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
+import { useI18n } from '@/i18n'
+import { t } from '@/i18n/t'
+
+export function attackChainHint(): string {
+  return t('comp.attackChain.hint')
+}
+
+export const ATTACK_CHAIN_HINT = attackChainHint
 
 export function AttackChainToggle({
   enabled,
@@ -9,7 +16,7 @@ export function AttackChainToggle({
   enabled: boolean
   onEnabledChange: (enabled: boolean) => void
 }) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   return (
     <Label className="items-start font-normal">
       <Checkbox
@@ -18,9 +25,9 @@ export function AttackChainToggle({
         onCheckedChange={(checked) => onEnabledChange(checked === true)}
       />
       <span className="min-w-0">
-        <span className="font-medium">{t('toggles.attackChain.label')}</span>
+        <span className="font-medium">{t('comp.attackChain.title')}</span>
         <span className="mt-0.5 block text-xs font-normal leading-relaxed text-muted-foreground">
-          {t('toggles.attackChain.hint')}
+          {attackChainHint()}
         </span>
       </span>
     </Label>

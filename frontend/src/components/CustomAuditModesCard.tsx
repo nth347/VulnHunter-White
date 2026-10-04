@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { api, formatApiError, type BuiltinAuditMode, type CustomAuditMode } from '../api'
-import i18n from '../i18n'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -16,11 +14,10 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-
-const emptyTemplate = () => i18n.t('customModes.template')
+import { useI18n } from '@/i18n'
 
 export function CustomAuditModesCard() {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const [builtin, setBuiltin] = useState<BuiltinAuditMode[]>([])
   const [rows, setRows] = useState<CustomAuditMode[]>([])
   const [msg, setMsg] = useState('')
@@ -49,8 +46,8 @@ export function CustomAuditModesCard() {
 
   function openCreate(from?: BuiltinAuditMode | null) {
     setEditingId(null)
-    setName(from ? t('customModes.basedOn', { label: from.label }) : '')
-    setBody(from ? from.body : emptyTemplate())
+    setName(from ? t('settings.custom.basedOn', { label: from.label }) : '')
+    setBody(from ? from.body : t('settings.custom.template'))
     setEditorOpen(true)
   }
 
@@ -80,7 +77,7 @@ export function CustomAuditModesCard() {
       setEditorOpen(false)
       await refresh()
       setOk(true)
-      setMsg(editingId == null ? t('customModes.created') : t('customModes.saved'))
+      setMsg(editingId == null ? t('settings.custom.created') : t('settings.custom.updated'))
     } catch (e) {
       setOk(false)
       setMsg(formatApiError(e))
@@ -90,7 +87,7 @@ export function CustomAuditModesCard() {
   }
 
   async function remove(row: CustomAuditMode) {
-    if (!window.confirm(t('customModes.deleteConfirm', { name: row.name }))) return
+    if (!window.confirm(t('settings.custom.deleteConfirm', { name: row.name }))) return
     setBusy(true)
     setMsg('')
     setOk(null)
@@ -98,7 +95,7 @@ export function CustomAuditModesCard() {
       await api.deleteCustomAuditMode(row.id)
       await refresh()
       setOk(true)
-      setMsg(t('customModes.deleted', { name: row.name }))
+      setMsg(t('settings.custom.deleted', { name: row.name }))
     } catch (e) {
       setOk(false)
       setMsg(formatApiError(e))
@@ -112,12 +109,12 @@ export function CustomAuditModesCard() {
       <Card>
         <CardContent className="space-y-4 p-4">
           <div className="space-y-1.5">
-            <Label>{t('customModes.sectionLabel')}</Label>
-            <div className="text-xs text-slate-500">{t('customModes.sectionHint')}</div>
+            <Label>{t('settings.custom.label')}</Label>
+            <div className="text-xs text-slate-500">{t('settings.custom.hint')}</div>
           </div>
 
           <div className="space-y-2">
-            <div className="text-sm font-medium text-slate-200">{t('customModes.builtinTitle')}</div>
+            <div className="text-sm font-medium text-slate-200">{t('settings.custom.builtin')}</div>
             <div className="space-y-2">
               {builtin.map((b) => (
                 <div
@@ -130,10 +127,10 @@ export function CustomAuditModesCard() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" variant="outline" size="sm" onClick={() => openView(b.label, b.body)}>
-                      {t('customModes.view')}
+                      {t('settings.custom.view')}
                     </Button>
                     <Button type="button" variant="secondary" size="sm" onClick={() => openCreate(b)}>
-                      {t('customModes.copyToCustom')}
+                      {t('settings.custom.copy')}
                     </Button>
                   </div>
                 </div>
@@ -143,13 +140,13 @@ export function CustomAuditModesCard() {
 
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-sm font-medium text-slate-200">{t('customModes.customTitle')}</div>
+              <div className="text-sm font-medium text-slate-200">{t('settings.custom.list')}</div>
               <Button type="button" size="sm" onClick={() => openCreate(null)}>
-                {t('customModes.new')}
+                {t('common.create')}
               </Button>
             </div>
             {rows.length === 0 ? (
-              <div className="text-xs text-muted-foreground">{t('customModes.customEmpty')}</div>
+              <div className="text-xs text-muted-foreground">{t('settings.custom.empty')}</div>
             ) : (
               <div className="space-y-2">
                 {rows.map((row) => (
@@ -166,10 +163,10 @@ export function CustomAuditModesCard() {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button type="button" variant="outline" size="sm" onClick={() => openView(row.name, row.body)}>
-                        {t('customModes.view')}
+                        {t('settings.custom.view')}
                       </Button>
                       <Button type="button" variant="secondary" size="sm" onClick={() => openEdit(row)}>
-                        {t('customModes.edit')}
+                        {t('common.edit')}
                       </Button>
                       <Button type="button" variant="destructive" size="sm" disabled={busy} onClick={() => void remove(row)}>
                         {t('common.delete')}
@@ -184,9 +181,7 @@ export function CustomAuditModesCard() {
           {msg ? (
             <div className="flex items-start gap-2 text-sm">
               {ok != null ? (
-                <Badge variant={ok ? 'success' : 'destructive'}>
-                  {ok ? t('customModes.success') : t('customModes.failure')}
-                </Badge>
+                <Badge variant={ok ? 'success' : 'destructive'}>{ok ? t('common.success') : t('common.fail')}</Badge>
               ) : null}
               <span className={ok === false ? 'text-red-300' : 'text-slate-300'}>{msg}</span>
             </div>
@@ -198,23 +193,23 @@ export function CustomAuditModesCard() {
         <DialogContent className="flex max-h-[min(90vh,44rem)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
           <DialogHeader className="shrink-0 border-b border-border px-5 py-4 pr-12">
             <DialogTitle>
-              {editingId == null ? t('customModes.editorNewTitle') : t('customModes.editorEditTitle')}
+              {editingId == null ? t('settings.custom.createTitle') : t('settings.custom.editTitle')}
             </DialogTitle>
-            <DialogDescription>{t('customModes.editorDescription')}</DialogDescription>
+            <DialogDescription>{t('settings.custom.editorHint')}</DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-3 overflow-auto px-5 py-4">
             <div className="space-y-1.5">
-              <Label htmlFor="custom-mode-name">{t('customModes.nameLabel')}</Label>
+              <Label htmlFor="custom-mode-name">{t('settings.custom.name')}</Label>
               <Input
                 id="custom-mode-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder={t('customModes.namePlaceholder')}
+                placeholder={t('settings.custom.namePlaceholder')}
                 maxLength={128}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="custom-mode-body">{t('customModes.bodyLabel')}</Label>
+              <Label htmlFor="custom-mode-body">{t('settings.custom.body')}</Label>
               <Textarea
                 id="custom-mode-body"
                 value={body}
@@ -230,7 +225,7 @@ export function CustomAuditModesCard() {
               {t('common.cancel')}
             </Button>
             <Button type="button" onClick={() => void saveEditor()} disabled={busy || !name.trim() || !body.trim()}>
-              {busy ? t('common.saving') : t('common.save')}
+              {busy ? t('settings.token.saving') : t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -240,7 +235,7 @@ export function CustomAuditModesCard() {
         <DialogContent className="flex max-h-[min(90vh,44rem)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
           <DialogHeader className="shrink-0 border-b border-border px-5 py-4 pr-12">
             <DialogTitle>{viewTitle}</DialogTitle>
-            <DialogDescription>{t('customModes.readOnlyPreview')}</DialogDescription>
+            <DialogDescription>{t('settings.custom.readonlyPreview')}</DialogDescription>
           </DialogHeader>
           <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap px-5 py-4 font-mono text-xs leading-relaxed text-slate-300">
             {viewBody}

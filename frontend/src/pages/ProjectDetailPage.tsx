@@ -1,8 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import i18n from '../i18n'
-import { translateBackendText } from '../i18n/backendText'
 import { api, formatApiError, withAccessTokenParam, type CustomAuditMode, type LogEvent, type Project, type Vuln } from '../api'
 import { AuditModeSelect } from '../components/AuditModeSelect'
 import { BountyScopeButton } from '../components/BountyScopeDialog'
@@ -35,8 +32,10 @@ import {
   formatTokens,
   projectRunBucket,
   projectStatusBadgeVariant,
+  saveBlob,
   tokenBudgetReached,
 } from '../lib/utils'
+import { useI18n } from '@/i18n'
 import {
   applyProjectRunToListCaches,
   projectDetailCacheKey,
@@ -50,48 +49,52 @@ const PhaseReportsPanel = lazy(() => import('../components/PhaseReportsPanel'))
 
 const LOG_PAGE = 100
 const PHASE_TABS = [
-  ['recon', 'phaseFlow.phase.recon.label'],
-  ['code-intel', 'phaseFlow.phase.code_intel.label'],
-  ['worker', 'phaseFlow.phase.worker.label'],
-  ['reviewer', 'phaseFlow.phase.reviewer.label'],
-  ['verifier', 'phaseFlow.phase.verifier.label'],
-  ['attack_chain', 'phaseFlow.phase.attack_chain.label'],
+  ['recon', 'detail.phase.recon'],
+  ['code-intel', 'detail.phase.codeIntel'],
+  ['worker', 'detail.phase.worker'],
+  ['reviewer', 'detail.phase.reviewer'],
+  ['verifier', 'detail.phase.verifier'],
+  ['attack_chain', 'detail.phase.attackChain'],
+  ['vuln_dedup', 'detail.phase.vulnDedup'],
 ] as const
 const REVIEWER_LOG_TABS = [
-  ['reviewer-lab', 'phaseFlow.badge.labSetup'],
-  ['reviewer-review', 'phaseFlow.phase.reviewer.label'],
+  ['reviewer-lab', 'detail.sub.lab'],
+  ['reviewer-review', 'detail.sub.review'],
 ] as const
 const RECON_LOG_TABS = [
-  ['recon-map', 'phaseReports.sub.recon.map', 'map'],
-  ['recon-source-ext', 'phaseReports.sub.recon.source_ext', 'source_ext'],
-  ['recon-old-vuln', 'phaseReports.sub.recon.old_vulns', 'old_vulns'],
-  ['recon-mark', 'phaseReports.sub.recon.mark', 'mark'],
+  ['recon-map', 'detail.sub.map', 'map'],
+  ['recon-source-ext', 'detail.sub.ext', 'source_ext'],
+  ['recon-old-vuln', 'detail.sub.oldVuln', 'old_vulns'],
+  ['recon-mark', 'detail.sub.mark', 'mark'],
 ] as const
 
-function workerLogTabs(project: {
-  heuristic_enabled?: boolean
-  fast_enabled?: boolean
-  bypass_enabled?: boolean
-  unconstrained_enabled?: boolean
-}) {
+function workerLogTabs(
+  project: {
+    heuristic_enabled?: boolean
+    fast_enabled?: boolean
+    bypass_enabled?: boolean
+    unconstrained_enabled?: boolean
+  },
+  t: (key: string) => string,
+) {
   const tabs: [string, string][] = []
-  if (project.heuristic_enabled !== false) tabs.push(['mine', 'phaseReports.sub.worker.mine'])
-  if (project.fast_enabled === true) tabs.push(['fast', 'phaseReports.sub.worker.fast'])
-  if (project.bypass_enabled === true) tabs.push(['bypass', 'phaseReports.sub.worker.bypass'])
-  if (project.unconstrained_enabled === true) tabs.push(['unconstrained', 'phaseReports.sub.worker.unconstrained'])
-  tabs.push(['fix', 'phaseReports.sub.worker.fix'])
+  if (project.heuristic_enabled !== false) tabs.push(['mine', t('mining.heuristicShort')])
+  if (project.fast_enabled === true) tabs.push(['fast', t('mining.fast')])
+  if (project.bypass_enabled === true) tabs.push(['bypass', t('mining.bypass')])
+  if (project.unconstrained_enabled === true) tabs.push(['unconstrained', t('mining.unconstrained')])
+  tabs.push(['fix', t('detail.sub.fix')])
   return tabs
 }
 
 function isSessionStart(ev: LogEvent): boolean {
   if (ev.session_start) return true
-  // Backend still emits this system message in Chinese; match both while backend strings are localized.
-  return ev.kind === 'system' && /新开对话|New conversation/.test(ev.text || '')
+  return ev.kind === 'system' && (ev.text || '').includes('新开对话')
 }
 
-function controlPhaseOf(logPhase: string): 'recon' | 'code-intel' | 'worker' | 'reviewer' | 'verifier' | 'attack_chain' {
+function controlPhaseOf(logPhase: string): 'recon' | 'code-intel' | 'worker' | 'reviewer' | 'verifier' | 'attack_chain' | 'vuln_dedup' {
   if (logPhase === 'verifier') return 'verifier'
   if (logPhase === 'attack_chain' || logPhase === 'attack-chain') return 'attack_chain'
+  if (logPhase === 'vuln_dedup' || logPhase === 'vuln-dedup') return 'vuln_dedup'
   if (logPhase === 'code-intel' || logPhase === 'code_intel') return 'code-intel'
   if (logPhase === 'reviewer' || logPhase === 'reviewer-lab' || logPhase === 'reviewer_lab' || logPhase === 'reviewer-review') return 'reviewer'
   if (
@@ -112,6 +115,7 @@ function controlPhaseOf(logPhase: string): 'recon' | 'code-intel' | 'worker' | '
 }
 
 function defaultPhaseTab(phase: string, status: string): string {
+  if (phase === 'vuln_dedup' || phase === 'vuln-dedup') return 'vuln_dedup'
   if (phase === 'attack_chain' || phase === 'attack-chain') return 'attack_chain'
   if (phase === 'code_intel' || phase === 'code-intel') return 'code-intel'
   if (phase === 'verifier') return 'verifier'
@@ -131,7 +135,7 @@ function cachedProject(id: number) {
 }
 
 export default function ProjectDetailPage() {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const { id } = useParams()
   const navigate = useNavigate()
   const projectId = Number(id)
@@ -143,6 +147,7 @@ export default function ProjectDetailPage() {
   const [events, setEvents] = useState<LogEvent[]>([])
   const [vulns, setVulns] = useState<Vuln[]>([])
   const [vulnsLoading, setVulnsLoading] = useState(false)
+  const [selectedVulnIds, setSelectedVulnIds] = useState<number[]>([])
   const [detailVulnId, setDetailVulnId] = useState<number | null>(null)
   const [tab, setTab] = useState<'logs' | 'reports' | 'vulns'>('logs')
   const [phaseFilter, setPhaseFilter] = useState(() =>
@@ -155,10 +160,12 @@ export default function ProjectDetailPage() {
   const [logSession, setLogSession] = useState<number | null>(null)
   const [displaySession, setDisplaySession] = useState(1)
   const [sessionCount, setSessionCount] = useState(1)
+  const [phaseRunning, setPhaseRunning] = useState<boolean | null>(null)
   const [actionError, setActionError] = useState('')
   const [graphOpen, setGraphOpen] = useState(false)
   const [runBusy, setRunBusy] = useState(false)
   const [ciBusy, setCiBusy] = useState(false)
+  const [dedupBusy, setDedupBusy] = useState(false)
   const [loadError, setLoadError] = useState('')
   const oldestRef = useRef(0)
   const fileEndRef = useRef(0)
@@ -193,6 +200,7 @@ export default function ProjectDetailPage() {
     setDisplaySession(1)
     setSessionCount(1)
     setLogSession(null)
+    setPhaseRunning(null)
   }
 
   useEffect(() => {
@@ -215,12 +223,14 @@ export default function ProjectDetailPage() {
     setStreamFrom(null)
     setEvents([])
     setVulns([])
+    setSelectedVulnIds([])
     setDetailVulnId(null)
     setHasOlder(false)
     setRevealLimit(LOG_PAGE)
     setLogSession(null)
     setDisplaySession(1)
     setSessionCount(1)
+    setPhaseRunning(null)
     setLoadError('')
   }, [projectId])
 
@@ -252,9 +262,7 @@ export default function ProjectDetailPage() {
         if (!etagRef.current) {
           const timedOut =
             err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError')
-          setLoadError(
-            timedOut ? i18n.t('projectDetail.loadTimeout') : i18n.t('projectDetail.loadFailed'),
-          )
+          setLoadError(timedOut ? t('detail.loadTimeout') : t('detail.loadFail'))
         }
       }
     }
@@ -464,7 +472,7 @@ export default function ProjectDetailPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <Link to="/" className="text-sm text-slate-400 hover:underline">
-            {t('projectDetail.back')}
+            {t('detail.back')}
           </Link>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold">{project.name}</h1>
@@ -494,6 +502,7 @@ export default function ProjectDetailPage() {
               verifierPending={project.verifier_pending}
               attackChainEnabled={project.attack_chain_enabled}
               attackChainDone={project.attack_chain_done}
+              attackChainStopped={project.attack_chain_stopped}
               heuristicEnabled={project.heuristic_enabled}
               heuristicLite={project.heuristic_lite}
               fastEnabled={project.fast_enabled}
@@ -506,6 +515,9 @@ export default function ProjectDetailPage() {
               bypassDone={project.bypass_done}
               unconstrainedEnabled={project.unconstrained_enabled}
               unconstrainedDone={project.unconstrained_done}
+              heuristicStopped={project.heuristic_stopped}
+              fastStopped={project.fast_stopped}
+              bypassStopped={project.bypass_stopped}
               onSelect={(pid) => {
                 setTab('logs')
                 if (pid !== 'done') selectPhase(pid)
@@ -527,7 +539,7 @@ export default function ProjectDetailPage() {
             <Button
               variant="outline"
               disabled={runBusy || project.status === 'completed'}
-              title={project.status === 'completed' ? t('runButtons.pauseCompleted') : undefined}
+              title={project.status === 'completed' ? t('detail.pauseCompleted') : undefined}
               onClick={() => {
                 setActionError('')
                 const prev = project
@@ -547,13 +559,15 @@ export default function ProjectDetailPage() {
                   .finally(() => setRunBusy(false))
               }}
             >
-              {t('projectDetail.pauseAll')}
+              {t('detail.pauseAll')}
             </Button>
             <Button
               variant="outline"
               disabled={runBusy || tokenBudgetReached(project)}
               title={
-                tokenBudgetReached(project) ? t('projectDetail.budgetBlockedResume') : undefined
+                tokenBudgetReached(project)
+                  ? t('detail.tokenCap')
+                  : undefined
               }
               onClick={() => {
                 setActionError('')
@@ -580,11 +594,11 @@ export default function ProjectDetailPage() {
                   .finally(() => setRunBusy(false))
               }}
             >
-              {t('projectDetail.resumeAll')}
+              {t('detail.resumeAll')}
             </Button>
             <ResetProgressButton project={project} onReset={applyProject} />
             <Button variant="destructive" onClick={() => api.cancel(projectId)}>
-              {t('projectDetail.stop')}
+              {t('detail.stop')}
             </Button>
             <DeleteProjectButton
               projectId={projectId}
@@ -595,6 +609,22 @@ export default function ProjectDetailPage() {
         </div>
       </div>
       {actionError ? <p className="text-sm text-red-300">{actionError}</p> : null}
+      {project.source_sync_error ? (
+        <Card className="border-amber-500/40 bg-amber-950/30">
+          <CardContent className="space-y-2 pt-4 text-sm text-amber-100">
+            <p className="font-medium text-amber-50">{t('detail.syncFailTitle')}</p>
+            <p className="break-words text-amber-100/90">{project.source_sync_error}</p>
+          </CardContent>
+        </Card>
+      ) : null}
+      {project.source_sync_notice ? (
+        <Card className="border-sky-500/40 bg-sky-950/30">
+          <CardContent className="space-y-2 pt-4 text-sm text-sky-100">
+            <p className="font-medium text-sky-50">{t('detail.syncOkTitle')}</p>
+            <p className="break-words text-sky-100/90">{project.source_sync_notice}</p>
+          </CardContent>
+        </Card>
+      ) : null}
       <CodeGraphExplorer projectId={projectId} open={graphOpen} onOpenChange={setGraphOpen} />
 
       {normalizeDynamicVerifyMode(project.dynamic_verify_mode, project.dynamic_verify_enabled) ===
@@ -659,21 +689,18 @@ export default function ProjectDetailPage() {
             {formatTargetKind(project.target_kind)}
           </Badge>
           <Badge variant="outline">{formatMiningPaths(project)}</Badge>
-          <Badge
-            variant="outline"
-            title={project.llm_model ? t('projectModel.label') : t('projectDetail.globalModelTitle')}
-          >
-            {project.llm_model || t('home.globalModel')}
+          <Badge variant="outline" title={project.llm_model ? t('detail.modelProject') : t('detail.modelGlobal')}>
+            {project.llm_model || t('common.globalModel')}
           </Badge>
           <span>
             tokens {formatTokens(project.tokens_input + project.tokens_output)}
             {project.max_token_usage > 0
-              ? ` / ${t('projectDetail.tokenCap', { cap: formatTokens(project.max_token_usage) })}`
+              ? t('detail.tokenCapSuffix', { cap: formatTokens(project.max_token_usage) })
               : ''}
           </span>
           <span>{formatMiningProgress(project)}</span>
           <span>
-            {t('projectDetail.vulnCounts', {
+            {t('detail.vulnCounts', {
               confirmed: project.vuln_confirmed,
               pending: project.vuln_pending,
               fp: project.vuln_false_positive,
@@ -684,32 +711,30 @@ export default function ProjectDetailPage() {
         <p className="max-w-3xl text-xs leading-relaxed text-muted-foreground">
           {formatTargetKindHint(project.target_kind)}{' '}
           {formatAuditModeHint(project.audit_mode, project.custom_audit_mode_name)}
-          {project.fast_enabled ? ` ${t('projectDetail.blurb.fast')}` : ''}
-          {project.bypass_enabled ? ` ${t('projectDetail.blurb.bypass')}` : ''}
-          {project.unconstrained_enabled ? ` ${t('projectDetail.blurb.unconstrained')}` : ''}
-          {project.code_intel_enabled === true
-            ? ` ${t('projectDetail.blurb.codeIntelOn')}`
-            : ` ${t('projectDetail.blurb.codeIntelOff')}`}
+          {project.fast_enabled ? t('detail.hint.fast') : ''}
+          {project.bypass_enabled ? t('detail.hint.bypass') : ''}
+          {project.unconstrained_enabled ? t('detail.hint.unconstrained') : ''}
+          {project.code_intel_enabled === true ? t('detail.hint.ciOn') : t('detail.hint.ciOff')}
           {project.status === 'paused' || project.project_paused || project.status === 'completed'
-            ? ` ${t('projectDetail.blurb.editable')}`
+            ? t('detail.hint.modeEditable')
             : ''}
         </p>
       </div>
 
       <div className="flex gap-2">
         <Button variant={tab === 'logs' ? 'default' : 'outline'} onClick={() => setTab('logs')}>
-          {t('projectDetail.tabLogs')}
+          {t('detail.tab.logs')}
         </Button>
         <Button variant={tab === 'reports' ? 'default' : 'outline'} onClick={() => setTab('reports')}>
-          {t('projectDetail.tabReports')}
+          {t('detail.tab.reports')}
         </Button>
         <Button variant={tab === 'vulns' ? 'default' : 'outline'} onClick={() => setTab('vulns')}>
-          {t('projectDetail.tabVulns')}
+          {t('detail.tab.vulns')}
         </Button>
       </div>
 
       {tab === 'reports' ? (
-        <Suspense fallback={<div className="text-sm text-muted-foreground">{t('vulnDetail.loadingReport')}</div>}>
+        <Suspense fallback={<div className="text-sm text-muted-foreground">{t('detail.reportsLoading')}</div>}>
           <PhaseReportsPanel projectId={projectId} initialPhase={controlPhaseOf(phaseFilter)} />
         </Suspense>
       ) : null}
@@ -747,14 +772,14 @@ export default function ProjectDetailPage() {
                   ) : null}
                   {k === 'worker' ? (
                     <div className="vh-phase-subs">
-                      {workerLogTabs(project).map(([sk, slabelKey]) => (
+                      {workerLogTabs(project, t).map(([sk, slabel]) => (
                         <Button
                           key={sk}
                           className="h-6 px-2 text-[11px]"
                           variant={phaseFilter === sk ? 'default' : 'outline'}
                           onClick={() => selectPhase(sk)}
                         >
-                          {t(slabelKey)}
+                          {slabel}
                         </Button>
                       ))}
                     </div>
@@ -792,6 +817,7 @@ export default function ProjectDetailPage() {
             atTopRef={atTopRef}
             session={displaySession}
             sessionCount={sessionCount}
+            phaseRunning={phaseRunning}
             onSessionChange={(n) => {
               followLiveRef.current = n == null || n >= sessionCountRef.current
               const next = n ?? sessionCountRef.current
@@ -803,7 +829,9 @@ export default function ProjectDetailPage() {
           {phaseFilter === 'code-intel' || phaseFilter === 'code_intel' ? (
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {project.code_intel_enabled !== true ? (
-                <span className="text-xs text-muted-foreground">{t('projectDetail.codeIntelOffHint')}</span>
+                <span className="text-xs text-muted-foreground">
+                  {t('detail.ciOff')}
+                </span>
               ) : null}
               <Button
                 size="sm"
@@ -827,7 +855,7 @@ export default function ProjectDetailPage() {
                     .finally(() => setCiBusy(false))
                 }}
               >
-                {ciBusy ? t('projectDetail.processing') : t('projectDetail.rebuildCodeIntel')}
+                {ciBusy ? t('detail.ciBusy') : t('detail.ciRebuild')}
               </Button>
               <Button
                 size="sm"
@@ -837,7 +865,7 @@ export default function ProjectDetailPage() {
                   project.code_intel_enabled !== true ||
                   (project.code_intel_status !== 'ready' && project.code_intel_status !== 'stale')
                 }
-                title={t('projectDetail.openGraphTitle')}
+                title={t('detail.ciGraphTip')}
                 onClick={() => {
                   setActionError('')
                   setCiBusy(true)
@@ -854,15 +882,13 @@ export default function ProjectDetailPage() {
                     .finally(() => setCiBusy(false))
                 }}
               >
-                {t('projectDetail.openGraph')}
+                {t('detail.ciGraph')}
               </Button>
               {project.code_intel_status === 'stale' ? (
-                <span className="text-xs text-amber-300">{t('projectDetail.codeIntelStale')}</span>
+                <span className="text-xs text-amber-300">{t('detail.ciStale')}</span>
               ) : null}
               {project.code_intel_status === 'degraded' && project.code_intel_error ? (
-                <span className="text-xs text-red-300">
-                  {translateBackendText(project.code_intel_error)}
-                </span>
+                <span className="text-xs text-red-300">{project.code_intel_error}</span>
               ) : null}
             </div>
           ) : (
@@ -872,11 +898,18 @@ export default function ProjectDetailPage() {
               session={displaySession}
               sessionCount={sessionCount}
               projectStatus={project.status}
+              onRunningChange={setPhaseRunning}
               onSent={() => {
                 followLiveRef.current = true
                 displaySessionRef.current = sessionCountRef.current
                 setDisplaySession(sessionCountRef.current)
                 setLogSession(null)
+                void api
+                  .getProject(projectId)
+                  .then((fresh) => {
+                    if (!fresh.notModified && !fresh.unchanged) applyRunChange(fresh)
+                  })
+                  .catch(() => undefined)
               }}
             />
           )}
@@ -884,11 +917,51 @@ export default function ProjectDetailPage() {
         </Card>
       ) : tab === 'vulns' ? (
         <>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              title={t('detail.dedupTip')}
+              disabled={dedupBusy || (!selectedVulnIds.length && vulns.length === 0)}
+              onClick={() => {
+                const ids = selectedVulnIds.length ? selectedVulnIds : vulns.map((v) => v.id)
+                if (!ids.length) return
+                setActionError('')
+                setDedupBusy(true)
+                void api
+                  .requestVulnDedup(projectId, ids)
+                  .then(() => {
+                    setTab('logs')
+                    selectPhase('vuln_dedup')
+                  })
+                  .catch((e) => setActionError(formatApiError(e)))
+                  .finally(() => setDedupBusy(false))
+              }}
+            >
+              {dedupBusy ? t('detail.dedupBusy') : t('detail.dedup')}
+            </Button>
+            <Button
+              onClick={() => {
+                const ids = selectedVulnIds.length ? selectedVulnIds : vulns.map((v) => v.id)
+                if (!ids.length) return
+                void api
+                  .downloadVulns(ids)
+                  .then((blob) => saveBlob(blob, 'vulns.zip'))
+                  .catch(() => undefined)
+              }}
+              disabled={!selectedVulnIds.length && vulns.length === 0}
+            >
+              {t('vulns.batchDownload')}
+            </Button>
+          </div>
           <Card className="gap-0 divide-y divide-border py-0">
             <VulnGroupList
               vulns={vulns}
               activeId={detailVulnId}
-              emptyText={vulnsLoading ? t('projectDetail.loadingVulns') : t('projectDetail.noVulns')}
+              selectedIds={selectedVulnIds}
+              emptyText={vulnsLoading ? t('detail.vulnsLoading') : t('detail.noVulns')}
+              onToggleSelect={(vid, checked) =>
+                setSelectedVulnIds((prev) => (checked ? [...prev, vid] : prev.filter((x) => x !== vid)))
+              }
               onSelectVuln={setDetailVulnId}
               projectKindById={new Map([[project.id, project.target_kind]])}
             />

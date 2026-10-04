@@ -1,4 +1,3 @@
-import { useTranslation } from 'react-i18next'
 import { SlidersHorizontal } from 'lucide-react'
 import { MaxTokenUsageField } from './MaxTokenUsageField'
 import { ProjectModelSelect } from './ProjectModelSelect'
@@ -14,22 +13,26 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import i18n from '../i18n'
+import { useI18n } from '@/i18n'
+import { t } from '@/i18n/t'
 
-type OptionState = {
+export function advancedOptionLabels({
+  llmModel,
+  maxTokenUsage,
+  workerHint,
+  reconHint,
+}: {
   llmModel: string
   maxTokenUsage: string
   workerHint: string
   reconHint: string
-}
-
-export function advancedOptionKeys({ llmModel, maxTokenUsage, workerHint, reconHint }: OptionState): string[] {
-  const keys: string[] = []
-  if (llmModel.trim()) keys.push('model')
-  if (maxTokenUsage.trim() && maxTokenUsage.trim() !== '0') keys.push('tokenCap')
-  if (reconHint.trim()) keys.push('reconHint')
-  if (workerHint.trim()) keys.push('workerHint')
-  return keys
+}): string[] {
+  const items: string[] = []
+  if (llmModel.trim()) items.push(t('comp.adv.item.model'))
+  if (maxTokenUsage.trim() && maxTokenUsage.trim() !== '0') items.push(t('comp.adv.item.token'))
+  if (reconHint.trim()) items.push(t('comp.adv.item.recon'))
+  if (workerHint.trim()) items.push(t('comp.adv.item.worker'))
+  return items
 }
 
 export function AdvancedProjectOptions({
@@ -57,7 +60,7 @@ export function AdvancedProjectOptions({
   onReconHintChange: (value: string) => void
   disabled?: boolean
 }) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -66,8 +69,8 @@ export function AdvancedProjectOptions({
         showCloseButton={!disabled}
       >
         <DialogHeader>
-          <DialogTitle>{t('advancedOptions.title')}</DialogTitle>
-          <DialogDescription>{t('advancedOptions.description')}</DialogDescription>
+          <DialogTitle>{t('comp.adv.title')}</DialogTitle>
+          <DialogDescription>{t('comp.adv.body')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <ProjectModelSelect value={llmModel} onValueChange={onLlmModelChange} />
@@ -98,10 +101,9 @@ export function AdvancedProjectOptionsButton({
   reconHint: string
   disabled?: boolean
 }) {
-  const { t } = useTranslation()
-  const configuredKeys = advancedOptionKeys({ llmModel, maxTokenUsage, workerHint, reconHint })
-  const configuredLabels = configuredKeys.map((k) => t(`advancedOptions.fields.${k}`))
-  const listSep = i18n.language.startsWith('zh') ? '、' : ', '
+  const { t, locale } = useI18n()
+  const configured = advancedOptionLabels({ llmModel, maxTokenUsage, workerHint, reconHint })
+  const listJoin = locale === 'zh' ? '、' : ', '
 
   return (
     <div className="space-y-2">
@@ -113,18 +115,16 @@ export function AdvancedProjectOptionsButton({
         onClick={onClick}
       >
         <SlidersHorizontal />
-        {t('advancedOptions.title')}
-        {configuredKeys.length ? (
+        {t('comp.adv.title')}
+        {configured.length ? (
           <span className="ml-auto text-xs font-normal text-muted-foreground">
-            {t('advancedOptions.setCount', { count: configuredKeys.length })}
+            {t('comp.adv.configured', { n: configured.length })}
           </span>
         ) : null}
       </Button>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        {t('advancedOptions.summary')}
-        {configuredLabels.length
-          ? ` ${t('advancedOptions.setList', { list: configuredLabels.join(listSep) })}`
-          : ''}
+        {t('comp.adv.summary')}
+        {configured.length ? t('comp.adv.setList', { items: configured.join(listJoin) }) : ''}
       </p>
     </div>
   )

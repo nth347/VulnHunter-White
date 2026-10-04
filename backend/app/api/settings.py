@@ -17,8 +17,12 @@ from ..schemas import (
     GithubTestOut,
     CodegraphProbeIn,
     CodegraphTestOut,
+    JarAnalyzerProbeIn,
+    JarAnalyzerTestOut,
     JadxProbeIn,
     JadxTestOut,
+    AppUpdateApplyOut,
+    AppUpdateStatusOut,
     LiveLogPurgeIn,
     LiveLogPurgeOut,
     LlmEndpointUsageOut,
@@ -34,6 +38,7 @@ from ..services.fofa import test_connectivity as test_fofa_connectivity
 from ..services.github_probe import test_connectivity as test_github_connectivity
 from ..services.llm_probe import list_models, test_connectivity
 from ..services.access_token import update_access_token_hash
+from ..services.llm_gate import clamp_min_request_interval
 from ..services.llm_settings import (
     apply_endpoints_to_settings_row,
     assert_safe_llm_base_url,
@@ -109,6 +114,10 @@ def update_settings(body: SettingsUpdate) -> SettingsOut:
             limit = max(1, int(body.llm_thread_limit))
             row.llm_thread_limit = limit
             scale_single_endpoint_inflight(row, limit)
+        if body.llm_min_request_interval_sec is not None:
+            row.llm_min_request_interval_sec = clamp_min_request_interval(
+                body.llm_min_request_interval_sec, default=2.0
+            )
         if body.github_pat is not None:
             row.github_pat = body.github_pat
         if body.fofa_key is not None:
@@ -136,6 +145,8 @@ def update_settings(body: SettingsUpdate) -> SettingsOut:
             row.jadx_path = (body.jadx_path or "").strip() or None
         if body.codegraph_path is not None:
             row.codegraph_path = (body.codegraph_path or "").strip() or None
+        if body.jar_analyzer_path is not None:
+            row.jar_analyzer_path = (body.jar_analyzer_path or "").strip() or None
         db.commit()
         db.refresh(row)
         out = settings_out_from_row(row)
@@ -272,9 +283,39 @@ def probe_codegraph_test(body: CodegraphProbeIn) -> CodegraphTestOut:
     return CodegraphTestOut(**result)
 
 
+@router.post("/jar-analyzer/test", response_model=JarAnalyzerTestOut)
+def probe_jar_analyzer_test(body: JarAnalyzerProbeIn) -> JarAnalyzerTestOut:
+    from ..code_intelligence.jar_cli import probe_jar_analyzer
+
+    result = probe_jar_analyzer(body.jar_analyzer_path)
+    return JarAnalyzerTestOut(**result)
+
+
 @router.post("/logs/purge", response_model=LiveLogPurgeOut)
 def purge_live_logs(body: LiveLogPurgeIn) -> LiveLogPurgeOut:
     from ..services.live_log import live_log
 
     stats = live_log.purge_older_than(body.older_than_days)
     return LiveLogPurgeOut(ok=True, **stats)
+
+
+@router.get("/app-update", response_model=AppUpdateStatusOut)
+def get_app_update(refresh: bool = False) -> AppUpdateStatusOut:
+    from ..services.app_update import check_for_update, current_status, status_to_out
+
+    status = check_for_update() if refresh else current_status()
+    return AppUpdateStatusOut(**status_to_out(status))
+
+
+@router.post("/app-update/check", response_model=AppUpdateStatusOut)
+def check_app_update() -> AppUpdateStatusOut:
+    from ..services.app_update import check_for_update, status_to_out
+
+    return AppUpdateStatusOut(**status_to_out(check_for_update()))
+
+
+@router.post("/app-update/apply", response_model=AppUpdateApplyOut)
+def apply_app_update() -> AppUpdateApplyOut:
+    from ..services.app_update import apply_update
+
+    return AppUpdateApplyOut(**apply_update())

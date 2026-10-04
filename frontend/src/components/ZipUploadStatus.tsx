@@ -1,10 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import { useEffect, useState } from 'react'
 import { Loader2Icon, UploadIcon } from 'lucide-react'
+import { useI18n } from '@/i18n'
+import { t } from '@/i18n/t'
 import { cn, formatBytes } from '@/lib/utils'
 
-const MESSAGE_COUNT = 10
+function uploadStatusMessages(): string[] {
+  return Array.from({ length: 10 }, (_, i) => t(`comp.zip.msg${i}`))
+}
+
 const MESSAGE_ROTATE_MS = 3_500
+
+function pickUploadMessage(exclude?: string): string {
+  const messages = uploadStatusMessages()
+  const pool = exclude && messages.length > 1 ? messages.filter((m) => m !== exclude) : messages
+  return pool[Math.floor(Math.random() * pool.length)] ?? messages[0]
+}
 
 function formatElapsed(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -18,13 +28,13 @@ type Props = {
 }
 
 export function ZipUploadStatus({ file, className }: Props) {
-  const { t } = useTranslation()
-  const messages = useMemo(
-    () => Array.from({ length: MESSAGE_COUNT }, (_, i) => t(`zipUpload.messages.${i}`)),
-    [t],
-  )
+  const { t, locale } = useI18n()
   const [elapsedSec, setElapsedSec] = useState(0)
-  const [messageIndex, setMessageIndex] = useState(() => Math.floor(Math.random() * MESSAGE_COUNT))
+  const [message, setMessage] = useState(() => pickUploadMessage())
+
+  useEffect(() => {
+    setMessage(pickUploadMessage())
+  }, [locale])
 
   useEffect(() => {
     const started = Date.now()
@@ -36,17 +46,10 @@ export function ZipUploadStatus({ file, className }: Props) {
 
   useEffect(() => {
     const rotate = window.setInterval(() => {
-      setMessageIndex((prev) => {
-        if (MESSAGE_COUNT <= 1) return prev
-        let next = prev
-        while (next === prev) next = Math.floor(Math.random() * MESSAGE_COUNT)
-        return next
-      })
+      setMessage((prev) => pickUploadMessage(prev))
     }, MESSAGE_ROTATE_MS)
     return () => window.clearInterval(rotate)
-  }, [file.name, file.size, file.lastModified])
-
-  const message = messages[messageIndex] ?? messages[0]
+  }, [file.name, file.size, file.lastModified, locale])
 
   return (
     <div
@@ -69,7 +72,7 @@ export function ZipUploadStatus({ file, className }: Props) {
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
             <p className="truncate text-sm font-medium text-foreground">
-              {t('zipUpload.uploading', { name: file.name })}
+              {t('comp.zip.uploading', { name: file.name })}
             </p>
             <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
               {formatElapsed(elapsedSec)}

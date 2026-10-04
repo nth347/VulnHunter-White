@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import { api, type Vuln, type VulnCalendarDay } from '../api'
 import { Button } from '@/components/ui/button'
@@ -13,9 +12,9 @@ import {
 } from '@/components/ui/dialog'
 import VulnGroupList from './VulnGroupList'
 import { cn } from '../lib/utils'
+import { useI18n } from '@/i18n'
 import { startVisibilityPoll } from '../lib/visibilityPoll'
 
-const WEEKDAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const
 
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : String(n)
@@ -64,7 +63,8 @@ export default function VulnCalendar({
   projectKindById?: Map<number, string>
   onOpenVuln?: (id: number) => void
 }) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
+  const WEEKDAYS = [t('comp.cal.wd0'), t('comp.cal.wd1'), t('comp.cal.wd2'), t('comp.cal.wd3'), t('comp.cal.wd4'), t('comp.cal.wd5'), t('comp.cal.wd6')]
   const today = useMemo(() => shanghaiYmd(), [])
   const [year, setYear] = useState(today.year)
   const [month, setMonth] = useState(today.month)
@@ -135,11 +135,7 @@ export default function VulnCalendar({
 
   const selectedCounts = selectedDate ? byDate.get(selectedDate) : undefined
   const selectedLabel = selectedDate
-    ? t('vulnCalendar.selectedLabel', {
-        date: selectedDate,
-        confirmed: selectedCounts?.confirmed ?? 0,
-        falsePositive: selectedCounts?.false_positive ?? 0,
-      })
+    ? t('comp.cal.selected', { date: selectedDate, confirmed: selectedCounts?.confirmed ?? 0, fp: selectedCounts?.false_positive ?? 0 })
     : ''
 
   function goMonth(delta: number) {
@@ -153,23 +149,20 @@ export default function VulnCalendar({
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
-            <CardTitle>{t('vulnCalendar.title')}</CardTitle>
+            <CardTitle>{t('comp.cal.title')}</CardTitle>
             <CardDescription>
-              {t('vulnCalendar.description', {
-                confirmed: monthTotal.confirmed,
-                falsePositive: monthTotal.falsePositive,
-              })}
-              {projectId != null ? t('vulnCalendar.projectFiltered') : ''}
+              {t('comp.cal.desc', { confirmed: monthTotal.confirmed, fp: monthTotal.falsePositive })}
+              {projectId != null ? t('comp.cal.filtered') : ''}
             </CardDescription>
           </div>
           <div className="flex items-center gap-1">
-            <Button type="button" variant="outline" size="icon-sm" aria-label={t('vulnCalendar.prevMonth')} onClick={() => goMonth(-1)}>
+            <Button type="button" variant="outline" size="icon-sm" aria-label={t('comp.cal.prev')} onClick={() => goMonth(-1)}>
               <ChevronLeftIcon className="size-4" />
             </Button>
             <div className="min-w-28 text-center text-sm font-medium tabular-nums">
-              {t('vulnCalendar.yearMonth', { year, month })}
+              {t('comp.cal.month', { year, month })}
             </div>
-            <Button type="button" variant="outline" size="icon-sm" aria-label={t('vulnCalendar.nextMonth')} onClick={() => goMonth(1)}>
+            <Button type="button" variant="outline" size="icon-sm" aria-label={t('comp.cal.next')} onClick={() => goMonth(1)}>
               <ChevronRightIcon className="size-4" />
             </Button>
             <Button
@@ -182,15 +175,15 @@ export default function VulnCalendar({
                 setMonth(today.month)
               }}
             >
-              {t('vulnCalendar.thisMonth')}
+              {t('comp.cal.thisMonth')}
             </Button>
           </div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-7 gap-1 text-center text-xs text-muted-foreground">
-            {WEEKDAY_KEYS.map((key) => (
-              <div key={key} className="py-1 font-medium">
-                {t(`vulnCalendar.weekday.${key}`)}
+            {WEEKDAYS.map((label) => (
+              <div key={label} className="py-1 font-medium">
+                {label}
               </div>
             ))}
           </div>
@@ -222,10 +215,10 @@ export default function VulnCalendar({
                   {hasData ? (
                     <div className="mt-auto space-y-0.5 pt-1 text-[10px] leading-tight">
                       {confirmed > 0 ? (
-                        <div className="text-emerald-400/90">{t('vulnCalendar.confirmed', { n: confirmed })}</div>
+                        <div className="text-emerald-400/90">{t('comp.cal.confirmed', { n: confirmed })}</div>
                       ) : null}
                       {falsePositive > 0 ? (
-                        <div className="text-red-300/90">{t('vulnCalendar.falsePositive', { n: falsePositive })}</div>
+                        <div className="text-red-300/90">{t('comp.cal.fp', { n: falsePositive })}</div>
                       ) : null}
                     </div>
                   ) : (
@@ -241,17 +234,17 @@ export default function VulnCalendar({
       <Dialog open={selectedDate != null} onOpenChange={(open) => !open && setSelectedDate(null)}>
         <DialogContent className="flex max-h-[min(90vh,40rem)] w-full flex-col gap-3 sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{t('vulnCalendar.dayTitle')}</DialogTitle>
+            <DialogTitle>{t('comp.cal.dialogTitle')}</DialogTitle>
             <DialogDescription>{selectedLabel}</DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-auto rounded-lg ring-1 ring-foreground/10">
             {dayLoading ? (
-              <div className="px-3 py-6 text-sm text-muted-foreground">{t('common.loading')}</div>
+              <div className="px-3 py-6 text-sm text-muted-foreground">{t('comp.cal.loading')}</div>
             ) : (
               <VulnGroupList
                 vulns={dayVulns}
                 tierFilter="all"
-                emptyText={t('vulnCalendar.dayEmpty')}
+                emptyText={t('comp.cal.empty')}
                 projectNameById={projectNameById}
                 projectKindById={projectKindById}
                 onSelectVuln={(id) => {

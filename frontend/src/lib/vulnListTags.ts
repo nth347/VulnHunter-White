@@ -1,5 +1,5 @@
 import type { Vuln } from '../api'
-import i18n from '../i18n'
+import { t } from '@/i18n/t'
 import {
   formatAttackSurface,
   formatConfigPremise,
@@ -14,8 +14,6 @@ import {
   formatVulnStatus,
 } from './utils'
 
-const t = (key: string, options?: Record<string, unknown>) => i18n.t(key, options ?? {})
-
 export type VulnListTag = {
   label: string
   tooltip?: string | null
@@ -26,29 +24,47 @@ export type VulnListAttributeLine = {
   value: string
 }
 
-function miningTooltip(key: string): string | null {
-  if (['heuristic', 'fast', 'bypass', 'unconstrained'].includes(key)) {
-    return t(`vulnTags.miningTooltip.${key}`)
+function miningTooltip(path: string): string {
+  switch (path) {
+    case 'heuristic':
+      return t('mining.tip.heuristic')
+    case 'fast':
+      return t('mining.tip.fast')
+    case 'bypass':
+      return t('mining.tip.bypass')
+    case 'unconstrained':
+      return t('mining.tip.unconstrained')
+    default:
+      return formatMiningPath(path) || ''
   }
-  return null
+}
+
+function miningListLabel(path: string | null | undefined): string {
+  switch ((path || '').trim().toLowerCase()) {
+    case 'heuristic':
+      return t('mining.heuristicShort')
+    case 'fast':
+      return t('mining.fast')
+    case 'bypass':
+      return t('mining.bypass')
+    case 'unconstrained':
+      return t('mining.unconstrained')
+    default:
+      return formatMiningPath(path) || ''
+  }
 }
 
 function formatSubmissionTierShort(value: string | null | undefined): string {
   switch (value) {
     case 'cve_candidate':
-      return t('vulnTags.tierShort.cveCandidate')
+      return t('tier.cve')
     case 'low_impact':
-      return t('vulnTags.tierShort.lowImpact')
+      return t('tier.lowShort')
     case 'duplicate_grouped':
-      return t('vulnTags.tierShort.duplicate')
+      return t('tier.dupShort')
     default:
       return formatSubmissionTier(value)
   }
-}
-
-function miningPathTagLabel(key: string): string {
-  const full = formatMiningPath(key) || ''
-  return key === 'heuristic' ? t('enum.miningPath.heuristicShort') : full
 }
 
 /** Secondary inline tags - muted text, each with optional tooltip. */
@@ -56,45 +72,40 @@ export function vulnListSecondaryTags(v: Vuln, nested?: boolean): VulnListTag[] 
   const tags: VulnListTag[] = []
 
   if (nested) {
-    tags.push({ label: t('vulnTags.subItem'), tooltip: t('vulnTags.subItemTip') })
+    tags.push({ label: t('tier.child'), tooltip: t('tier.childTip') })
   }
 
   const tierLabel = formatSubmissionTierShort(v.submission_tier)
   if (tierLabel && v.submission_tier) {
     tags.push({
       label: tierLabel,
-      tooltip:
-        v.submission_reason?.trim() ||
-        t('vulnTags.tierTip', { tier: formatSubmissionTier(v.submission_tier) }),
+      tooltip: v.submission_reason?.trim() || t('tier.reasonFallback', { label: formatSubmissionTier(v.submission_tier) }),
     })
   }
 
-  const mining = formatMiningPath(v.mining_path)
+  const mining = miningListLabel(v.mining_path)
   if (mining) {
     const key = (v.mining_path || '').trim().toLowerCase()
-    tags.push({ label: miningPathTagLabel(key), tooltip: miningTooltip(key) || mining })
+    tags.push({ label: mining, tooltip: miningTooltip(key) || mining })
   }
 
   if (v.config_premise === 'specific') {
     const premise = formatConfigPremise(v.config_premise)
     if (premise) {
-      tags.push({ label: premise, tooltip: t('vulnTags.configTip.specific') })
+      tags.push({ label: premise, tooltip: t('config.tip.specific') })
     }
   }
 
   if (v.tracking_status === 'submitted' || v.tracking_status === 'ignored') {
     tags.push({
       label: formatTrackingStatus(v.tracking_status),
-      tooltip:
-        v.tracking_status === 'submitted'
-          ? t('vulnTags.trackingTip.submitted')
-          : t('vulnTags.trackingTip.ignored'),
+      tooltip: v.tracking_status === 'submitted' ? t('track.tip.submitted') : t('track.tip.ignored'),
     })
   }
 
   const verifier = formatVerifierStatus(v.verifier_status)
   if (verifier) {
-    tags.push({ label: verifier, tooltip: t('vulnTags.verifierTip') })
+    tags.push({ label: verifier, tooltip: t('verifier.tip') })
   }
 
   return tags
@@ -103,45 +114,48 @@ export function vulnListSecondaryTags(v: Vuln, nested?: boolean): VulnListTag[] 
 /** Full attribute list for the ··· hover panel - nothing omitted from list view. */
 export function vulnListAttributeLines(v: Vuln, projectName?: string): VulnListAttributeLine[] {
   const lines: VulnListAttributeLine[] = [
-    { label: t('vulnTags.attr.status'), value: formatVulnStatus(v.status, v.evidence_level, v.fp_kind, v.harness_depth) },
+    { label: t('attr.status'), value: formatVulnStatus(v.status, v.evidence_level, v.fp_kind, v.harness_depth) },
     {
-      label: t('vulnTags.attr.severity'),
-      value: formatSeverityScore(v.severity_score, v.severity, v.cvss_vector) || formatSeverity(v.severity) || '-',
+      label: t('attr.severity'),
+      value: formatSeverityScore(v.severity_score, v.severity, v.cvss_vector) || formatSeverity(v.severity) || t('common.dash'),
     },
-    { label: t('vulnTags.attr.tier'), value: formatSubmissionTier(v.submission_tier) },
-    { label: t('vulnTags.attr.project'), value: projectName ? `#${v.project_id} ${projectName}` : `#${v.project_id}` },
-    { label: t('vulnTags.attr.type'), value: v.vuln_type || '-' },
+    { label: t('attr.tier'), value: formatSubmissionTier(v.submission_tier) },
+    {
+      label: t('attr.project'),
+      value: projectName ? t('project.refNamed', { id: v.project_id, name: projectName }) : t('project.ref', { id: v.project_id }),
+    },
+    { label: t('attr.type'), value: v.vuln_type || t('common.dash') },
   ]
 
   const surface = formatAttackSurface(v.attack_surface, v.required_account)
-  if (surface) lines.push({ label: t('vulnTags.attr.access'), value: surface })
+  if (surface) lines.push({ label: t('attr.priv'), value: surface })
 
   const exposure = formatExposureMode(v.exposure_mode)
   if (exposure) {
     lines.push({
-      label: t('vulnTags.attr.exposure'),
-      value: exposure + (v.upstream_chain_proven ? t('vulnTags.upstreamProvenSuffix') : ''),
+      label: t('attr.exposure'),
+      value: exposure + (v.upstream_chain_proven ? t('exposure.chainProven') : ''),
     })
   }
 
   const mining = formatMiningPath(v.mining_path)
-  if (mining) lines.push({ label: t('vulnTags.attr.miningPath'), value: mining })
+  if (mining) lines.push({ label: t('attr.mining'), value: mining })
 
   const premise = formatConfigPremise(v.config_premise)
-  if (premise) lines.push({ label: t('vulnTags.attr.configPremise'), value: premise })
+  if (premise) lines.push({ label: t('attr.premise'), value: premise })
 
   const evidence = formatEvidenceLevel(v.evidence_level, v.harness_depth)
-  if (evidence) lines.push({ label: t('vulnTags.attr.evidence'), value: evidence })
+  if (evidence) lines.push({ label: t('attr.evidence'), value: evidence })
 
-  lines.push({ label: t('vulnTags.attr.tracking'), value: formatTrackingStatus(v.tracking_status) })
+  lines.push({ label: t('attr.tracking'), value: formatTrackingStatus(v.tracking_status) })
 
   const verifier = formatVerifierStatus(v.verifier_status)
-  if (verifier) lines.push({ label: t('vulnTags.attr.verifier'), value: verifier })
+  if (verifier) lines.push({ label: t('attr.verifier'), value: verifier })
 
   if (v.cvss_vector) lines.push({ label: 'CVSS', value: v.cvss_vector })
 
   if (v.submission_reason?.trim()) {
-    lines.push({ label: t('vulnTags.attr.tierReason'), value: v.submission_reason.trim() })
+    lines.push({ label: t('attr.reason'), value: v.submission_reason.trim() })
   }
 
   return lines

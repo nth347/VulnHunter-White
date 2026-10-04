@@ -4,33 +4,185 @@
 
 版本号形如 `V主.次.补`：初始为 **V1.0.0**；小改动 `+0.0.1`；新功能或架构调整 `+0.1`。同一批改动只升一次，取最高档。
 
-## V1.3.0 - 2026-10-04
+## V1.4.0 - 2026-10-05
+
+### Added
+
+- End-to-end English support on top of the upstream feature set. The backend now emits English for an English project: prompts, user messages, vulnerability reports, and error messages all follow the project `language` (default `en`).
+- Every prompt under `backend/app/prompts/` (system prompts, `initial/` user messages, modes, verify, target_kinds, and the new `discover-*` / `vuln_dedup` prompts) has an English `.en.md` sibling, kept in sync with the latest Chinese content (CVSS 4.0, output dedup vs public CVEs, FOFA IP-dedup, admin-registered attacker-source scoring, object-key gate, MarkCodeIntel, C-harness, split-privilege lab accounts). `load_prompt(name, language=)` selects the sibling; `pipeline` loads by project language.
+- `backend/app/prompts/language/{en,zh}.md` output-language contract is appended to every system prompt and injects the canonical report outline from `report_sections.py`.
+- `backend/app/report_sections.py` bilingual report-heading registry; the report parsers in `report.py` / `exposure_mode.py` / `compression.py` / `api/vulns.py` match headings in either language so an English report passes the Confirm gates.
+- `backend/app/i18n.py` backend message catalog with a localized `HTTPException` handler (translates by request `Accept-Language`).
+- Frontend defaults to English (`frontend/src/i18n/locale.ts`), with a one-time migration that clears a stale cached locale.
+
+### Changed
+
+- Title-language and `submission_reason` gates follow the project language instead of requiring Chinese.
+- Em dashes replaced with hyphens across the app.
+
+
 
 ### 新增
 
-- 后端产出语言随项目 `language` 切换，实现端到端英文支持。英文项目的 LLM 系统提示词、用户消息、报告与错误信息全部为英文；中文项目不变。
-- 提示词全量双语化：`backend/app/prompts/` 下系统提示词层（worker / reviewer / fast / bypass / unconstrained / sink_triage / recon 系列 / verifier / attack_chain / reviewer-lab / cvss / poc / report-formats / modes / verify / target_kinds）与 `initial/` 用户消息文档各新增 `.en.md` 英文版，键与占位符对齐。`load_prompt(name, language=)` 修正英文兄弟文件查找（原 `worker.md` 误找 `worker.md.en.md`），并由 `pipeline` 按项目语言加载。
-- 新增 `backend/app/prompts/language/{en,zh}.md` **输出语言契约**：拼到每个系统提示词末尾，规定产出语言，并注入由 `report_sections.py` 生成的规范报告大纲，使未单独翻译的提示词也产出正确语言与可解析的标题。
-- 新增 `backend/app/report_sections.py`：报告章节标题的双语规范表。`report.py` / `exposure_mode.py` / `compression.py` / `api/vulns.py` 的报告解析器改为语言无关匹配（原先只认中文标题，英文报告会漏判 PoC / 漏洞代码 / 资产证明等章节导致确认闸门失败）。
-- 新增 `backend/app/i18n.py` 后端消息目录（93 条键，中英对照）与 `translate_source()` 兜底；`main.py` 增加本地化 `HTTPException` 处理器，按请求 `Accept-Language` 翻译报错。前端 `api.ts` 随请求发送语言头。
-- 新增 `backend/tests/test_i18n_english.py` 覆盖英文路径（加载器、解析器、闸门、消息目录）。原用例按中文路径固定语言。
+- 代码库可同时用 **CodeGraph**（`src/` 源码图）和 **Jar Analyzer**（点名业务 jar 的字节码调用图）。开启后不立刻建图：地图 Agent 须 `MarkCodeIntel` 至少选一个后端；设置页可配置 Jar Analyzer 路径并探测，缺失时自动下载到 `data/tools/jar-analyzer`。查询仍走 `FindSymbol` / `FindCallers` 等，由平台路由，不让 Agent 选库。
+
+### 修改
+
+- Verifier 对 FOFA 目标按 IP 去重：同 IP 不同端口视为同一台机器，须 **3 个不同 IP** 复测成功才算互联网验证通过。
+
+## V1.2.7 - 2026-09-18
+
+### 新增
+
+- 设置页可对照 git 上游检查更新：工作区干净时可快进拉取，依赖有变会补装，然后自动重启前后端。导航栏有新版本提示；Docker 发行版仍需在宿主机更新镜像。
+
+### 修改
+
+- 发现仓库会排除官方演示、示例工程和学习用项目。搜索默认限时 600 秒，超过 5 个时每多 1 个加 60 秒；超时保留已找到的仓库并说明原因。切走页面时搜索继续跑，回来后仍能看到结果。
+- README 成果展示补充社区反馈的 Grav 漏洞条目。
+
+## V1.2.6 - 2026-09-18
+
+### 修改
+
+- 启动后的进程日志按本地日期写入 `data/logs/backend-YYYY-MM-DD.log` 与 `frontend-YYYY-MM-DD.log`，跨天自动切换，不再全部追加进同一文件。
 
 ### 修复
 
-- 标题语言闸门原先**无条件要求中文标题**（`chinese_title_block_reason`），英文项目无法提交任何漏洞；改为按项目语言校验（`title_language_block_reason`）。`submission_reason` 同理不再无条件要求中文。
-- `Project.language` 默认统一为 `en`：修正 `ensure_schema()` 与 Alembic 迁移里仍为 `zh` 的默认值，与 ORM 及创建默认一致。
+- pull 去掉源码基线后的版本时，旧库里残留的 `projects.source_baseline_status`（NOT NULL 且无默认值）不再挡住新建项目；启动时会丢掉这类 ORM 已删除的必填遗留列。
 
-## V1.2.0 - 2026-09-03
+## V1.2.5 - 2026-09-15
 
 ### 新增
 
-- 前端接入 i18next：中文为源语言，新增英文界面，顶栏可切换，选择记在 `localStorage` 并同步 `<html lang>`。切换语言时对路由子树重挂载，使 `lib/utils` 等处的非响应式 `i18n.t()` 也刷新。
-- 全部页面与组件文案改为 `t()` 词条；`frontend/src/i18n/locales/{zh,en}.json` 为词条源（键完全对齐）。`npm run check:i18n` 校验键对齐并拦截新的硬编码中文。
-- 新增 `frontend/src/i18n/backendText.ts`：把后端产出的中文（实时日志系统/错误消息、`HTTPException` 与校验报错、阶段报告固定标题、`project.error`、侦察子阶段名与阶段报告标签）在英文界面下按已知串/正则映射为英文。`zh` 界面与 LLM 生成的正文不受影响。接入点：`api.ts` 错误解析、`LiveLogPanel`、`PhaseReportsPanel`、`PhaseFlow`、`HomePage`/`ProjectDetailPage`。
+- 界面可切换中文 / English，文案走前端词条；仓库增加英文 README。
+- 快速扫描可预先拉取 Semgrep 镜像：`scripts/pull-semgrep.cmd` / `sh scripts/pull-semgrep.sh`。
+- 攻击链串联可在阶段日志输入框下单独暂停或恢复；全部续跑会清掉该暂停后再调度。
 
-### 说明
+### 修改
 
-- 后端仍以中文产出；上面的映射在前端渲染时按已知字符串翻译。未收录的后端串（少见诊断、LLM 生成的漏洞报告正文）在英文界面下仍显示中文。
+- 挖掘与审核的对象键闸门收紧：不可获取且不可预测的 UUID / 文件名 / 附件键等一律丢弃；他人分享链接、邮件通知、业务页预览 URL 里碰巧带有的参数**不算**可获取。硬编码签名密钥若仍只能给这类外链对象键伪造下载 token，也不入库。
+- 接续、新开或恢复某一小阶段时，只拉起该阶段，其它大阶段保持暂停，避免顺带把整条管线重新跑起来。
+
+## V1.2.4 - 2026-09-13
+
+### 修改
+
+- 产出去重待查过多时按组（约 5 条）判断，一组分析完立刻 `RecordVulnDedup`，不再攒到全部查完再标记。连续 50 轮未标记会提醒先记下已分析完的结论。
+- Docker 靶场在产品有普通用户与管理员（或可水平越权的两个主体）时，会创建或记录低权/高权两套账号并写入 `env.json` 的 `credentials.low` / `credentials.high`，供后续越权验证与 PoC 默认登录。
+
+### 修复
+
+- 阶段日志不再把「开始去重 / 拉起线程 / 启动爬虫」等开场系统消息单独占一轮：会并进随后的 Agent 对话页。各小阶段（产出去重、历史漏洞、盖章、快速扫描、审核、Verifier、攻击链等）同一套规则。
+
+## V1.2.3 - 2026-09-13
+
+### 修改
+
+- 展示案例 MemoBoard（vulnhunter-python-lab）的漏洞报告、PoC、harness 与列表徽章对齐最新标准：中文报告按现行模板收口，审核标注补 CVSS 4.0，脚本支持 `--zh` 与 HTTPS 处理；已导入的案例在启动时会刷新这四条的徽章字段。
+
+## V1.2.2 - 2026-09-12
+
+### 修改
+
+- 产出漏洞去重除对照历史公开洞外，还会核对当前 `src/` 是否还在：已公开标「误报-已公开」，最新代码已修标「误报-已修复」。GitHub 项目在暂停或完成时先同步上游；没有历史漏洞文档时仍跑源码核对。
+- 历史漏洞爬虫落盘与 WebSearch 补漏共用「历史漏洞」日志轮次；最新一轮仅在该小阶段仍有 Agent 在跑时显示「运行中」。
+
+## V1.2.1 - 2026-09-11
+
+### 新增
+
+- 设置页模型协议增加 **OpenAI Responses**（`POST /v1/responses`）：Agent、连通测试、漏洞追问与 GitHub 分类共用该协议；检查点仍按 Chat Completions 形状保存。
+- Docker 发行版支持 **Linux Engine**：`docker/desktop/start.sh` 一键起容器；按宿主 uid 运行以免 `data/` 变成 root 所有，SELinux 下自动加挂载标签，镜像内 Docker CLI 按 amd64/arm64 拉取。
+
+### 修改
+
+- 管线注入的模型配置仍跟设置页模型商池：禁用端点或遇 429 / 额度用尽会换路，不再钉死创建时的 URL。
+- 盖章批次若还有未盖章的索引文件，会把剩余路径塞回 Agent；索引里不存在的路径不再卡住本批。
+- 同一轮 Agent 对话分配 LLM 线程时优先沿用相同模型（暂停续跑、换路、检查点恢复都生效），同模型端点之间仍按负载均摊，以提高前缀缓存命中率。
+- 中文漏洞报告的「漏洞描述」改为产品一句话加一两句成因概要，不要在该节展开原理。
+
+## V1.2.0 - 2026-09-10
+
+### 新增
+
+- **Windows Docker Desktop 发行版**（`docker/desktop/start.cmd`）：一键起容器，默认端口 **16788** 同端口托管 UI 与 API；挂载宿主 `docker.sock`，启动时自动构建缺失的局部验证 / 集成验证沙箱镜像。
+- Docker 版验证方式为关闭 / 局部验证 / **人工靶场**（不自动搭建被测应用镜像）；本机 `127.0.0.1` 靶场地址会改写为 `host.docker.internal`。本机根目录 `start.cmd` 仍支持完整靶场动态。
+- 设置页模型端点可勾选**禁用**：配置保留，但不参与分配；合计线程上限只计未禁用端点。
+
+### 修改
+
+- `/api/health` 返回运行时信息（`runtime`、`docker_lab_build_enabled`），前端按发行版隐藏「靶场动态」。
+- 须管理员先把攻击者控制的设备 / 邮箱 / Webhook / SNMP / unix-agent 源加进系统再注入的，仍按漏洞保留，但必须标后台管理员；不要因「设备侧不用登录」或「普通用户打开页面中招」写成前台或普通权限。
+- 项目暂停后释放 LLM 线程名额，续跑时再排队申请（尽量粘滞原端点）；不再在暂停等待期间占着并发。
+
+### 修复
+
+- Docker 版局部验证沙箱：临时目录默认 `0700` 导致 `user=1000` 无法读挂载脚本（Permission denied）；写入后放宽为可遍历再启动 sibling 容器。
+
+## V1.1.6 - 2026-09-10
+
+### 新增
+
+- 项目详情可将勾选的产出漏洞对照侦察历史漏洞做**产出去重**：逐条判断是否已经公开；同一入口/sink 默认标「误报-已公开」。日志在阶段日志「产出去重」，不阻塞挖掘/审核。
+
+### 修复
+
+- 额度用尽的模型端点冷却期间显示剩余时间，结束后重新参与分配；不再在冷却结束后永久跳过，以免界面只剩「不参与分配」且一直等不回来。
+- 局部验证沙箱：写入脚本时去掉 Windows CRLF；Java 按 `public class` 命名源文件并 `javac -encoding UTF-8`；Bash 探测脚本不再被当成写死 SUCCESS；沙箱没有的语言（Rust/C++）标 `unsupported_language` 并提示仅静态确认，不再因此挂起「验证确认」。
+- Advisory 的 CVSS 3.1 / 4.0 盖章能识别更多 Agent 草稿写法，并去掉重复分数行。
+
+### 修改
+
+- 局部验证沙箱加入 **gcc**（C harness，`language=c`）；没有 OpenSSL 等第三方库时抽出函数 mock 或仅静态。Rust / C++ 仍不装编译器。已构建过旧镜像的需重新执行 `scripts\build-sandbox.cmd` / `sh scripts/build-sandbox.sh`。
+- 去掉 Recon 后的源码基线检查（不再因版本滞后阻塞挖掘）。GitHub 项目续跑仍同步上游：成功会在列表卡片与详情提示已拉取的提交，失败则黄感叹号并展示原因，不阻塞审计。
+- 成果展示增加 getgrav/grav 沙箱逃逸与 netty HTTP 路由绕过。
+
+## V1.1.5 - 2026-09-06
+
+### 修改
+
+- 同一模型商端点两次发请求默认至少间隔 2 秒（设置页可改，0 关闭）：后来的请求按到达顺序排队，排队时间不计入阶段超时和 HTTP 读超时，减轻 TPS/RPM 突发限流。
+- 首页项目卡片点击任意空白处即可进入详情，不必再点标题；暂停、删除、GitHub 等按钮仍单独生效。
+- 须管理员先把攻击者控制的设备 / 邮箱 / Webhook / SNMP 源加进系统再注入的，挖掘与审核按后台管理员处理（PR:H），不要标成未认证前台。
+- 成果展示表格为 plate 的 GHSA 补了公开 Advisory 链接，并增加两条已公开 XSS。
+
+## V1.1.4 - 2026-09-04
+
+### 新增
+
+- 已确认的前台漏洞详情可手动发起互联网验证：项目未开启 Verifier、或此前跳过/失败后，都可以再排队用 FOFA 搜同款目标复测；未开启时会打开本项目 Verifier，只排队这一条。
+
+### 修改
+
+- 中文漏洞报告去掉「摘要」章节，只保留「漏洞描述」：一句话写清产品功能定位，再写成因概要；利用方式与后果放到危害与技术细节。
+- 审核与提交会对照侦察阶段历史漏洞：同一 HTTP/API 入口或 sink 的已公开洞（含标注 patched 的 CVE）不再当成新 CVE，Reviewer 应误报；`SearchOldVuln` 改为关键词分词召回，避免整句搜不中。
+- GitHub 项目从暂停续跑时先检查上游仓库是否有新提交：有则同步最新源码并刷新文件索引后再继续审计；检查失败不阻塞续跑。zip 项目不受影响。
+
+## V1.1.3 - 2026-09-03
+
+### 新增
+
+- 漏洞确认与 CVE 5.2 记录支持 **CVSS 4.0**：`ConfirmVuln` 须填 `cvss4_vector`，`SetCveRecordField` 可写 `cvssV4_0.vectorString`；系统按 FIRST 规范计分并写入 advisory / cve.json；间接消费型有 4.0 专用闸门。
+- **源码基线检查**：Recon 后比对当前源码版本与历史漏洞里已修复 CVE 的修复版本；滞后则阻塞挖掘直至用户确认继续；对已确认继续的滞后快照，`SubmitVuln` / `ConfirmVuln` 命中已知已修 CVE 判误报。
+
+### 修改
+
+- 无约束扫描 `FinishRound` 仅在上下文压缩满 2 次后注入工具列表；看门狗对该路径去掉 FinishFile/FinishRound 催促，改为无工具轮次提醒。
+- 项目曾提前标为完成但仍有待审漏洞或无约束尾轮时，打开详情会自动改回运行。
+- 展示案例漏洞 advisory / cve.json 同步 CVSS 4.0 字段。
+
+## V1.1.2 - 2026-09-02
+
+### 修复
+
+- 互联网验证墙钟超时后系统直接将该条标为 fail 并写报告，不再对同一条漏洞新开轮。
+
+## V1.1.1 - 2026-09-02
+
+### 修改
+
+- 无约束扫描日志输入框改为单独的 **停止 / 启动**，去掉「新开」。停止会结束当前轮；若其他挖掘与审核均已结束，项目自动标为完成。启动后继续开轮，已因误判或手动停止而完成的项目会改回运行。
 
 ## V1.1.0 - 2026-09-02
 

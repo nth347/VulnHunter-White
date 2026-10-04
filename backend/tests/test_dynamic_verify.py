@@ -20,6 +20,7 @@ from app.tools import ROLE_ACL, registry
 
 SEVERITY_FACTORS = {
     "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
     "submission_tier": "cve_candidate",
     "submission_reason": "未认证可达且可造成敏感数据/权限影响，有 CVE 价值",
 }
@@ -518,6 +519,25 @@ def test_run_code_rejects_canned_harness_output(tmp_env, project):
     assert out["error"] == HARNESS_OUTPUT_ERROR
 
 
+def test_run_code_rejects_js_python_tuple_msgs(tmp_env, project):
+    from app.services.harness_output import HARNESS_JS_MSGS_ERROR
+
+    _set_verify_mode(project, VERIFY_MODE_HARNESS)
+    code = """
+const MSGS = { step: ("Step:", "步骤:") };
+function sink(input) { return input; }
+const output = sink("payload");
+console.log(output);
+"""
+    out = registry.dispatch(
+        _ctx(project, "reviewer", vuln_id=1),
+        "RunCode",
+        {"code": code, "language": "javascript"},
+    )
+    assert out["ok"] is False
+    assert out["error"] == HARNESS_JS_MSGS_ERROR
+
+
 def test_confirm_coerces_dynamic_in_harness_mode(tmp_env, project):
     _set_verify_mode(project, VERIFY_MODE_HARNESS)
     out = registry.dispatch(
@@ -590,17 +610,17 @@ def test_prepare_run_java_release_comment():
         "java",
         "// java-release: 11\npublic class Demo { public static void main(String[] a) {} }",
     )
-    assert "javac --release 11 Demo.java" in j11
+    assert "javac --release 11 -encoding UTF-8 Demo.java" in j11
     _, j17 = prepare_run(
         "java",
         "/* java-release: 17 */\npublic class Demo { public static void main(String[] a) {} }",
     )
-    assert "javac --release 17 Demo.java" in j17
+    assert "javac --release 17 -encoding UTF-8 Demo.java" in j17
     _, invalid = prepare_run(
         "java",
         "// java-release: 21\npublic class Demo { public static void main(String[] a) {} }",
     )
-    assert "javac --release 8 Demo.java" in invalid
+    assert "javac --release 8 -encoding UTF-8 Demo.java" in invalid
 
 
 def test_prepare_run_languages():
@@ -609,11 +629,60 @@ def test_prepare_run_languages():
     assert "python3" in cmd
     jname, jcmd = prepare_run("java", "public class Demo { public static void main(String[] a) {} }")
     assert jname == "Demo.java"
-    assert "javac --release 8 Demo.java" in jcmd
+    assert "javac --release 8 -encoding UTF-8 Demo.java" in jcmd
     gname, gcmd = prepare_run("go", "package main\nfunc main() {}")
     assert gname == "main.go"
     assert "/tmp/harness" in gcmd
     assert "go build" in gcmd
+    cname, ccmd = prepare_run("c", "int main(void) { return 0; }")
+    assert cname == "run.c"
+    assert "gcc" in ccmd
+    assert "/tmp/harness" in ccmd
+
+
+def test_java_class_name_ignores_comment_class_words():
+    from app.services.sandbox_exec import java_class_name, normalize_harness_newlines, prepare_run
+
+    commented = """
+/**
+ * parent class is removed so the snippet compiles.
+ * Sink-level harness for JacksonDeserializer @class handling.
+ */
+public class Harness {
+    static class Inner {}
+}
+"""
+    assert java_class_name(commented) == "Harness"
+    name, _cmd = prepare_run("java", commented)
+    assert name == "Harness.java"
+    assert normalize_harness_newlines("set -u\r\nfi\r\n") == "set -u\nfi\n"
+
+
+def test_prepare_run_rust_is_unsupported():
+    import pytest
+    from app.services.sandbox_exec import prepare_run
+
+    with pytest.raises(ValueError, match="static_only"):
+        prepare_run("rust", "fn main() {}")
+    with pytest.raises(ValueError, match="static_only"):
+        prepare_run("c++", "int main() {}")
+
+
+def test_execute_harness_rust_skips_docker(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.sandbox_exec.sandbox_diagnosis",
+        lambda: {
+            "available": False,
+            "image": "vulnhunter/sandbox:latest",
+            "image_present": False,
+            "error": "Docker unavailable",
+            "network_mode": "none",
+        },
+    )
+    result = execute_harness("fn main() {}", language="rust")
+    assert result["ok"] is False
+    assert result.get("failure_class") == "unsupported_language"
+    assert "static_only" in (result.get("hint") or "") + (result.get("error") or "")
 
 
 def test_execute_harness_tmpfs_allows_exec_for_compiled_go(tmp_env, monkeypatch):

@@ -12,10 +12,12 @@ window so the same call is not blocked forever. Hitting that threshold
 five times in one round aborts the session.
 
 Historical-vuln recon sessions get a persist reminder after N consecutive
-turns without WriteOldVuln. Worker mining gets a FinishFile reminder after
-M consecutive turns without FinishFile. Calling the corresponding tool
-resets the idle counter. Unrelated tools (Read/Grep/…) do not. Code-map
-and auth recon sessions are not nudged to persist.
+turns without WriteOldVuln. Heuristic worker mining gets a FinishFile
+reminder after M consecutive turns without FinishFile. Vuln-dedup sessions
+get a RecordVulnDedup reminder after M consecutive turns without marking.
+Calling the corresponding tool resets the idle counter. Unrelated tools
+(Read/Grep/…) do not. Unconstrained mining has no persist-to-finish
+reminder. Code-map and auth recon sessions are not nudged to persist.
 """
 
 from __future__ import annotations
@@ -37,8 +39,8 @@ VERIFIER_NO_TOOL_NUDGE = (
     "你这一轮没有调用任何工具。请立刻 Read 漏洞报告。"
     "若本项目已有共享 FOFA 命中，直接按这些目标复测，不要为换语法再 FofaSearch；"
     "否则用项目应用指纹 FofaSearch（有命中后冻结语法；0 条可改写最多 3 次）。"
-    "凑满 3 个成功即 FinishVerifier(verdict=success, verified_url=..., poc=..., response=..., fofa_query=...)；"
-    "当前这批测完仍不足 3 个则保留成功的，FofaSearch(expand=true) 再搜下一轮（最多 5 轮 / 50 个目标）。不要空转。"
+    "凑满 3 个不同 IP 成功即 FinishVerifier(verdict=success, verified_url=..., poc=..., response=..., fofa_query=...)；"
+    "同 IP 不同端口视为同一目标；当前这批测完仍不足 3 个则保留成功的，FofaSearch(expand=true) 再搜下一轮（最多 5 轮 / 50 个目标）。不要空转。"
 )
 
 ATTACK_CHAIN_NO_TOOL_NUDGE = (
@@ -55,7 +57,7 @@ NO_TOOL_NUDGE = (
     "请立即调用工具继续工作；若本阶段门闩已满足，系统会自动结束，无需调用已移除的结束工具。"
     "挖掘轮次：沿调用链确认其它文件无漏洞后立刻 FinishFile（禁止因此立刻 FinishRound）；不要因为不能当入口就 FinishFile；仅当一开始注入的焦点已按角色分析完后才 FinishRound；"
     "审核请 ConfirmVuln（须标前台/后台、影响、复杂度、防护状态、价值分层；后台再标普通权限或管理员）或 MarkFalsePositive；仅根因/入口/sink 分析错了才 ReturnToWorker；"
-    "互联网验证请复用项目共享 FOFA 命中或用项目指纹 FofaSearch（0 条可改写最多 3 次；当前批次不足 3 个成功可 expand 再搜，最多 5 轮 / 50 个目标） / FinishVerifier；"
+    "互联网验证请复用项目共享 FOFA 命中或用项目指纹 FofaSearch（0 条可改写最多 3 次；当前批次不足 3 个不同 IP 成功可 expand 再搜，最多 5 轮 / 50 个目标；同 IP 不同端口不算不同目标） / FinishVerifier；"
     "攻击链请 SearchOldVuln（仅已确认产出）/ SubmitAttackChain（详文最多 3 条；有靶场且无交互须 chain_script）"
     "/ IndexAttackChain / FinishAttackChain；修复请 FinishFix。"
 )
@@ -149,6 +151,13 @@ RECON_BUSINESS_JAR_PERSIST_NUDGE = (
     "全部点完后 MarkBusinessJar(done=true)。"
 )
 
+RECON_CODE_INTEL_PERSIST_NUDGE = (
+    "看门狗提醒：侦察（地图）已连续 {n} 轮未调用 MarkCodeIntel。"
+    "本项目已开启代码库：请立刻 MarkCodeIntel 点名后端--"
+    "有可索引源码则 codegraph=true；有业务 jar 需要字节码调用图则 jar_analyzer=true；可两者都 true。"
+    "至少一个为 true。不要自己查图；挖掘侧会用 FindSymbol/FindCallers。"
+)
+
 WORKER_FINISH_INTERVAL = 50
 
 WORKER_FINISH_NUDGE = (
@@ -159,11 +168,10 @@ WORKER_FINISH_NUDGE = (
     "仍有未查清的焦点链路可继续，但不要重复已读代码或无限扩读。上下文会被压缩，拖延标记会丢失进展。"
 )
 
-UNCONSTRAINED_FINISH_NUDGE = (
-    "看门狗提醒：无约束扫描已连续 {n} 轮未 SubmitVuln / FinishFile / FinishRound。"
-    "请继续自主挖掘前台可利用漏洞，优先能达成 RCE 效果的问题；其他前台洞也要提交。"
-    "已看完的文件可用 FinishFile（不结束本轮）。本趟探索收束后 FinishRound。"
-    "不要等 Reviewer 确认才收工；路径结束由 Reviewer 判定 RCE 效果，当前轮须自己跑完。"
+UNCONSTRAINED_NO_TOOL_NUDGE = (
+    "你这一轮没有调用任何工具。请立刻根据注入的地图与鉴权自主挖掘前台可利用漏洞，"
+    "优先 FindSymbol / FindCallers / TraceCalls，不够再用 Read/Grep。"
+    "满足闸门后 SubmitVuln。FinishRound 由系统在上下文压缩满 2 次后注入，未出现前不要尝试收工。"
 )
 
 FAST_FINISH_NUDGE = (
@@ -195,18 +203,32 @@ CLI_INDEXER_FINISH_NUDGE = (
     "无法判断入口也要选最像的文件并写明不确定性。超时将 conclude 落盘失败原因。"
 )
 
+VULN_DEDUP_NO_TOOL_NUDGE = (
+    "你这一轮没有调用任何工具。请立刻按组对照历史漏洞与当前 src/ 判断产出是否已公开、是否还在。"
+    "一组（或单条）分析完立刻 RecordVulnDedup，不要等全部分析完再一次性标记；"
+    "全部记录后 FinishVulnDedup。不要挖新洞，不要 ConfirmVuln。"
+)
+
+VULN_DEDUP_RECORD_NUDGE = (
+    "看门狗提醒：产出去重已连续 {n} 轮未调用 RecordVulnDedup。"
+    "若有漏洞已经分析完毕，先调用 RecordVulnDedup 标记，不要继续扩读或攒到收工--"
+    "标记不会结束本会话。待查过多须分组（约 5 条一组），一组结论齐了就先记。"
+    "全部记录后再 FinishVulnDedup。上下文会被压缩，延迟标记会丢失进展。"
+)
+
 # Consecutive idle turns reset when any of these tools is called this turn.
 PERSIST_TOOLS: dict[str, frozenset[str]] = {
-    "recon": frozenset({"MarkBusinessJar"}),
+    "recon": frozenset({"MarkBusinessJar", "MarkCodeIntel"}),
     "recon-old-vuln": frozenset({"WriteOldVuln"}),
     "recon-old-vuln-ghsa": frozenset({"WriteOldVuln"}),
     "recon-source-ext": frozenset({"AddSourceExt"}),
     "worker": frozenset({"FinishFile"}),
-    "unconstrained-worker": frozenset({"FinishFile", "FinishRound", "SubmitVuln"}),
     "fast-worker": frozenset({"FinishSink"}),
     "bypass-worker": frozenset({"FinishBypass"}),
     "sink-triage": frozenset({"FinishSinkTriage"}),
     "cli-indexer": frozenset({"FinishIndex"}),
+    "vuln_dedup": frozenset({"RecordVulnDedup"}),
+    "vuln-dedup": frozenset({"RecordVulnDedup"}),
 }
 
 
@@ -229,7 +251,14 @@ class AgentWatchdog:
     def _persist_interval(self) -> int:
         if self.phase == "cli-indexer":
             return 8
-        if self.phase in ("worker", "unconstrained-worker", "fast-worker", "bypass-worker", "sink-triage"):
+        if self.phase in (
+            "worker",
+            "fast-worker",
+            "bypass-worker",
+            "sink-triage",
+            "vuln_dedup",
+            "vuln-dedup",
+        ):
             return self.worker_finish_interval
         if self.phase in RECON_PERSIST_PHASES:
             return self.persist_nudge_interval
@@ -244,6 +273,21 @@ class AgentWatchdog:
             from ..services.decompile_java import business_jar_map_ready, bytecode_present
 
             return bytecode_present(self.project_id) and not business_jar_map_ready(self.project_id)
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _recon_needs_code_intel_nudge(self) -> bool:
+        if self.phase != "recon" or not self.project_id:
+            return False
+        try:
+            from ..code_intelligence.service import code_intel_choice_ready
+            from ..models import Project, SessionLocal
+
+            with SessionLocal() as db:
+                proj = db.get(Project, self.project_id)
+                if not proj or not bool(getattr(proj, "code_intel_enabled", False)):
+                    return False
+            return not code_intel_choice_ready(self.project_id)
         except Exception:  # noqa: BLE001
             return False
 
@@ -262,8 +306,6 @@ class AgentWatchdog:
         if self.idle_turns % interval == 0:
             if self.phase == "worker":
                 return WORKER_FINISH_NUDGE.format(n=self.idle_turns)
-            if self.phase == "unconstrained-worker":
-                return UNCONSTRAINED_FINISH_NUDGE.format(n=self.idle_turns)
             if self.phase == "fast-worker":
                 return FAST_FINISH_NUDGE.format(n=self.idle_turns)
             if self.phase == "bypass-worker":
@@ -272,6 +314,10 @@ class AgentWatchdog:
                 return TRIAGE_FINISH_NUDGE.format(n=self.idle_turns)
             if self.phase == "cli-indexer":
                 return CLI_INDEXER_FINISH_NUDGE.format(n=self.idle_turns)
+            if self.phase in ("vuln_dedup", "vuln-dedup"):
+                return VULN_DEDUP_RECORD_NUDGE.format(n=self.idle_turns)
+            if self.phase == "recon" and self._recon_needs_code_intel_nudge():
+                return RECON_CODE_INTEL_PERSIST_NUDGE.format(n=self.idle_turns)
             if self.phase == "recon" and self._recon_needs_business_jar_nudge():
                 return RECON_BUSINESS_JAR_PERSIST_NUDGE.format(n=self.idle_turns)
             if self.phase == "recon-old-vuln":
@@ -286,8 +332,6 @@ class AgentWatchdog:
         n = self.idle_turns
         if self.phase == "worker":
             return f"看门狗：挖掘连续 {n} 轮未 FinishFile，已提醒立刻标记已确认无漏洞的文件"
-        if self.phase == "unconstrained-worker":
-            return f"看门狗：无约束扫描连续 {n} 轮未推进，已提醒继续挖前台洞或 FinishRound"
         if self.phase == "fast-worker":
             return f"看门狗：快速扫描连续 {n} 轮未 FinishSink，已提醒立刻结束本条 Sink"
         if self.phase == "bypass-worker":
@@ -296,7 +340,11 @@ class AgentWatchdog:
             return f"看门狗：Sink 筛选连续 {n} 轮未 FinishSinkTriage，已提醒立刻提交决策"
         if self.phase == "cli-indexer":
             return f"看门狗：CLI 索引连续 {n} 轮未 FinishIndex，已提醒立刻落盘描述"
+        if self.phase in ("vuln_dedup", "vuln-dedup"):
+            return f"看门狗：产出去重连续 {n} 轮未 RecordVulnDedup，已提醒先标记已分析完的漏洞"
         if self.phase == "recon":
+            if self._recon_needs_code_intel_nudge():
+                return f"看门狗：侦察（地图）连续 {n} 轮未 MarkCodeIntel，已提醒点名代码库后端"
             return f"看门狗：侦察（地图）连续 {n} 轮未 MarkBusinessJar，已提醒立即点名业务 jar"
         if self.phase == "recon-old-vuln":
             return f"看门狗：侦察（历史漏洞）连续 {n} 轮未 WriteOldVuln，已提醒立即落盘"
@@ -317,12 +365,16 @@ class AgentWatchdog:
             return ATTACK_CHAIN_NO_TOOL_NUDGE
         if self.phase in ("fast-worker", "fast_worker"):
             return FAST_NO_TOOL_NUDGE
+        if self.phase in ("unconstrained-worker", "unconstrained_worker"):
+            return UNCONSTRAINED_NO_TOOL_NUDGE
         if self.phase in ("bypass-worker", "bypass_worker"):
             return BYPASS_NO_TOOL_NUDGE
         if self.phase in ("sink-triage", "sink_triage"):
             return TRIAGE_NO_TOOL_NUDGE
         if self.phase in ("cli-indexer", "cli_indexer"):
             return CLI_INDEXER_NO_TOOL_NUDGE
+        if self.phase in ("vuln_dedup", "vuln-dedup"):
+            return VULN_DEDUP_NO_TOOL_NUDGE
         if self.phase in ("recon-mark", "recon_mark"):
             return RECON_MARK_NO_TOOL_NUDGE
         return NO_TOOL_NUDGE

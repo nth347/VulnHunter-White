@@ -12,10 +12,7 @@ def test_custom_audit_mode_crud_and_project_snapshot(tmp_env, monkeypatch, proje
     SessionLocal = tmp_env["Session"]
     monkeypatch.setattr("app.api.projects.start_ingest_and_audit", lambda *a, **k: None)
     with TestClient(app) as client:
-        builtin = client.get(
-            "/api/settings/builtin-audit-modes",
-            headers={"Accept-Language": "zh"},
-        )
+        builtin = client.get("/api/settings/builtin-audit-modes", headers={"Accept-Language": "zh"})
         assert builtin.status_code == 200
         bodies = {row["id"]: row["body"] for row in builtin.json()}
         assert "赏金模式" in bodies["bounty"]

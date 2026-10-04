@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { useI18n } from '@/i18n'
 
 export const HINT_TEXT_MAX = 20000
 
@@ -34,7 +34,7 @@ export function HintTextFields({
   maxLength?: number
   tooLongMessage?: string
 }) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const [fileError, setFileError] = useState('')
   const count = value.length
 
@@ -42,17 +42,17 @@ export function HintTextFields({
     setFileError('')
     if (!file) return
     if (!isHintFile(file)) {
-      setFileError(t('hintText.uploadTextFile'))
+      setFileError(t('comp.hint.needText'))
       return
     }
     const raw = await file.text()
     if (raw.includes('\0')) {
-      setFileError(t('hintText.notText'))
+      setFileError(t('comp.hint.notText'))
       return
     }
     const text = raw.replace(/^\uFEFF/, '').trim()
     if (text.length > maxLength) {
-      setFileError(tooLongMessage || t('hintText.tooLong', { label, max: maxLength }))
+      setFileError(tooLongMessage || t('comp.hint.tooLong', { label, max: maxLength }))
       return
     }
     onChange(text)
@@ -66,7 +66,7 @@ export function HintTextFields({
         </Label>
         <div className="flex items-center gap-2">
           <Label className="inline-flex h-7 cursor-pointer items-center justify-center rounded-lg border border-input px-2.5 text-[0.8rem] font-medium hover:bg-muted has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50">
-            {t('hintText.uploadText')}
+            {t('comp.hint.upload')}
             <input
               type="file"
               accept=".txt,.md,.markdown,.text,text/plain,text/markdown"
@@ -80,7 +80,7 @@ export function HintTextFields({
           </Label>
           {value.trim() ? (
             <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={() => onChange('')}>
-              {t('hintText.clear')}
+              {t('comp.hint.clear')}
             </Button>
           ) : null}
         </div>

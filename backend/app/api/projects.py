@@ -23,6 +23,8 @@ from ..dynamic_verify import (
     VERIFY_MODE_LAB,
     VERIFY_MODE_OFF,
     apply_verify_mode,
+    assert_verify_mode_allowed_for_runtime,
+    effective_project_verify_mode,
     is_lab_mode,
     project_verify_mode,
     project_verify_mode_values,
@@ -79,10 +81,12 @@ from ..schemas import (
     ConversationStateOut,
     ProjectLabOut,
     ProjectLabPatch,
+    VulnDedupBody,
     normalize_conversation_message,
 )
 from ..services.ingest import indexed_weight_exts
 from ..services.lab import (
+    finish_manual_lab,
     get_lab_status,
     lab_setup_state,
     patch_lab_ports,
@@ -95,7 +99,6 @@ from ..services.llm_settings import normalize_project_llm_model
 from ..services.token_budget import maybe_pause_for_token_budget, parse_max_token_usage
 from ..services import custom_audit_modes as cam
 from ..services.paths import ensure_project_dirs, force_rmtree, project_dir, project_root
-
 _ZIP_WRITE_CHUNK = 1024 * 1024
 
 
@@ -134,6 +137,8 @@ from ..services.pipeline import (
     request_recon_subphase_rerun,
     request_lab_setup_retry,
     request_resume,
+    request_vuln_dedup,
+    reclaim_premature_project_complete,
     request_worker_progress_reset,
     start_audit,
     start_ingest_and_audit,
@@ -165,6 +170,7 @@ _PROJECT_LIST_LOAD = (
     Project.verifier_enabled,
     Project.attack_chain_enabled,
     Project.attack_chain_done,
+    Project.attack_chain_stopped,
     Project.dynamic_verify_enabled,
     Project.dynamic_verify_mode,
     Project.heuristic_enabled,
@@ -175,6 +181,9 @@ _PROJECT_LIST_LOAD = (
     Project.bypass_queue_frozen,
     Project.unconstrained_enabled,
     Project.unconstrained_done,
+    Project.heuristic_stopped,
+    Project.fast_stopped,
+    Project.bypass_stopped,
     Project.llm_model,
     Project.max_token_usage,
     Project.error,
@@ -344,12 +353,14 @@ def _project_out(
     summary = summary or _project_summaries(db, [p.id]).get(p.id, _empty_project_summary())
     if weight_exts is None:
         weight_exts = indexed_weight_exts(db, [p.id]).get(p.id, [])
-    verify_mode = project_verify_mode(p)
+    verify_mode = effective_project_verify_mode(p)
     lab_done, lab_failed = lab_setup_state(p.id)
     if include_phase_states:
         phase_fields = _phase_state_fields(p.id)
     else:
         phase_fields = {"phase_states": {}, "project_paused": is_project_paused(p.id)}
+    from ..code_intelligence.service import requested_backends as _ci_backends
+
     return ProjectOut(
         id=p.id,
         name=p.name,
@@ -364,6 +375,7 @@ def _project_out(
         code_intel_done=bool(getattr(p, "code_intel_done", False)),
         code_intel_error=(getattr(p, "code_intel_error", None) or "").strip(),
         code_intel_stale=(getattr(p, "code_intel_status", None) or "") == "stale",
+        code_intel_backends=_ci_backends(p.id) if bool(getattr(p, "code_intel_enabled", False)) else [],
         audit_mode=normalize_audit_mode(p.audit_mode),
         target_kind=normalize_target_kind(getattr(p, "target_kind", None)),
         custom_audit_mode_id=getattr(p, "custom_audit_mode_id", None),
@@ -374,6 +386,7 @@ def _project_out(
         verifier_enabled=bool(p.verifier_enabled),
         attack_chain_enabled=bool(getattr(p, "attack_chain_enabled", False)),
         attack_chain_done=bool(getattr(p, "attack_chain_done", False)),
+        attack_chain_stopped=bool(getattr(p, "attack_chain_stopped", False)),
         dynamic_verify_enabled=verify_mode_enabled(verify_mode),
         dynamic_verify_mode=verify_mode,
         heuristic_enabled=bool(getattr(p, "heuristic_enabled", True)),
@@ -384,10 +397,15 @@ def _project_out(
         bypass_queue_frozen=bool(getattr(p, "bypass_queue_frozen", False)),
         unconstrained_enabled=bool(getattr(p, "unconstrained_enabled", False)),
         unconstrained_done=bool(getattr(p, "unconstrained_done", False)),
+        heuristic_stopped=bool(getattr(p, "heuristic_stopped", False)),
+        fast_stopped=bool(getattr(p, "fast_stopped", False)),
+        bypass_stopped=bool(getattr(p, "bypass_stopped", False)),
         llm_model=normalize_project_llm_model(getattr(p, "llm_model", None)) or "",
         worker_hint=(getattr(p, "worker_hint", None) or "").strip(),
         recon_hint=(getattr(p, "recon_hint", None) or "").strip(),
         max_token_usage=int(getattr(p, "max_token_usage", 0) or 0),
+        source_sync_error=(getattr(p, "source_sync_error", None) or "").strip() or None,
+        source_sync_notice=(getattr(p, "source_sync_notice", None) or "").strip() or None,
         error=p.error,
         worker_concurrency=p.worker_concurrency,
         created_at=p.created_at,
@@ -447,6 +465,7 @@ def _project_list_out(
         verifier_enabled=bool(p.verifier_enabled),
         attack_chain_enabled=bool(getattr(p, "attack_chain_enabled", False)),
         attack_chain_done=bool(getattr(p, "attack_chain_done", False)),
+        attack_chain_stopped=bool(getattr(p, "attack_chain_stopped", False)),
         dynamic_verify_enabled=verify_mode_enabled(verify_mode),
         dynamic_verify_mode=verify_mode,
         heuristic_enabled=bool(getattr(p, "heuristic_enabled", True)),
@@ -457,8 +476,13 @@ def _project_list_out(
         bypass_queue_frozen=bool(getattr(p, "bypass_queue_frozen", False)),
         unconstrained_enabled=bool(getattr(p, "unconstrained_enabled", False)),
         unconstrained_done=bool(getattr(p, "unconstrained_done", False)),
+        heuristic_stopped=bool(getattr(p, "heuristic_stopped", False)),
+        fast_stopped=bool(getattr(p, "fast_stopped", False)),
+        bypass_stopped=bool(getattr(p, "bypass_stopped", False)),
         llm_model=normalize_project_llm_model(getattr(p, "llm_model", None)) or "",
         max_token_usage=int(getattr(p, "max_token_usage", 0) or 0),
+        source_sync_error=(getattr(p, "source_sync_error", None) or "").strip() or None,
+        source_sync_notice=(getattr(p, "source_sync_notice", None) or "").strip() or None,
         error=p.error,
         worker_concurrency=p.worker_concurrency,
         created_at=p.created_at,
@@ -738,6 +762,13 @@ def get_project(
         p = db.get(Project, project_id)
         if not p:
             raise HTTPException(404, "项目不存在")
+    if p.status == "completed":
+        reclaim_premature_project_complete(project_id)
+        with SessionLocal() as db:
+            p = db.get(Project, project_id)
+            if not p:
+                raise HTTPException(404, "项目不存在")
+    with SessionLocal() as db:
         etag = _project_detail_etag(db, p)
         if since.strip().strip('"') == etag:
             return ProjectOut(
@@ -790,6 +821,11 @@ def create_project_github(body: ProjectCreate) -> ProjectOut:
             manual_lab=body.manual_lab,
             manual_lab_prompt=manual_lab_prompt,
         )
+        assert_verify_mode_allowed_for_runtime(
+            verify_mode,
+            manual_lab=body.manual_lab,
+            manual_lab_prompt=manual_lab_prompt,
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     with SessionLocal() as db:
@@ -837,6 +873,8 @@ def create_project_github(body: ProjectCreate) -> ProjectOut:
         pat = (settings_row.github_pat if settings_row else None) or None
         out = _project_out(db, p)
     ensure_project_dirs(pid)
+    if verify_mode == VERIFY_MODE_LAB and manual_lab_prompt:
+        finish_manual_lab(pid, manual_lab_prompt)
     try:
         from ..services.github_discover import mark_candidate_imported
 
@@ -895,6 +933,11 @@ async def create_project_zip(
             manual_lab=manual_lab,
             manual_lab_prompt=prompt,
         )
+        assert_verify_mode_allowed_for_runtime(
+            verify_mode,
+            manual_lab=manual_lab,
+            manual_lab_prompt=prompt,
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     custom_id = None
@@ -944,6 +987,8 @@ async def create_project_zip(
         pid = p.id
         out = _project_out(db, p)
     ensure_project_dirs(pid)
+    if verify_mode == VERIFY_MODE_LAB and prompt:
+        finish_manual_lab(pid, prompt)
     tmp = Path(tempfile.mkdtemp(prefix="vh-zip-"))
     zip_path = tmp / "src.zip"
     try:
@@ -1130,6 +1175,18 @@ def update_project(project_id: int, body: ProjectUpdate) -> ProjectOut:
                 )
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from exc
+            manual_for_gate = body.manual_lab if body.manual_lab is not None else p.manual_lab
+            prompt_for_gate = (
+                prompt if prompt is not None else (p.manual_lab_prompt or "")
+            )
+            try:
+                assert_verify_mode_allowed_for_runtime(
+                    next_verify,
+                    manual_lab=manual_for_gate,
+                    manual_lab_prompt=prompt_for_gate,
+                )
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
             apply_verify_mode(p, next_verify)
             if next_verify != VERIFY_MODE_LAB:
                 if body.manual_lab is None and prompt is None:
@@ -1142,6 +1199,14 @@ def update_project(project_id: int, body: ProjectUpdate) -> ProjectOut:
             p.recon_hint = recon or None
         if token_cap is not None:
             p.max_token_usage = token_cap
+        try:
+            assert_verify_mode_allowed_for_runtime(
+                project_verify_mode(p),
+                manual_lab=p.manual_lab,
+                manual_lab_prompt=p.manual_lab_prompt,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         if body.language is not None:
             p.language = body.language
         db.commit()
@@ -1268,6 +1333,8 @@ def update_project(project_id: int, body: ProjectUpdate) -> ProjectOut:
             )
     if sync_notes:
         sync_manual_lab_notes(project_id, notes_text)
+        if out.dynamic_verify_mode == VERIFY_MODE_LAB and notes_text:
+            finish_manual_lab(project_id, notes_text)
     if restarted:
         start_audit(project_id)
     return out
@@ -1411,6 +1478,18 @@ def retry_lab_setup(project_id: int, body: LabSetupRetryBody | None = None) -> d
     try:
         msg = normalize_lab_retry_message((body.user_message if body else "") or "")
         return request_lab_setup_retry(project_id, msg)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/{project_id}/vuln-dedup")
+def post_project_vuln_dedup(project_id: int, body: VulnDedupBody | None = None) -> dict:
+    with SessionLocal() as db:
+        if not db.get(Project, project_id):
+            raise HTTPException(404, "项目不存在")
+    try:
+        ids = list((body.vuln_ids if body else None) or [])
+        return request_vuln_dedup(project_id, ids)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 

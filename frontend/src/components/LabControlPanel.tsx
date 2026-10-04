@@ -1,12 +1,8 @@
 import { useEffect, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { api, formatApiError, type Project, type ProjectLab } from '../api'
-import { translateBackendText } from '../i18n/backendText'
 import { Button } from '@/components/ui/button'
-import i18n from '../i18n'
 import { startVisibilityPoll } from '../lib/visibilityPoll'
-
-const labTimeout = () => i18n.t('labPanel.timeout')
+import { useI18n } from '@/i18n'
 
 type PortFieldKey = 'host' | 'jdwp' | 'inspect' | 'debugpy'
 
@@ -33,9 +29,10 @@ function PortField({
   onPortInputChange: (v: string) => void
   showEdit: boolean
 }) {
+  const { t } = useI18n()
   return (
     <span className="flex flex-wrap items-center gap-1">
-      <span className="text-slate-400">{i18n.t('labPanel.fieldLabel', { label })}</span>
+      <span className="text-slate-400">{label}：</span>
       {editing ? (
         <>
           <span className="text-xs text-slate-500">127.0.0.1:</span>
@@ -58,27 +55,27 @@ function PortField({
             onClick={onSave}
             disabled={busy}
           >
-            {i18n.t('common.save')}
+            {t('flow.lab.save')}
           </button>
           <button
             type="button"
             className="text-xs text-slate-400 hover:underline"
             onClick={onCancel}
           >
-            {i18n.t('common.cancel')}
+            {t('common.cancel')}
           </button>
         </>
       ) : (
         <>
-          <span className="font-mono text-slate-200">{display || '-'}</span>
+          <span className="font-mono text-slate-200">{display || t('common.dash')}</span>
           {showEdit && (
             <button
               type="button"
               className="ml-1 text-xs text-slate-400 hover:text-sky-400 hover:underline"
               onClick={onEdit}
-              title={i18n.t('labPanel.editPortTitle', { label })}
+              title={t('flow.lab.portTitle', { label })}
             >
-              {i18n.t('labPanel.editShort')}
+              {t('flow.lab.edit')}
             </button>
           )}
         </>
@@ -92,7 +89,7 @@ type LabControlPanelProps = {
 }
 
 export function LabControlPanel({ project }: LabControlPanelProps) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const [lab, setLab] = useState<ProjectLab | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -104,9 +101,9 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
     try {
       const next = await api.getLab(project.id)
       setLab(next)
-      setError(translateBackendText(next.error || ''))
+      setError(next.error || '')
     } catch (e) {
-      setError(formatApiError(e, labTimeout()))
+      setError(formatApiError(e, t('flow.lab.timeout')))
     }
   }
 
@@ -132,11 +129,11 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
       const next = action === 'start' ? await api.startLab(project.id) : await api.stopLab(project.id)
       setLab(next)
       if (next.port_changes?.length) {
-        setNote(t('labPanel.portsRemapped', { list: next.port_changes.join(t('labPanel.listSep')) }))
+        setNote(t('flow.lab.portAuto', { ports: next.port_changes.join('；') }))
       }
-      setError(translateBackendText(next.error || ''))
+      setError(next.error || '')
     } catch (e) {
-      setError(formatApiError(e, labTimeout()))
+      setError(formatApiError(e, t('flow.lab.timeout')))
       void refresh()
     } finally {
       setBusy(false)
@@ -147,7 +144,7 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
     if (!editingField || busy) return
     const port = Number(portInput)
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      setError(t('labPanel.portRange'))
+      setError(t('flow.lab.portRange'))
       return
     }
     setBusy(true)
@@ -165,7 +162,7 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
       setLab(next)
       setEditingField(null)
     } catch (e) {
-      setError(formatApiError(e, labTimeout()))
+      setError(formatApiError(e, t('flow.lab.timeout')))
     } finally {
       setBusy(false)
     }
@@ -177,7 +174,7 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
   return (
     <div className="rounded-lg border border-slate-700/80 bg-slate-900/40 px-4 py-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm font-medium text-slate-200">{t('labPanel.title')}</div>
+        <div className="text-sm font-medium text-slate-200">{t('flow.lab.title')}</div>
         <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
@@ -185,14 +182,14 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
             disabled={busy || !hasEnv || lab?.status === 'running'}
             title={
               !hasEnv
-                ? t('labPanel.startTitleNoEnv')
+                ? t('flow.lab.needEnv')
                 : lab?.status === 'running'
-                  ? t('labPanel.startTitleRunning')
-                  : t('labPanel.startTitle')
+                  ? t('flow.lab.running')
+                  : t('flow.lab.oneClick')
             }
             onClick={() => void runAction('start')}
           >
-            {t('labPanel.start')}
+            {t('flow.lab.start')}
           </Button>
           <Button
             size="sm"
@@ -200,21 +197,21 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
             disabled={busy || !lab?.can_stop}
             onClick={() => void runAction('stop')}
           >
-            {t('labPanel.stop')}
+            {t('flow.lab.stop')}
           </Button>
         </div>
       </div>
 
       {!hasEnv ? (
-        <p className="text-sm text-slate-400">{t('labPanel.noEnvBody')}</p>
+        <p className="text-sm text-slate-400">{t('flow.lab.none')}</p>
       ) : (
         <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
           <span>
-            {t('labPanel.status')}
+            {t('flow.lab.status')}
             <span className="font-medium text-slate-100">{lab?.status || 'absent'}</span>
           </span>
           <PortField
-            label={t('labPanel.address')}
+            label={t('flow.lab.url')}
             display={lab?.target_url || null}
             editing={editingField === 'host'}
             portInput={portInput}
@@ -285,7 +282,7 @@ export function LabControlPanel({ project }: LabControlPanelProps) {
 
       {lab?.port_conflicts && lab.port_conflicts.length > 0 && lab.status !== 'running' && (
         <p className="mt-2 text-xs text-amber-400/90">
-          {t('labPanel.portConflicts', { list: lab.port_conflicts.join(', ') })}
+          {t('flow.lab.portBusy', { ports: lab.port_conflicts.join(', ') })}
         </p>
       )}
       {note && <p className="mt-2 text-xs text-emerald-400/90">{note}</p>}

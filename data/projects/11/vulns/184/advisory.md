@@ -80,6 +80,7 @@ Expected body contains `MEMO-PING` plus the output of `id`. Reproducible CLI in 
 
 ```text
 python poc.py -u http://TARGET:5000 -c id
+python poc.py -u http://TARGET:5000 -c id --zh
 python poc.py -u http://TARGET:5000 -c id --proxy http://127.0.0.1:8080
 ```
 
@@ -106,5 +107,6 @@ CWE-78. A caller with an admin session can execute arbitrary operating-system co
 
 - **Severity:** High
 - **CVSS 3.1:** 7.2 High - `CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H`
+- **CVSS 4.0:** 8.6 High - `CVSS:4.0/AV:N/AC:L/AT:N/PR:H/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N`
 - **CWE:** CWE-78 Improper Neutralization of Special Elements used in an OS Command ("OS Command Injection")
 - **Related:**

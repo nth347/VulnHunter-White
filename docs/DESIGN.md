@@ -23,7 +23,7 @@ VulnHunter-White 的特点：
 - 支持**靶场动态**、**局部 harness**、**纯静态**三种审核验证方式
 - 可选 **FOFA 互联网验证**与 **Human-in-the-loop** 确认
 - 挖掘与审核结束后可选**攻击链串联**
-- 设置页可配**模型商池**（多 Base URL、会话粘滞、端点故障换路）
+- 设置页可配**模型商池**（多 Base URL、同轮同模型优先、会话粘滞、端点故障换路）
 - 每项目可设 **Token 用量上限**与 Worker 人工提示；可从公开 GHSA **发现仓库**
 - 漏洞产出含**产出日历**、中文报告 / Advisory / CVE JSON，可追问与打包下载
 
@@ -61,13 +61,13 @@ VulnHunter-White 的特点：
 
 ![容器管理](../assets/1787235734952-1d7d6474-e228-4a30-857c-4d83e64b4b9d.png)
 
-设置页面：Chat Completions / Anthropic Messages、自定义挖掘提示词、日志清理等，支持设置多个服务商作为 LLM 池（当前模型商主要测试过 GLM、DeepSeek、百炼）。
+设置页面：Chat Completions / OpenAI Responses / Anthropic Messages、自定义挖掘提示词、日志清理等，支持设置多个服务商作为 LLM 池（当前模型商主要测试过 GLM、DeepSeek、百炼）。
 
 ![image-20260827160330224](../assets/image-20260827160330224.png)
 
 ![设置页](../assets/1787235801542-2f2bbf74-a406-4b01-9873-4ea0ca2114ef.png)
 
-发现仓库页面：从公开 GHSA 筛可审计仓库，关键词粗分后再用模型复核审计对象；已创建与可创建分开列出，可忽略候选。
+发现仓库页面：可按用户提示词搜索 GitHub 仓库，也可从公开 GHSA 筛可审计仓；会排除官方演示、示例工程和学习用项目。关键词粗分后再用模型复核审计对象；已创建与可创建分开列出，可单条或一键移除候选。搜索默认限时 600 秒，超过 5 个时每多 1 个加 60 秒；超时会说明原因并保留已找到的仓库。
 
 ---
 
@@ -125,7 +125,7 @@ VulnHunter-White 的特点：
 | SearchGitHubIssues | 查本仓库未关闭 Issues |
 | ReadCveRecord | 读取本条漏洞的 CVE 5.2 JSON 填表状态 |
 | SetCveRecordField | 按字段写入 `cve.json`；未知填 `VULNHUNTER_PENDING`，不要整文件覆盖 |
-| RunCode | 局部验证沙箱执行 `harness.py`（仅 harness 审核轮注入） |
+| RunCode | 局部验证沙箱执行 harness（Python/PHP/JS/Ruby/Go/Java/Bash/C；仅 harness 审核轮注入） |
 | SearchTools | 检索 `tools/cli` 已索引的用户 CLI（审核轮） |
 | FinishIndex | CLI 静默索引轮写入口与描述后结束 |
 | ListBytecode | 枚举 `src/` 下 `.class` / `.jar` / `.war`（不受普通 Glob 后缀忽略限制；默认仍跳过 `target` 等） |
@@ -150,14 +150,14 @@ VulnHunter-White 的特点：
 
 #### 检查点与续跑
 
-1. 检查点落在 `workspace/checkpoints/`，保存消息、看门狗和限流计数；暂停或进程中断后按原上下文续跑。改挖掘模式或验证方式会丢弃对应检查点，续跑后按新规则新开。
+1. 检查点落在 `workspace/checkpoints/`，保存消息、看门狗和限流计数；暂停或进程中断后按原上下文续跑。改挖掘模式或验证方式会丢弃对应检查点，续跑后按新规则新开。GitHub 项目从暂停转为运行时，先比对上游 HEAD：有更新则浅拉取到最新 `src/`、刷新文件索引后再续跑；检查失败不阻塞。zip 项目不检查。
 2. 超时、429 用尽或死循环退出前先 **Conclude 抢救**（默认 1800s），摘要落到 `docs/summaries/{phase}-rescue`，下一轮注入后续跑。普通阶段最多再开 2 次，侦察最多 8 次（对应四个小阶段）。Conclude 选取最近 100 轮消息，截断后注入 TodoList 再摘要，并额外写入完整 TodoList。
 3. 请求超过上下文窗口 85% 时主动压缩，新开上下文并注入 Conclude；启发式再注入最近最多 10 轮 `worker-round-N.md` 摘要。Worker 认领超过约 7200s 视为过期，可被回收另派。
 
 #### 超时与限流
 
-4. 各阶段墙钟超时：侦察 3600s，盖章轮 1800s，Worker 一轮 7200s，审核静态 1800s，靶场动态再加 Docker 1800s，Verifier / 攻击链 / Semgrep / Sink 筛选各 1800s。每阶段最多超时 2 次，此后抢救落盘并保留基本产出（如审核默认降级为仅静态）。
-5. LLM 429 休眠 90s 再试，最多 20 次；其它瞬时失败最多退避 3 次。设置页模型商池：同一协议多个 Base URL（各自 Key、模型、并发上限），全局线程上限 = 各端点并发之和（单端点默认 6）；新会话按利用率均匀分配，同一会话粘滞到所选端点，满则按到达顺序排队。某端点 429 / 额度用尽 / 5xx 只冷却该端点并立刻换路，不拖垮全池。额度用尽的端点即使冷却结束、占用为 0，只要池里还有其它可用端点就不会再被选中（漏洞报告追问同样走线程池并换路）。项目级 `llm_model` 仍优先。
+4. 各阶段墙钟超时：侦察 3600s，盖章轮 1800s，Worker 一轮 7200s，审核静态 1800s，靶场动态再加 Docker 1800s，Verifier / 攻击链 / Semgrep / Sink 筛选各 1800s。审核超时后最多再跑一轮（强制仅静态），再超时标误报。Verifier 超时直接将该条标 fail，不再新开轮。其它阶段最多超时 2 次，此后抢救落盘并保留基本产出。
+5. LLM 429 休眠 90s 再试，最多 20 次；其它瞬时失败最多退避 3 次。设置页模型商池：多个 Base URL（各自协议、Key、模型、并发上限；协议空则跟随全局接口协议），全局线程上限 = 未禁用端点并发之和（单端点默认 6）；新会话按利用率均匀分配，同一轮对话优先沿用相同模型以提高前缀缓存命中，同模型端点间仍均摊负载并尽量粘滞原端点，满则按到达顺序排队。设置页可勾选禁用某个端点（配置保留、不参与分配）。项目暂停后释放该名额，续跑时重新排队。同一端点两次发请求默认至少间隔 2 秒（设置页可改，0 关闭），后来的请求按到达顺序排队，排队时间不计入阶段超时与 HTTP 读超时。某端点 429 / 额度用尽 / 5xx 只冷却该端点并立刻换路，不拖垮全池；冷却结束后重新参与分配（漏洞报告追问同样走线程池并换路）。项目级 `llm_model` 仍优先。
 
 #### 工具执行容错
 
@@ -169,7 +169,7 @@ VulnHunter-White 的特点：
 8. 无工具调用的纯文字轮立刻提醒改用工具；有一次真工具调用后连续无工具计数清零。门闩满足后系统自己结束本轮。
 9. 连续 4 次同一工具且参数不变则拦截并重置窗口；同一轮死循环窗口触达 5 次则终止本轮。
 10. 历史漏洞落盘 / 补漏连续 50 轮未 `WriteOldVuln`、扩展名连续 50 轮未 `AddSourceExt` 则催落盘；代码地图 / 鉴权轮不催。
-11. 启发式连续 50 轮未 `FinishFile`、快速扫描未 `FinishSink`、绕过未 `FinishBypass`、Sink 筛选未 `FinishSinkTriage` 则催收工；`Read` / `Grep` 不计入空闲。CLI 静默索引连续 8 轮未 `FinishIndex` 则催落盘描述。
+11. 启发式连续 50 轮未 `FinishFile`、快速扫描未 `FinishSink`、绕过未 `FinishBypass`、Sink 筛选未 `FinishSinkTriage` 则催收工；`Read` / `Grep` 不计入空闲。无约束扫描不催收工。CLI 静默索引连续 8 轮未 `FinishIndex` 则催落盘描述。
 
 #### 审核与验证闸门
 
@@ -247,14 +247,14 @@ Recon **不读**代码库产物。代码库与侦察并列，见 4.5 节开头�
 
 ### 4.5 挖掘阶段
 
-挖掘须等 **Recon 完成**。若项目开启了代码库，还须等其首次构建结束（`ready` 或 `degraded` 都算完成）。代码库默认关闭，创建时勾选；用 CodeGraph 只索引 `src/` 源码，供 Worker / Reviewer 的 `FindSymbol` / `FindCallers` / `FindCallees` / `TraceCalls` 查调用关系；失败则降级继续用 Read/Grep。源码变化只标过期，由用户点重建，不自动重建。关闭会删除该项目索引以释放磁盘。jar/class 不在本阶段处理。
+挖掘须等 **Recon 完成**。若项目开启了代码库，还须等其首次构建结束（`ready` 或 `degraded` 都算完成）。代码库默认关闭，创建时勾选；开启后由地图 Agent `MarkCodeIntel` 点名 CodeGraph（`src/`）与/或 Jar Analyzer（业务 jar）再构建，供 Worker / Reviewer 的 `FindSymbol` / `FindCallers` / `FindCallees` / `TraceCalls` 查调用关系（Resolver 路由，不让 Agent 选库）。失败则降级继续用 Read/Grep。源码变化只标过期，由用户点重建，不自动重建。关闭会删除该项目索引以释放磁盘。jadx 仍只负责反编译。
 
 
 #### 4.5.0 漏洞挖掘模式
 
-- **赏金模式（默认）**：只挖掘高危漏洞，不报告反射 XSS、CORS 安全头等低危害项。无害/受限文件操作与不可获取且不可预测的 UUID 直接丢弃。
-- **全量模式**：报告低危害漏洞。无害/受限文件操作与不可获取且不可预测的 UUID 仍应误报，不入库。
-- **自定义模式**：在设置页用自然语言描述挖掘范围，项目选用时快照正文，无赏金硬闸门。基座提示仍要求丢弃无害文件操作与不可获取 UUID，自定义条款可覆盖。
+- **赏金模式（默认）**：只挖掘高危漏洞，不报告反射 XSS、CORS 安全头等低危害项。无害/受限文件操作与不可获取且不可预测的对象键（他人分享链接/邮件/预览 URL 不算可获取）直接丢弃。
+- **全量模式**：报告低危害漏洞。无害/受限文件操作与不可获取且不可预测的对象键仍应误报，不入库。
+- **自定义模式**：在设置页用自然语言描述挖掘范围，项目选用时快照正文，无赏金硬闸门。基座提示仍要求丢弃无害文件操作与不可独立获取的对象键，自定义条款可覆盖。
 
 #### 4.5.0b 审计对象（target_kind）
 
@@ -322,10 +322,9 @@ Recon **不读**代码库产物。代码库与侦察并列，见 4.5 节开头�
 | SubmitVuln | 提交待审核漏洞（始终走赏金闸门） |
 | ReadCveRecord / SetCveRecordField | 提交后填写 CVE JSON |
 | AppendAffectedLocations | 追加同根因受影响点 |
-| FinishFile | 记下本路径已看文件，**不**改启发式 `FileWeight.audited` |
-| FinishRound | 结束本轮；不要求先 FinishFile |
+| FinishRound | 本轮上下文压缩满 2 次后才注入；结束本轮 |
 
-与启发式隔离：只注入 `docs/code-map.md` 与 `docs/auth.md`，不派发定权焦点。固定并发 1。历史漏洞收集完毕后启动。Submit/Confirm 始终走赏金闸门。路径结束由 Reviewer 对前台产出标 `rce_effect=true` 决定，不看 `vuln_type` 是否为 rce；当前轮仍跑完。
+与启发式隔离：只注入 `docs/code-map.md` 与 `docs/auth.md`，不派发定权焦点。固定并发 1。历史漏洞收集完毕后启动。Submit/Confirm 始终走赏金闸门。路径结束由 Reviewer 对前台产出标 `rce_effect=true` 决定，不看 `vuln_type` 是否为 rce；当前轮仍跑完。用户可在无约束日志输入框停止或再启动；停止会打断当前轮，若其他阶段已结束则项目完成。无 `FinishFile`。
 
 #### 4.5.5 报告修复（fix）
 
@@ -347,7 +346,7 @@ Reviewer 仅在入口 / sink / 根因分析错误时 `ReturnToWorker`；PoC 与�
 
 | 工具 | 用途 |
 | --- | --- |
-| ConfirmVuln | 确认漏洞：Agent 填 CVSS 3.1 向量，系统计分，并标注价值分层 |
+| ConfirmVuln | 确认漏洞：Agent 填 CVSS 3.1 与 4.0 向量，系统计分，并标注价值分层 |
 | MarkFalsePositive | 判定误报 |
 | ReturnToWorker | 仅入口 / sink / 根因分析错误时打回 |
 | MergeIntoVuln | 同根因同危害重复报告并入主报告 |
@@ -355,7 +354,7 @@ Reviewer 仅在入口 / sink / 根因分析错误时 `ReturnToWorker`；PoC 与�
 | SearchTools | 搜索已索引的用户 CLI |
 | SearchGHSA / SearchOldVuln | 查公告与已提交报告 |
 | ReadCveRecord / SetCveRecordField | 收口 CVE JSON（`descriptions` 须含入口→sink、漏洞代码路径与原文、HTTP/API PoC） |
-| RunCode | 仅局部验证轮：在沙箱跑 `harness.py` |
+| RunCode | 仅局部验证轮：在沙箱跑 harness（含 C / gcc；无 rustc） |
 
 要点：
 
@@ -374,7 +373,7 @@ Reviewer 仅在入口 / sink / 根因分析错误时 `ReturnToWorker`；PoC 与�
 | **module** | 同沙箱内 import 项目 `src/` 模块，按真实调用序打 payload | `harness` |
 | **integration**（L3） | `vulnhunter/integration-sandbox:latest`：容器内临时装依赖 → 起 `127.0.0.1:$PORT` 服务 → 跑 `poc.py` | **`dynamic`** |
 
-L1/L2 规则不变：公开入口吃 HTTP/请求对象时用 **httptest 同进程**（仍为 harness）；YAML/编解码等无请求面 API 不要包 HTTP。
+L1/L2 规则不变：公开入口吃 HTTP/请求对象时用 **httptest 同进程**（仍为 harness）；YAML/编解码等无请求面 API 不要包 HTTP。`RunCode` 语言为 Python / PHP / JS / Ruby / Go / Java / Bash / **C（gcc + glibc）**；镜像无 rustc / g++，Rust / C++ 标 `unsupported_language` 后仅静态确认，不要反复探测编译器。C harness 不要依赖 OpenSSL 等第三方库。
 
 L3 通过 `ConfirmVuln(harness_depth=integration, integration_start=...)` 触发；须报告已有「### 局部验证」章节。integration 沙箱与 harness 沙箱不同（bridge 网络、可写、含 npm）。沙箱不可用时可用 `env/env.json` 的 `local_service_url`（仅 loopback）走本机 fallback。
 
@@ -406,19 +405,31 @@ Reviewer 复核数据流是否用户可控、防护是否有效、权限标注�
 
 挖掘与审核结束后，根据已确认漏洞尝试多步串联；优先危害最大、利用最简单的链写详文，其余一句话索引。有本地 Docker 靶场时，对纯 HTTP/脚本可打通的详文链编写串联脚本并由系统对靶场复测；含 XSS / CSRF 等需用户交互的链跳过动态验证。
 
+### 4.8.1 产出漏洞去重（vuln_dedup）
+
+| 工具 | 用途 |
+| --- | --- |
+| SearchOldVuln | 只搜侦察历史漏洞（`kind=old`，新收录优先） |
+| Read / Grep / Glob | 读产出报告，并核对当前 `src/` 入口 / sink / 漏洞代码是否还在 |
+| RecordVulnDedup | 记录公开结论与源码结论；已公开或最新代码已修默认标误报 |
+| FinishVulnDedup | 结束本轮并写入 `docs/vuln-dedup.md` |
+
+用户在项目详情「本项目漏洞」勾选产出后点 **产出漏洞去重**，系统开一轮独立 Agent：逐条与历史漏洞（尤其最新收录）对比是否已经公开，并对照当前 `src/` 判断漏洞是否还在。GitHub 项目在暂停或完成时会先同步上游 HEAD；审计进行中则用当前快照，以免打断挖掘。没有历史漏洞文档时仍核对源码。已公开标「误报-已公开」，最新代码已修标「误报-已修复」（已公开且已修也归「已修复」）。日志在阶段日志的「产出去重」Tab；不阻塞挖掘/审核，也不是项目完成闸门。
+
 ### 4.9 产品能力与运维
 
 | 能力 | 说明 |
 | --- | --- |
-| 模型商池 | 见 4.3；设置页多 Base URL，会话粘滞、端点故障换路 |
+| 模型商池 | 见 4.3；设置页多 Base URL，同一轮对话优先同模型、会话粘滞、端点故障换路 |
 | 项目 Token 上限 | `max_token_usage`（默认 0 不限制）按本项目全部 Agent 输入+输出合计，到达后自动暂停；提高上限或改为 0 后再续跑 |
-| 接续对话 | 阶段日志 SSE 下方按当前小阶段：**引导**（进行中下一轮注入）、**接续**（用最新一轮完整消息继续）、**新开**（放弃检查点再跑一轮）。轮结束后检查点归档到 `workspace/last-conversation/` |
+| 接续对话 | 阶段日志 SSE 下方按当前小阶段：**引导**（进行中下一轮注入）、**接续**（用最新一轮完整消息继续）、**新开**（放弃检查点再跑一轮）。无约束扫描改为 **停止 / 启动**（无新开）；停止后若其他阶段已结束则项目完成。轮结束后检查点归档到 `workspace/last-conversation/` |
 | 重置启发式进度 | 暂停或终态可用；清 `audited`/认领/启发式轮次摘要与 Worker 检查点。快速扫描 Sink 队列与绕过进度不重置；漏洞产出与侦察文档保留 |
-| GitHub 发现仓库 | 从公开 GHSA 筛星标与活跃度达标的仓库；关键词粗分后再用模型单轮复核 `target_kind`。已创建与可创建分开列出，可忽略候选使其不再出现 |
+| GitHub 发现仓库 | 可填用户提示词，由模型优先按意图构造 GitHub 搜索并筛选候选；留空则从公开 GHSA 筛星标与活跃度达标的仓库。排除官方演示、示例工程和学习用项目。关键词粗分后再用模型单轮复核 `target_kind`。已创建与可创建分开列出，可单条或一键移除候选使其不再出现。搜索默认 600 秒，超过 5 个时每多 1 个加 60 秒；超时返回原因并保留已入库候选 |
 | 产出日历 | 漏洞产出页按日统计已确认与误报 |
 | 报告产物 | 中文 `report.md`（标题须中文）、英文 `advisory.md`、CVE 5.2 `cve.json`。详情可追问改写、一键复制 CVE JSON、下载与批量下载相同的报告+PoC 压缩包 |
 | 访问令牌 | `VULNHUNTER_ACCESS_TOKEN` 或设置页配置后，前端须先输入令牌才能调 API |
 | 局域网监听 | 默认绑 `127.0.0.1`；`start.cmd --lan` / `sh start.sh --lan` 或 `VULNHUNTER_HOST=0.0.0.0` 对局域网开放 |
+| Docker 发行版 | Windows Docker Desktop 或 Linux Engine：`docker/desktop/start.cmd` / `start.sh`。不自动搭建被测应用镜像；验证为关闭 / 局部验证 / 人工靶场。本机 `127.0.0.1` 改写为 `host.docker.internal`。本机根目录启停仍支持完整靶场动态 |
 | 一键靶场 | 项目详情可启停本项目 Docker 靶场并重映射端口 |
 
 ### 4.10 流水线总览
@@ -488,9 +499,12 @@ flowchart LR
 
 ## 7. 漏洞评级附录
 
-按 CVSS 3.1 基础分：9.0–10.0 为严重，7.0–8.9 为高危，4.0–6.9 为中危，0.1–3.9 为低危。Agent 只填写评分向量（`cvss_vector`），分数由系统按 FIRST 公式计算；向量格式错误、或 PR 与 `attack_surface` / `required_account` 不一致时 ConfirmVuln / SetCveRecordField 返回具体错误。
+按 CVSS 3.1 基础分：9.0–10.0 为严重，7.0–8.9 为高危，4.0–6.9 为中危，0.1–3.9 为低危。Agent 填写 `cvss_vector`（3.1）与 `cvss4_vector`（4.0），分数由系统按 FIRST 公式计算；向量格式错误、或 PR 与 `attack_surface` / `required_account` 不一致时 ConfirmVuln / SetCveRecordField 返回具体错误。严重度与列表徽章以 3.1 为准；Advisory 与 CVE JSON 同时写入 4.0。
 
-向量格式：`CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H`
+向量格式：
+
+- `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H`
+- `CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N`
 
 | 度量 | 取值 |
 | --- | --- |
@@ -501,7 +515,9 @@ flowchart LR
 | S Scope | U Unchanged / C Changed |
 | C / I / A | H High / L Low / N None |
 
-PR 必须与攻击面一致：前台 → PR:N，后台普通权限 → PR:L，后台管理员 → PR:H。XSS 默认 `UI:R/S:C/C:L/I:L/A:N`，不要因 Cookie/账户接管把 C/I 标 H。完整度量标准见 `backend/app/prompts/cvss.md`（注入 Reviewer 系统提示词与 ConfirmVuln 工具描述）。
+CVSS 4.0 另需：AT（N None / P Present）、UI（N None / P Passive / A Active）、VC/VI/VA（脆弱系统）、SC/SI/SA（后续系统，无跨边界时全 N）。XSS 默认 4.0 为 `UI:P/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N`。
+
+PR 必须与攻击面一致：前台 → PR:N，后台普通权限 → PR:L，后台管理员 → PR:H。须管理员先把攻击者控制的设备 / 邮箱 / Webhook / SNMP / unix-agent 源加进系统再注入的，标后台管理员（PR:H），不要标普通权限，也不要用「设备侧不用登录」或「普通用户打开页面中招」写成前台 / PR:N。XSS 默认 3.1 `UI:R/S:C/C:L/I:L/A:N`，不要因 Cookie/账户接管把 C/I 标 H。完整度量标准见 `backend/app/prompts/cvss.md`（注入 Reviewer 系统提示词与 ConfirmVuln 工具描述）。
 
 ---
 

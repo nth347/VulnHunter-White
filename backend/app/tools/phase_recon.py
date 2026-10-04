@@ -32,7 +32,11 @@ def recon_map_ready(project_id: int, *, scan: bool = True) -> bool:
         return False
     from ..services.decompile_java import business_jar_map_ready
 
-    return business_jar_map_ready(project_id, scan=scan)
+    if not business_jar_map_ready(project_id, scan=scan):
+        return False
+    from ..code_intelligence.service import code_intel_choice_ready
+
+    return code_intel_choice_ready(project_id)
 
 
 # Map/auth refresh: session stays open until FinishReconMap clears the token.
@@ -175,6 +179,18 @@ def recon_gates_status(project_id: int) -> dict[str, Any]:
             errors.append(
                 "存在字节码但尚未结束业务 jar 点名；请 MarkBusinessJar(paths=[...])，"
                 "全部点完后 MarkBusinessJar(done=true)，无业务覆盖则 none=true"
+            )
+        from ..code_intelligence.service import code_intel_choice_ready, is_code_intel_enabled
+        from ..models import Project, SessionLocal as _SL
+
+        ci_on = False
+        with _SL() as _db:
+            _p = _db.get(Project, project_id)
+            ci_on = is_code_intel_enabled(_p)
+        if ci_on and not code_intel_choice_ready(project_id):
+            errors.append(
+                "已开启代码库但尚未点名后端；请 MarkCodeIntel(codegraph=... , jar_analyzer=...) "
+                "至少选一个（有源码选 codegraph，有业务 jar 可选 jar_analyzer，或两者）"
             )
     if ext_missing:
         errors.append("尚未检查额外源码扩展名；请用 AddSourceExt 追加模板/映射，或 AddSourceExt(none=true)")
@@ -389,19 +405,29 @@ def pick_unmarked_batch(project_id: int, limit: int) -> list[str]:
     return paths[:n]
 
 
-def paths_fully_marked(project_id: int, paths: list[str]) -> bool:
+def unmarked_paths(project_id: int, paths: list[str]) -> list[str]:
+    """Return indexed paths in ``paths`` that still need MarkWeight / MarkSource / MarkSkip.
+
+    Paths with no FileWeight row are omitted: the agent cannot mark them, and they
+    must not keep the batch gate open.
+    """
     want = [normalize_weight_path(p) for p in paths if normalize_weight_path(p)]
     if not want:
-        return True
+        return []
+    leftover: list[str] = []
     with SessionLocal() as db:
         by_path = _load_weight_rows(db, project_id, want)
         for p in want:
             row = _match_weight_row(p, by_path)
             if row is None:
-                return False
+                continue
             if not row.skipped and row.weight is None:
-                return False
-    return True
+                leftover.append(row.path)
+    return leftover
+
+
+def paths_fully_marked(project_id: int, paths: list[str]) -> bool:
+    return not unmarked_paths(project_id, paths)
 
 
 def apply_recon_done(project_id: int) -> bool:

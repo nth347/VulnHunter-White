@@ -72,6 +72,7 @@ from ..services.report import (
     write_advisory_md,
 )
 from ..services.duplicate_guard import soft_duplicate_gate
+from ..services.known_public import soft_known_public_gate
 from ..services.root_cause import (
     canonical_root_cause_key,
     mismatched_root_cause_key_error,
@@ -86,10 +87,18 @@ from ..cvss31 import (
     parse_cvss31,
     stamp_advisory_cvss31,
 )
+from ..cvss40 import (
+    Cvss40Error,
+    Cvss40Result,
+    apply_cvss40_to_cve_record,
+    cvss40_pr_alignment_error,
+    parse_cvss40,
+)
 from ..exposure_mode import (
     EXPOSURE_DIRECT,
     EXPOSURE_INDIRECT_CONSUMER,
     cvss_indirect_consumer_error,
+    cvss40_indirect_consumer_error,
     exposure_mode_label,
     indirect_attack_surface_error,
     indirect_exposure_section_gap,
@@ -169,6 +178,7 @@ def _review_label_body(
     *,
     exposure_mode: str | None = None,
     upstream_chain_proven: bool = False,
+    cvss40: Cvss40Result | None = None,
 ) -> str:
     lines = [f"- 攻击面：{_SURFACE_LABELS[surface]}"]
     if surface == "backend" and account:
@@ -183,15 +193,25 @@ def _review_label_body(
     premise_label = config_premise_label(config_premise)
     if premise_label:
         lines.append(f"- 配置前提：{premise_label}")
-    lines.extend(
+    score_lines = [
+        f"- 严重度：{cvss.severity_label}（{cvss.severity}）",
+        f"- CVSS 3.1：{cvss.score:.1f}",
+        f"- 评分向量：{cvss.vector}",
+    ]
+    if cvss40 is not None:
+        score_lines.extend(
+            [
+                f"- CVSS 4.0：{cvss40.score:.1f}",
+                f"- CVSS 4.0 向量：{cvss40.vector}",
+            ]
+        )
+    score_lines.extend(
         [
-            f"- 严重度：{cvss.severity_label}（{cvss.severity}）",
-            f"- CVSS 3.1：{cvss.score:.1f}",
-            f"- 评分向量：{cvss.vector}",
             f"- 价值分层：{submission.tier_label}（{submission.tier}）",
             f"- 分层理由：{submission.reason}",
         ]
     )
+    lines.extend(score_lines)
     if submission.root_cause_key:
         lines.append(f"- 根因合并键：{submission.root_cause_key}")
     return "\n".join(lines)
@@ -218,28 +238,47 @@ def mark_timeout_give_up(vuln: Vuln, streak: int) -> str:
     return reason
 
 
-def _stamp_cvss_artifacts(project_id: int, vuln_id: int, cvss: Cvss31Result) -> None:
-    """Write computed CVSS 3.1 score into advisory.md and cve.json."""
+def _stamp_cvss_artifacts(
+    project_id: int,
+    vuln_id: int,
+    cvss: Cvss31Result,
+    cvss40: Cvss40Result | None = None,
+) -> None:
+    """Write computed CVSS 3.1 / 4.0 scores into advisory.md and cve.json."""
     adv_path = vuln_dir(project_id, vuln_id) / "advisory.md"
     if adv_path.is_file():
         stamped = stamp_advisory_cvss31(
             adv_path.read_text(encoding="utf-8", errors="ignore"),
             cvss,
+            cvss40,
         )
         write_advisory_md(adv_path, stamped)
     record = ensure_cve_record(project_id, vuln_id)
     apply_cvss31_to_cve_record(record, cvss)
+    if cvss40 is not None:
+        apply_cvss40_to_cve_record(record, cvss40)
     write_cve_record(project_id, vuln_id, record)
 
 
-def _commit_false_positive(ctx, db, vuln: Vuln, vuln_id: int, reason: str, message: str) -> dict[str, Any]:
+def _commit_false_positive(
+    ctx,
+    db,
+    vuln: Vuln,
+    vuln_id: int,
+    reason: str,
+    message: str,
+    *,
+    fp_kind: str | None = None,
+    end_review: bool = True,
+) -> dict[str, Any]:
     vuln.status = "false_positive"
-    vuln.fp_kind = None
+    vuln.fp_kind = fp_kind
     vuln.return_reason = reason
     _append_false_positive_reason(vuln.project_id, int(vuln_id), reason)
     db.commit()
-    ctx.state["review_done"] = True
-    ctx.state["review_verdict"] = "false_positive"
+    if end_review:
+        ctx.state["review_done"] = True
+        ctx.state["review_verdict"] = "false_positive"
     return {"ok": True, "vuln_id": int(vuln_id), "status": "false_positive", "message": message}
 
 
@@ -452,6 +491,24 @@ def _confirm_vuln(ctx, args: dict[str, Any]) -> dict[str, Any]:
     vuln_id = args.get("vuln_id") or ctx.vuln_id
     if not vuln_id:
         return {"ok": False, "error": "缺少 vuln_id"}
+    with SessionLocal() as db:
+        early_vuln = db.get(Vuln, int(vuln_id))
+        if not early_vuln or early_vuln.project_id != ctx.project_id:
+            return {"ok": False, "error": "漏洞不存在"}
+        known_public = soft_known_public_gate(
+            ctx,
+            args,
+            tool="ConfirmVuln",
+            title=str(early_vuln.title or ""),
+            source_sink=str(early_vuln.source_sink or ""),
+            http_request=str(early_vuln.http_request or ""),
+            file_path=str(early_vuln.file_path or ""),
+            vuln_type=str(early_vuln.vuln_type or ""),
+            exclude_vuln_id=int(vuln_id),
+            mining_path=str(early_vuln.mining_path or ""),
+        )
+        if known_public:
+            return known_public
     evidence_raw = str(args.get("evidence_level") or "").strip()
     if evidence_raw and normalize_evidence_level(evidence_raw) is None:
         return {"ok": False, "error": "evidence_level 须为 dynamic|static_only|mcp|harness"}
@@ -466,17 +523,21 @@ def _confirm_vuln(ctx, args: dict[str, Any]) -> dict[str, Any]:
         account = None
     try:
         cvss = parse_cvss31(args.get("cvss_vector"))
+        cvss40 = parse_cvss40(args.get("cvss4_vector"))
         submission = normalize_submission_decision(
             submission_tier=args.get("submission_tier"),
             submission_reason=args.get("submission_reason"),
             root_cause_key=args.get("root_cause_key"),
             language=project_language(ctx.project_id),
         )
-    except (Cvss31Error, ValueError) as exc:
+    except (Cvss31Error, Cvss40Error, ValueError) as exc:
         return {"ok": False, "error": str(exc)}
     pr_mismatch = cvss_pr_alignment_error(cvss, surface, account)
     if pr_mismatch:
         return {"ok": False, "error": pr_mismatch}
+    pr40_mismatch = cvss40_pr_alignment_error(cvss40, surface, account)
+    if pr40_mismatch:
+        return {"ok": False, "error": pr40_mismatch}
     try:
         exposure_mode = normalize_exposure_mode(args.get("exposure_mode"))
     except ValueError as exc:
@@ -489,6 +550,12 @@ def _confirm_vuln(ctx, args: dict[str, Any]) -> dict[str, Any]:
         )
         if cvss_indirect:
             return {"ok": False, "error": cvss_indirect}
+        cvss40_indirect = cvss40_indirect_consumer_error(
+            cvss40,
+            upstream_chain_proven=upstream_chain_proven,
+        )
+        if cvss40_indirect:
+            return {"ok": False, "error": cvss40_indirect}
         surface_indirect = indirect_attack_surface_error(
             surface,
             upstream_chain_proven=upstream_chain_proven,
@@ -783,7 +850,7 @@ def _confirm_vuln(ctx, args: dict[str, Any]) -> dict[str, Any]:
             write_poc_code(ctx.project_id, int(vuln_id), str(poc_code))
         if advisory_md not in (None, ""):
             write_advisory_md(vuln_dir(vuln.project_id, int(vuln_id)) / "advisory.md", str(advisory_md))
-        _stamp_cvss_artifacts(ctx.project_id, int(vuln_id), cvss)
+        _stamp_cvss_artifacts(ctx.project_id, int(vuln_id), cvss, cvss40)
         if harness_code:
             write_harness_code(
                 ctx.project_id,
@@ -805,6 +872,7 @@ def _confirm_vuln(ctx, args: dict[str, Any]) -> dict[str, Any]:
                 config_premise=vuln.config_premise,
                 exposure_mode=exposure_mode,
                 upstream_chain_proven=upstream_chain_proven,
+                cvss40=cvss40,
             ),
         )
         db.commit()
@@ -854,6 +922,8 @@ def _confirm_vuln(ctx, args: dict[str, Any]) -> dict[str, Any]:
         "severity_label": cvss.severity_label,
         "severity_score": cvss.score,
         "cvss_vector": cvss.vector,
+        "cvss4_vector": cvss40.vector,
+        "cvss4_score": cvss40.score,
         "submission_tier": submission.tier,
         "submission_tier_label": submission.tier_label,
         "submission_reason": submission.reason,
@@ -1092,18 +1162,23 @@ def register_reviewer_tools() -> None:
         ToolSpec(
             name="ConfirmVuln",
             description=(
-                "确认漏洞，按 CVSS 3.1 向量由系统计分，并标注价值分层。"
+                "确认漏洞，按 CVSS 3.1 与 CVSS 4.0 向量由系统计分，并标注价值分层。"
                 "只确认默认/官方部署下攻击者可单独利用、且能打出可观察有害冲击的问题；"
                 "不要把仅 sink 可达、靠 docker exec 种文件/组合独立写原语才成立、"
                 "无害/受限文件操作（只能读特定后缀或公开目录非敏感内容、只能上传无害文件）、"
-                "不可获取且不可预测的 UUID、"
+                "不可获取且不可预测的对象键（UUID/文件名等；他人分享链接/邮件/预览 URL 不算可获取）、"
                 "或项目配置/文档/.env/compose 里用户可改的默认密码弱口令标成漏洞。"
                 "有服务端机密危害的源码硬编码密钥（JWT/HMAC 签名密钥、接口签名 secret、"
                 "私钥、第三方 API Key 等）可以确认；"
+                "但密钥若只用于给已知对象键伪造下载 token、且该键不可独立获取"
+                "（他人分享链接/邮件/预览 URL 不算可获取），仍应误报；"
                 "前端传输混淆 AES/公开下发密钥应误报。"
                 "必须标注 attack_surface=frontend|backend（前台/后台）；"
                 "Worker 声称前台时须独立核验无认证可达，不要照抄 auth_premise；"
                 "核完其实要登录则标 backend，不要硬标 frontend。"
+                "须管理员先把攻击者控制的设备/邮箱/Webhook/SNMP 源/unix-agent 加进系统再注入的，"
+                "不是前台，必须标 backend + required_account=admin，不要标 user；"
+                "不要用「设备侧/unix-agent 不用登录」或「普通用户打开页面中招」硬标 frontend。"
                 "后台漏洞必须再标 required_account=user|admin（普通权限账号/管理员账号）。"
                 "evidence_level=static_only|dynamic|mcp|harness。"
                 "关闭动态验证、或本条已因连续超时/搭建失败被强制仅静态时必须 static_only；"
@@ -1114,7 +1189,8 @@ def register_reviewer_tools() -> None:
                 "局部验证打通时标 harness，不要标 dynamic；"
                 "harness 确认前报告须含「### 漏洞代码」（完整文件路径 + 源码原文）。"
                 "harness 必须打印运行时实际数据，禁止写死 SUCCESS/success=true 或预期回显字面量。"
-                "还必须标注 cvss_vector（CVSS 3.1 基础向量，只填度量不要填分数）、"
+                "还必须标注 cvss_vector（CVSS 3.1 基础向量）与 cvss4_vector（CVSS 4.0 基础向量），"
+                "只填度量不要填分数、"
                 "submission_tier、submission_reason（分层理由须用中文）。"
                 "核对 Worker 的 config_premise；错误则 Confirm 时传入纠正。"
                 "specific 不含官方已明确警示会导致安全风险的配置；仅在此类开关下才成立则误报。"
@@ -1123,10 +1199,14 @@ def register_reviewer_tools() -> None:
                 "若与已有洞同 file_path+vuln_type 或同 root_cause_key，首次 Confirm 会提醒复查合并；"
                 "确认危害/鉴权不同仍要单独确认时，再次调用并传 confirm_not_duplicate=true"
                 "（仅本会话提醒过一次后才接受）。"
+                "若与侦察历史漏洞（kind=old）同一入口/sink，首次 Confirm 会提醒这是已公开同类洞；"
+                "应 MarkFalsePositive，不要当成新 CVE。仅当公开文未覆盖的新链时，"
+                "再次 Confirm 并传 confirm_not_known_public=true（仅本会话提醒过一次后才接受）。"
                 "无约束扫描产出必须传 rce_effect=true|false：由你判定本条前台漏洞是否达成 RCE 效果"
                 "（不必看 vuln_type 是否为 rce）；true 且前台确认后该路径结束，当前挖掘轮仍会跑完。"
                 "无约束扫描产出始终走赏金闸门。"
                 "严重度按 CVSS 3.1 向量由系统计分，不要手填分数，也不要按漏洞类型映射。"
+                "Advisory / CVE JSON 同时回写 CVSS 4.0（cvss4_vector，分数同样由系统计算）。"
                 "PR 必须与 attack_surface / required_account 一致，否则拒绝确认。"
                 "SSRF 须按观察面确认：有回显或外带内网信息才能写可读元数据/内网正文（二者危害同级）；"
                 "仅状态码/时延/报错差别、或仅出网回调不含内网内容，只算内网端口探测，向量 C/I/A 不要按凭据窃取标 H。"
@@ -1157,11 +1237,18 @@ def register_reviewer_tools() -> None:
                     },
                     "attack_surface": {
                         "type": "string",
-                        "description": "必填。frontend=前台，backend=后台。也可写中文：前台 / 后台",
+                        "description": (
+                            "必填。frontend=前台，backend=后台。也可写中文：前台 / 后台。"
+                            "须管理员先加入攻击者设备/邮箱/Webhook/SNMP/unix-agent 源的，"
+                            "必须 backend，禁止 frontend。"
+                        ),
                     },
                     "required_account": {
                         "type": "string",
-                        "description": "后台必填。user=普通权限账号，admin=管理员账号。也可写中文：普通权限 / 管理员",
+                        "description": (
+                            "后台必填。user=普通权限账号，admin=管理员账号。也可写中文：普通权限 / 管理员。"
+                            "须管理员先加入攻击者设备/源才能注入的，必须 admin，不要标 user。"
+                        ),
                     },
                     "exposure_mode": {
                         "type": "string",
@@ -1204,6 +1291,18 @@ def register_reviewer_tools() -> None:
                             + cvss_scoring_prompt(language="zh")
                         ),
                     },
+                    "cvss4_vector": {
+                        "type": "string",
+                        "description": (
+                            "必填。CVSS 4.0 基础评分向量，只填度量，不要填分数。"
+                            "格式 CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N。"
+                            "PR 必须与 attack_surface 一致（同 3.1）。"
+                            "UI 为 N|P|A（XSS 默认 UI:P，不要写成 3.1 的 UI:R）。"
+                            "VC/VI/VA 为脆弱系统冲击；SC/SI/SA 为后续系统，无跨边界时全 N。"
+                            "XSS 默认 UI:P/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N，不要因 Cookie/账户接管把 VC/VI 标 H。"
+                            "间接消费型须 AC:H 且 AV 不得为 N，未证明上游链时 VC/VI/VA 至多一项 H。"
+                        ),
+                    },
                     "submission_tier": {
                         "type": "string",
                         "description": (
@@ -1235,6 +1334,13 @@ def register_reviewer_tools() -> None:
                         "description": (
                             "疑似重复提醒后仍确认单独 Confirm 时传 true。"
                             "仅本会话已因同一指纹被提醒过一次后才接受；首次带上会被拒绝。"
+                        ),
+                    },
+                    "confirm_not_known_public": {
+                        "type": "boolean",
+                        "description": (
+                            "疑似已公开同类洞提醒后，确认是公开公告未覆盖的新链时传 true。"
+                            "仅本会话已因同一入口/sink 被提醒过一次后才接受；首次带上会被拒绝。"
                         ),
                     },
                     "rce_effect": {
@@ -1269,7 +1375,7 @@ def register_reviewer_tools() -> None:
                         "type": "string",
                         "description": (
                             "可选。英文 GitHub Advisory 填表稿，结构对齐 templates/vuln-advisory.md。"
-                            "Severity/CWE 须含 CVSS 3.1 向量；基础分由系统按向量计算，不要手填分数。"
+                            "Severity/CWE 须含 CVSS 3.1 与 CVSS 4.0 向量；基础分由系统按向量计算，不要手填分数。"
                             "须含 ### Vulnerable code（完整相对路径 + 源码原文）。"
                             "系统会回写 vulns/{id}/advisory.md。也可本轮 Write 该文件后 Confirm。"
                         ),
@@ -1318,6 +1424,7 @@ def register_reviewer_tools() -> None:
                 "required": [
                     "attack_surface",
                     "cvss_vector",
+                    "cvss4_vector",
                     "submission_tier",
                     "submission_reason",
                 ],
@@ -1426,7 +1533,8 @@ def register_reviewer_tools() -> None:
             description=(
                 "判定误报并结束本审核会话。用于成立性不成立、赏金禁止类型、"
                 "需种文件/第二个独立漏洞才成立、默认口令、前端传输混淆密钥、"
-                "无害/受限文件操作、不可获取且不可预测的 UUID 等。"
+                "无害/受限文件操作、不可获取且不可预测的对象键（含仅靠分享链接拿到的 fdId）、"
+                "以及与侦察历史漏洞（kind=old）同一入口/sink 的已公开同类洞等。"
                 "不要用来改 PoC、降危害口径或合并同根因。"
             ),
             parameters={

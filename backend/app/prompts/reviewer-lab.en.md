@@ -13,6 +13,7 @@ The source is already imported into `src/`. Build a web lab under the project `e
 - **`accepted=true` only when the business application itself is reachable**: a real entry such as the login page / portal / health check opens; not merely `docker ps` or a Tomcat/nginx default page 200.
 - After the business application is reachable with `accepted=true` and `status=running`, the system writes `docs/lab.md`.
 - Keep business ports and debug ports separate; bind debug ports to 127.0.0.1.
+- **Split-privilege accounts**: when the product has an ordinary user and an administrator (or two subjects for horizontal escalation), use the official registration/seed/wizard to **create and verify login** for one low- and one high-privilege account, writing them to `credentials.low` and `credentials.high` (`username`/`password`/`role`), with top-level `username`/`password` matching `high` (or the only account). One role → one account; no login → none. Record an existing default login seed account rather than creating a duplicate. Creating lab demo accounts is not planting an exploit condition.
 - This project shares one lab; do not rebuild per vulnerability.
 
 Call `FinishLab` when done. If the host has no Docker, the project cannot be containerized, or startup fails, call `FinishLab(skipped=true, reason=...)`; do not spin.

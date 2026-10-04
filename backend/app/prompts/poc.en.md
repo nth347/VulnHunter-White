@@ -28,11 +28,29 @@ The clauses below apply to web findings and to a `poc.py` in a component library
    - Arbitrary file read / path traversal: `-f/--file` (default a sensitive path).
    - SSRF: `--ssrf-url` (default an internal probe address). **With an echo, print the target response body** (prefix `SSRF echo:`); **with out-of-band exfiltration, print the content retrieved from the attacker channel** (prefix `SSRF exfil:`, and it must contain target-side information, not just "callback received"); with a response difference only, print the reachable/unreachable comparison (status code, latency or error for an open/closed port or a live/dead address), and do not treat a reflected URL as an echo.
    - SQLi / SSTI: `--payload` (default probe statement).
+   - Privilege escalation / horizontal escalation: also provide victim or high-privilege account CLI args (such as `--victim-user` / `--victim-password`, or `--admin-user` / `--admin-password`). Default them from the lab `env.json` `credentials.low` (attacker) and `credentials.high` (comparison/victim admin), so `python poc.py -u <target_url>` with no account still works against the lab; override with the CLI when switching targets, and do not hard-code a particular FOFA host's credentials.
    - Requires login: `--cookie` / `--token`, or `-U/--user` `-P/--password`.
    - Other entry points (path, id, filename, etc.) likewise become CLI arguments; do not hard-code this sample.
 5. **Print the result**: print the HTTP status, key response headers, and the response body (truncate if long and say so). For RCE with an echo, print the command output separately. Exit 0 when the expected impact lands, non-zero otherwise. Under lab dynamic, ConfirmVuln re-runs the on-disk script, and a non-zero exit rejects the confirmation.
-6. **Bilingual output (`--zh`)**: the stdout/stderr labels, statuses, warnings and success/failure verdicts that the author of `poc.py` / `harness.py` (and `harness.*`, attack-chain scripts) prints must be prepared in both English and Chinese. **English by default**; `--zh` switches to Chinese. Use a single `(en, zh)` table + `msg(key, zh)` (or the equivalent in other languages: scan argv for `--zh`); do not hard-code Chinese only, and do not mix the two by default. Comments, docstrings and `argparse` `--help` stay in English. Print the target's echo (HTTP body, command output, file content, exception text) verbatim - do not translate it.
+6. **Bilingual output (`--zh`)**: the stdout/stderr labels, statuses, warnings and success/failure verdicts that the author of `poc.py` / `harness.py` (and `harness.*`, attack-chain scripts) prints must be prepared in both English and Chinese. **English by default**; `--zh` switches to Chinese. Python uses a `(en, zh)` **tuple** table + `msg(key, zh)`. **JavaScript must use an array `[en, zh]`**: parentheses `(en, zh)` are the comma operator and keep only the Chinese string, so `const [en, zh_s] = MSGS[key]` then destructuring by character prints single characters. PHP / Ruby use arrays, Go uses `[2]string{en, zh}`; do not paste Python tuple syntax verbatim. Scan argv / `process.argv` / `os.Args` for `--zh`. Do not hard-code Chinese only, and do not mix the two by default. Comments, docstrings and `argparse` `--help` stay in English. Print the target's echo (HTTP body, command output, file content, exception text) verbatim - do not translate it.
 7. Do not write a notebook fragment, pseudocode, or anything that depends on files outside the current working directory.
+
+A JavaScript harness / `harness.js` table must use an **array**, not the Python tuple above:
+
+```javascript
+const MSGS = {
+  step: ["Step:", "步骤:"],
+  result: ["Result:", "结果:"],
+};
+const zh = process.argv.includes("--zh");
+function msg(key) {
+  const pair = MSGS[key];
+  return zh ? pair[1] : pair[0];
+}
+console.log(msg("step"), actualRuntimeValue);
+```
+
+node harness.js --zh
 
 ## Recommended skeleton
 

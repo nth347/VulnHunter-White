@@ -31,7 +31,10 @@ class LlmPoolEndpointIn(BaseModel):
     base_url: str = ""
     api_key: str | None = None
     model: str = ""
+    wire_api: str | None = None
     max_inflight: int = 6
+    weight: float = 1.0
+    disabled: bool = False
 
 
 class LlmPoolEndpointOut(BaseModel):
@@ -39,7 +42,10 @@ class LlmPoolEndpointOut(BaseModel):
     base_url: str
     api_key_set: bool = False
     model: str = ""
+    wire_api: str = ""
     max_inflight: int = 6
+    weight: float = 1.0
+    disabled: bool = False
 
 
 class LlmRoleAssignment(BaseModel):
@@ -53,6 +59,7 @@ class SettingsOut(BaseModel):
     llm_roles: dict[str, LlmRoleAssignment] = Field(default_factory=dict)
     llm_endpoints: list[LlmPoolEndpointOut] = Field(default_factory=list)
     llm_thread_limit: int = 6
+    llm_min_request_interval_sec: float = 2.0
     github_pat_set: bool = False
     fofa_key_set: bool = False
     fofa_base_url: str = "https://fofa.info"
@@ -65,6 +72,7 @@ class SettingsOut(BaseModel):
     cli_tools_dir: str = "tools/cli"
     jadx_path: str = ""
     codegraph_path: str = ""
+    jar_analyzer_path: str = ""
     access_token_set: bool = False
 
 
@@ -91,6 +99,7 @@ class SettingsUpdate(BaseModel):
     llm_roles: dict[str, LlmRoleAssignment] | None = None
     llm_endpoints: list[LlmPoolEndpointIn] | None = None
     llm_thread_limit: int | None = None
+    llm_min_request_interval_sec: float | None = None
     github_pat: str | None = None
     fofa_key: str | None = None
     fofa_base_url: str | None = None
@@ -103,6 +112,7 @@ class SettingsUpdate(BaseModel):
     cli_tools_dir: str | None = None
     jadx_path: str | None = None
     codegraph_path: str | None = None
+    jar_analyzer_path: str | None = None
 
 
 class AccessTokenUpdate(BaseModel):
@@ -210,6 +220,19 @@ class CodegraphTestOut(BaseModel):
     error: str | None = None
 
 
+class JarAnalyzerProbeIn(BaseModel):
+    jar_analyzer_path: str | None = None
+
+
+class JarAnalyzerTestOut(BaseModel):
+    ok: bool
+    path: str = ""
+    version: str = ""
+    java: str = ""
+    latency_ms: int | None = None
+    error: str | None = None
+
+
 class LiveLogPurgeIn(BaseModel):
     older_than_days: int = Field(ge=0, le=3650)
 
@@ -220,6 +243,39 @@ class LiveLogPurgeOut(BaseModel):
     projects: int = 0
     files: int = 0
     bytes: int = 0
+
+
+class AppUpdateStatusOut(BaseModel):
+    git_available: bool = False
+    docker_runtime: bool = False
+    current_version: str = ""
+    current_sha: str = ""
+    current_sha_short: str = ""
+    remote_name: str = ""
+    remote_url: str = ""
+    remote_ref: str = ""
+    remote_sha: str = ""
+    remote_sha_short: str = ""
+    remote_version: str = ""
+    update_available: bool = False
+    can_apply: bool = False
+    apply_blocked_reason: str = ""
+    dirty: bool = False
+    applying: bool = False
+    restarting: bool = False
+    last_checked_at: str | None = None
+    last_error: str = ""
+    check_interval_sec: int = 3600
+
+
+class AppUpdateApplyOut(BaseModel):
+    ok: bool = False
+    restarting: bool = False
+    reason: str = ""
+    error: str = ""
+    old_sha: str = ""
+    new_sha: str = ""
+    pulled: bool = False
 
 
 MANUAL_LAB_PROMPT_MAX = 20000
@@ -272,7 +328,7 @@ def normalize_conversation_message(raw: Any) -> str:
 
 class ConversationBody(BaseModel):
     log_phase: str = Field(..., min_length=1, max_length=64)
-    action: Literal["steer", "continue", "new"]
+    action: Literal["steer", "continue", "new", "stop", "start"]
     message: str = Field(default="", max_length=WORKER_HINT_MAX)
 
 
@@ -284,10 +340,18 @@ class ConversationStateOut(BaseModel):
     can_steer: bool
     has_archived: bool
     latest_session: int = 1
+    can_stop: bool = False
+    can_start: bool = False
+    unconstrained_done: bool = False
+    path_stopped: bool = False
 
 
 class LabSetupRetryBody(BaseModel):
     user_message: str = Field(default="", max_length=WORKER_HINT_MAX)
+
+
+class VulnDedupBody(BaseModel):
+    vuln_ids: list[int] = Field(default_factory=list)
 
 
 class ProjectLabOut(BaseModel):
@@ -410,6 +474,7 @@ class ProjectOut(BaseModel):
     code_intel_done: bool = False
     code_intel_error: str = ""
     code_intel_stale: bool = False
+    code_intel_backends: list[str] = Field(default_factory=list)
     audit_mode: str = "bounty"
     target_kind: str = "web"
     custom_audit_mode_id: int | None = None
@@ -420,6 +485,7 @@ class ProjectOut(BaseModel):
     verifier_enabled: bool = False
     attack_chain_enabled: bool = False
     attack_chain_done: bool = False
+    attack_chain_stopped: bool = False
     dynamic_verify_enabled: bool = False
     dynamic_verify_mode: str = "off"
     heuristic_enabled: bool = True
@@ -430,10 +496,15 @@ class ProjectOut(BaseModel):
     bypass_queue_frozen: bool = False
     unconstrained_enabled: bool = False
     unconstrained_done: bool = False
+    heuristic_stopped: bool = False
+    fast_stopped: bool = False
+    bypass_stopped: bool = False
     llm_model: str = ""
     worker_hint: str = ""
     recon_hint: str = ""
     max_token_usage: int = 0
+    source_sync_error: str | None = None
+    source_sync_notice: str | None = None
     error: str | None = None
     language: str = "en"
     worker_concurrency: int | None = None
@@ -499,6 +570,7 @@ class ProjectListItemOut(BaseModel):
     verifier_enabled: bool = False
     attack_chain_enabled: bool = False
     attack_chain_done: bool = False
+    attack_chain_stopped: bool = False
     dynamic_verify_enabled: bool = False
     dynamic_verify_mode: str = "off"
     heuristic_enabled: bool = True
@@ -509,8 +581,13 @@ class ProjectListItemOut(BaseModel):
     bypass_queue_frozen: bool = False
     unconstrained_enabled: bool = False
     unconstrained_done: bool = False
+    heuristic_stopped: bool = False
+    fast_stopped: bool = False
+    bypass_stopped: bool = False
     llm_model: str = ""
     max_token_usage: int = 0
+    source_sync_error: str | None = None
+    source_sync_notice: str | None = None
     error: str | None = None
     worker_concurrency: int | None = None
     created_at: datetime
@@ -632,6 +709,8 @@ class VulnDetail(VulnOut):
     verifier_fofa_query: str | None = None
     can_dynamic_verify: bool = False
     dynamic_verify_queued: bool = False
+    can_internet_verify: bool = False
+    internet_verify_queued: bool = False
 
 
 class VulnCalendarDay(BaseModel):
@@ -957,6 +1036,7 @@ class GithubCandidateListOut(BaseModel):
 
 class GithubDiscoverSearchIn(BaseModel):
     limit: int = Field(default=5, ge=1, le=20)
+    prompt: str | None = Field(default=None, max_length=2000)
 
 
 class GithubDiscoverSearchOut(BaseModel):
@@ -971,3 +1051,9 @@ class GithubDiscoverSearchOut(BaseModel):
     authenticated: bool = False
     warning: str | None = None
     limit: int = 5
+    prompt: str | None = None
+    timed_out: bool = False
+
+
+class GithubDiscoverDismissAllOut(BaseModel):
+    dismissed: int = 0

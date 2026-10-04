@@ -7,6 +7,7 @@ import time
 
 from app.agent.loop import AgentLoop, LoopResult
 from app.services.llm_gate import llm_gate
+from app.services.llm_settings import ResolvedLlm
 from app.services.llm_thread import (
     DEFAULT_LLM_THREAD_LIMIT,
     LlmThreadLimiter,
@@ -162,6 +163,124 @@ def test_multi_endpoint_parallel_capacity():
     assert lim.snapshot()[0] == 0
 
 
+def test_disabled_endpoint_is_skipped_by_pool():
+    lim = LlmThreadLimiter()
+    lim.refresh_pool(
+        [
+            {
+                "id": "ep-a",
+                "base_url": "https://a.example/v1",
+                "api_key": "ka",
+                "max_inflight": 4,
+                "disabled": True,
+            },
+            {"id": "ep-b", "base_url": "https://b.example/v1", "api_key": "kb", "max_inflight": 2},
+        ]
+    )
+    assert lim.current_limit() == 2
+    handles = [lim.acquire() for _ in range(2)]
+    assert all(h is not None and h.endpoint_id == "ep-b" for h in handles)
+    for h in handles:
+        lim.release(h)
+    assert lim.snapshot()[0] == 0
+
+
+def test_pipeline_resolved_llm_still_binds_and_failsover_when_endpoint_disabled():
+    """resolve_llm() injected by pipeline must follow the pool (not pin like tests)."""
+    llm_thread_limiter.reset()
+    llm_thread_limiter.refresh_pool(
+        [
+            {
+                "id": "ep-1",
+                "base_url": "https://old.example/v1",
+                "api_key": "k-old",
+                "model": "old-model",
+                "max_inflight": 1,
+            },
+            {
+                "id": "ep-2",
+                "base_url": "https://new.example/v1",
+                "api_key": "k-new",
+                "model": "new-model",
+                "max_inflight": 1,
+            },
+        ]
+    )
+    loop = AgentLoop(
+        project_id=1,
+        role="recon",
+        phase="recon",
+        system_prompt="s",
+        user_prompt="u",
+        llm=ResolvedLlm(
+            base_url="https://old.example/v1",
+            wire_api="chat",
+            model="old-model",
+            api_key="k-old",
+            source="provider:default",
+            endpoint_id="ep-1",
+        ),
+    )
+    assert loop._acquire_llm_slot()
+    assert loop.llm.endpoint_id == "ep-1"
+    llm_thread_limiter.refresh_pool(
+        [
+            {
+                "id": "ep-1",
+                "base_url": "https://old.example/v1",
+                "api_key": "k-old",
+                "model": "old-model",
+                "max_inflight": 1,
+                "disabled": True,
+            },
+            {
+                "id": "ep-2",
+                "base_url": "https://new.example/v1",
+                "api_key": "k-new",
+                "model": "new-model",
+                "max_inflight": 1,
+            },
+        ]
+    )
+    assert loop._try_rebind_endpoint("端点已禁用")
+    assert loop.llm.endpoint_id == "ep-2"
+    assert loop.llm.base_url == "https://new.example/v1"
+    assert loop.llm.api_key == "k-new"
+    loop._release_llm_slot()
+    llm_thread_limiter.reset()
+
+
+def test_test_injected_llm_does_not_rebind_off_pinned_url():
+    llm_thread_limiter.reset()
+    llm_thread_limiter.refresh_pool(
+        [
+            {"id": "ep-1", "base_url": "https://a.example/v1", "api_key": "ka", "max_inflight": 1},
+            {"id": "ep-2", "base_url": "https://b.example/v1", "api_key": "kb", "max_inflight": 1},
+        ]
+    )
+    loop = AgentLoop(
+        project_id=1,
+        role="worker",
+        phase="worker",
+        system_prompt="s",
+        user_prompt="u",
+        llm=ResolvedLlm(
+            base_url="http://llm.test/v1",
+            wire_api="chat",
+            model="pin",
+            api_key="k",
+            source="test",
+        ),
+    )
+    assert loop._acquire_llm_slot()
+    assert loop.llm.base_url == "http://llm.test/v1"
+    llm_gate.note_error(loop._slot_handle.endpoint_id, "rate_limit", retry_after=120)
+    assert loop._try_rebind_endpoint("429 限流") is False
+    assert loop.llm.base_url == "http://llm.test/v1"
+    loop._release_llm_slot()
+    llm_thread_limiter.reset()
+
+
 def test_acquire_spreads_evenly_even_when_preferring_first():
     """New sessions must not fill the sticky first endpoint before using others."""
     lim = LlmThreadLimiter()
@@ -200,6 +319,279 @@ def test_prefer_wins_only_when_loads_are_equal():
     assert h1 is not None and h1.endpoint_id == "ep-a"
     lim.release(h0)
     lim.release(h1)
+
+
+def test_prefer_model_beats_lower_utilization_other_model():
+    """Same-conversation model stickiness ranks above spreading to another model."""
+    lim = LlmThreadLimiter()
+    lim.refresh_pool(
+        [
+            {"id": "ep-a", "base_url": "https://a.example/v1", "api_key": "ka", "model": "model-a", "max_inflight": 4},
+            {"id": "ep-b", "base_url": "https://b.example/v1", "api_key": "kb", "model": "model-b", "max_inflight": 4},
+        ]
+    )
+    occupied = lim.acquire(prefer_endpoint="ep-a")
+    assert occupied is not None and occupied.endpoint_id == "ep-a"
+    h = lim.acquire(prefer_model="model-a")
+    assert h is not None and h.endpoint_id == "ep-a"
+    assert h.endpoint_id != "ep-b"
+    lim.release(occupied)
+    lim.release(h)
+
+
+def test_prefer_model_falls_back_when_same_model_full():
+    lim = LlmThreadLimiter()
+    lim.refresh_pool(
+        [
+            {"id": "ep-a", "base_url": "https://a.example/v1", "api_key": "ka", "model": "model-a", "max_inflight": 1},
+            {"id": "ep-b", "base_url": "https://b.example/v1", "api_key": "kb", "model": "model-b", "max_inflight": 1},
+        ]
+    )
+    occupied = lim.acquire(prefer_endpoint="ep-a")
+    assert occupied is not None and occupied.endpoint_id == "ep-a"
+    h = lim.acquire(prefer_model="model-a")
+    assert h is not None and h.endpoint_id == "ep-b"
+    lim.release(occupied)
+    lim.release(h)
+
+
+def test_same_model_endpoints_still_spread_by_util():
+    lim = LlmThreadLimiter()
+    lim.refresh_pool(
+        [
+            {"id": "ep-a", "base_url": "https://a.example/v1", "api_key": "ka", "model": "same", "max_inflight": 4},
+            {"id": "ep-b", "base_url": "https://b.example/v1", "api_key": "kb", "model": "same", "max_inflight": 4},
+        ]
+    )
+    handles = [lim.acquire(prefer_model="same", prefer_endpoint="ep-a") for _ in range(4)]
+    assert all(h is not None for h in handles)
+    counts = {"ep-a": 0, "ep-b": 0}
+    for h in handles:
+        counts[h.endpoint_id] += 1
+    assert counts == {"ep-a": 2, "ep-b": 2}
+    for h in handles:
+        lim.release(h)
+
+
+def test_higher_weight_is_filled_before_lower_weight():
+    lim = LlmThreadLimiter()
+    lim.refresh_pool(
+        [
+            {
+                "id": "ep-a",
+                "base_url": "https://a.example/v1",
+                "api_key": "ka",
+                "max_inflight": 3,
+                "weight": 0.5,
+            },
+            {
+                "id": "ep-b",
+                "base_url": "https://b.example/v1",
+                "api_key": "kb",
+                "max_inflight": 3,
+                "weight": 1,
+            },
+        ]
+    )
+    handles = [lim.acquire() for _ in range(4)]
+    assert all(h is not None for h in handles)
+    assert [h.endpoint_id for h in handles[:3]] == ["ep-b", "ep-b", "ep-b"]
+    assert handles[3].endpoint_id == "ep-a"
+    for h in handles:
+        lim.release(h)
+
+
+def test_omitted_weight_defaults_to_highest():
+    lim = LlmThreadLimiter()
+    lim.refresh_pool(
+        [
+            {"id": "ep-a", "base_url": "https://a.example/v1", "api_key": "ka", "max_inflight": 2},
+            {
+                "id": "ep-b",
+                "base_url": "https://b.example/v1",
+                "api_key": "kb",
+                "max_inflight": 2,
+                "weight": 0.3,
+            },
+        ]
+    )
+    handles = [lim.acquire() for _ in range(2)]
+    assert all(h is not None and h.endpoint_id == "ep-a" for h in handles)
+    for h in handles:
+        lim.release(h)
+
+
+def test_prefer_model_still_beats_higher_weight_other_model():
+    lim = LlmThreadLimiter()
+    lim.refresh_pool(
+        [
+            {
+                "id": "ep-a",
+                "base_url": "https://a.example/v1",
+                "api_key": "ka",
+                "model": "model-a",
+                "max_inflight": 4,
+                "weight": 0.4,
+            },
+            {
+                "id": "ep-b",
+                "base_url": "https://b.example/v1",
+                "api_key": "kb",
+                "model": "model-b",
+                "max_inflight": 4,
+                "weight": 1,
+            },
+        ]
+    )
+    occupied = lim.acquire(prefer_model="model-a")
+    assert occupied is not None and occupied.endpoint_id == "ep-a"
+    h = lim.acquire(prefer_model="model-a")
+    assert h is not None and h.endpoint_id == "ep-a"
+    lim.release(occupied)
+    lim.release(h)
+
+
+def test_empty_endpoint_model_matches_prefer_model():
+    lim = LlmThreadLimiter()
+    lim.refresh_pool(
+        [
+            {"id": "ep-named", "base_url": "https://a.example/v1", "api_key": "ka", "model": "other", "max_inflight": 4},
+            {"id": "ep-empty", "base_url": "https://b.example/v1", "api_key": "kb", "model": "", "max_inflight": 4},
+        ]
+    )
+    occupied = lim.acquire(prefer_endpoint="ep-empty")
+    assert occupied is not None and occupied.endpoint_id == "ep-empty"
+    h = lim.acquire(prefer_model="want-this")
+    assert h is not None and h.endpoint_id == "ep-empty"
+    lim.release(occupied)
+    lim.release(h)
+
+
+def test_rebind_prefers_same_model_endpoint():
+    llm_gate.reset()
+    lim = LlmThreadLimiter()
+    lim.refresh_pool(
+        [
+            {"id": "ep-c", "base_url": "https://c.example/v1", "api_key": "kc", "model": "model-c", "max_inflight": 4},
+            {"id": "ep-a", "base_url": "https://a.example/v1", "api_key": "ka", "model": "model-a", "max_inflight": 4},
+            {"id": "ep-b", "base_url": "https://b.example/v1", "api_key": "kb", "model": "model-a", "max_inflight": 4},
+        ]
+    )
+    h = lim.acquire(prefer_endpoint="ep-a")
+    assert h is not None and h.endpoint_id == "ep-a"
+    llm_gate.note_error("ep-a", "rate_limit", retry_after=60, message="429")
+    rebound = lim.rebind(h, reason="429", prefer_model="model-a")
+    assert rebound is not None
+    assert rebound.endpoint_id == "ep-b"
+    lim.release(rebound)
+    llm_gate.reset()
+
+
+def test_loop_reacquire_keeps_same_model():
+    llm_thread_limiter.reset()
+    llm_thread_limiter.refresh_pool(
+        [
+            {
+                "id": "ep-a",
+                "base_url": "https://a.example/v1",
+                "api_key": "ka",
+                "model": "model-a",
+                "max_inflight": 4,
+            },
+            {
+                "id": "ep-b",
+                "base_url": "https://b.example/v1",
+                "api_key": "kb",
+                "model": "model-b",
+                "max_inflight": 4,
+            },
+        ]
+    )
+    loop = AgentLoop(
+        project_id=1,
+        role="worker",
+        phase="worker",
+        system_prompt="s",
+        user_prompt="u",
+        llm=ResolvedLlm(
+            base_url="https://a.example/v1",
+            wire_api="chat",
+            model="model-a",
+            api_key="ka",
+            source="default",
+            endpoint_id="ep-a",
+        ),
+    )
+    assert loop._acquire_llm_slot()
+    assert loop.llm.model == "model-a"
+    assert loop.llm.endpoint_id == "ep-a"
+    loop._release_llm_slot()
+    occupied = llm_thread_limiter.acquire(prefer_endpoint="ep-a")
+    assert occupied is not None and occupied.endpoint_id == "ep-a"
+    try:
+        assert loop._acquire_llm_slot()
+        assert loop.llm.model == "model-a"
+        assert loop.llm.endpoint_id == "ep-a"
+    finally:
+        loop._release_llm_slot()
+        llm_thread_limiter.release(occupied)
+        llm_thread_limiter.reset()
+
+
+def test_from_checkpoint_restores_model_preference():
+    from app.agent.checkpoint import LoopCheckpoint
+
+    llm_thread_limiter.reset()
+    llm_thread_limiter.refresh_pool(
+        [
+            {
+                "id": "ep-c",
+                "base_url": "https://c.example/v1",
+                "api_key": "kc",
+                "model": "model-c",
+                "max_inflight": 4,
+            },
+            {
+                "id": "ep-a",
+                "base_url": "https://a.example/v1",
+                "api_key": "ka",
+                "model": "model-a",
+                "max_inflight": 4,
+            },
+        ]
+    )
+    cp = LoopCheckpoint(
+        project_id=1,
+        phase_run_id=1,
+        role="worker",
+        phase="worker",
+        system_prompt="s",
+        user_prompt="u",
+        messages=[{"role": "user", "content": "hi"}],
+        llm_endpoint_id="ep-a",
+        llm_model="model-a",
+    )
+    loop = AgentLoop.from_checkpoint(
+        cp,
+        llm=ResolvedLlm(
+            base_url="https://c.example/v1",
+            wire_api="chat",
+            model="model-c",
+            api_key="kc",
+            source="default",
+            endpoint_id="ep-c",
+        ),
+    )
+    occupied = llm_thread_limiter.acquire(prefer_endpoint="ep-a")
+    assert occupied is not None and occupied.endpoint_id == "ep-a"
+    try:
+        assert loop._acquire_llm_slot()
+        assert loop.llm.model == "model-a"
+        assert loop.llm.endpoint_id == "ep-a"
+    finally:
+        loop._release_llm_slot()
+        llm_thread_limiter.release(occupied)
+        llm_thread_limiter.reset()
 
 
 def test_rebind_moves_off_cooled_endpoint():
@@ -250,8 +642,8 @@ def _expire_cooldown(eid: str) -> None:
             h.cooldown_until = 0.0
 
 
-def test_quota_exhausted_not_picked_when_other_endpoint_free():
-    """Idle quota endpoints must not win by lowest utilization."""
+def test_quota_exhausted_skipped_during_cooldown_then_reenters():
+    """Quota endpoints cool down like 429, then re-enter the pool."""
     lim = LlmThreadLimiter()
     lim.refresh_pool(
         [
@@ -262,19 +654,23 @@ def test_quota_exhausted_not_picked_when_other_endpoint_free():
     busy = lim.acquire(prefer_endpoint="ep-1")
     assert busy is not None and busy.endpoint_id == "ep-1"
     llm_gate.note_error("ep-2", "quota", message="insufficient_quota")
-    _expire_cooldown("ep-2")
-    assert llm_gate.is_available("ep-2")
-    assert llm_gate.last_error_kind("ep-2") == "quota"
+    assert not llm_gate.is_available("ep-2")
     h = lim.acquire()
     assert h is not None
     assert h.endpoint_id == "ep-1"
+    _expire_cooldown("ep-2")
+    assert llm_gate.is_available("ep-2")
+    recovered = lim.acquire()
+    assert recovered is not None
+    assert recovered.endpoint_id == "ep-2"
     idle = lim.pick_idle_endpoint()
-    assert idle == "ep-1"
+    assert idle == "ep-2"
+    lim.release(recovered)
     lim.release(h)
     lim.release(busy)
 
 
-def test_quota_exhausted_is_last_resort_when_others_full():
+def test_quota_exhausted_is_usable_when_others_full():
     lim = LlmThreadLimiter()
     lim.refresh_pool(
         [
@@ -351,6 +747,71 @@ def test_agent_loop_run_occupies_one_slot(tmp_env, project, monkeypatch):
     t2.join(timeout=3)
     assert second_got == [True]
     assert llm_thread_limiter.snapshot()[0] == 0
+
+
+def test_paused_loop_releases_llm_slot(tmp_env, project, monkeypatch):
+    from app.models import PhaseRun, SessionLocal
+
+    llm_thread_limiter.reset()
+    llm_thread_limiter.set_limit_override(1)
+    pause = threading.Event()
+    pause.set()
+    chatting = threading.Event()
+
+    def fake_chat(self, messages, tools, remaining):
+        chatting.set()
+        return (
+            {"choices": [{"message": {"content": "done", "tool_calls": []}}]},
+            {"prompt_tokens": 1, "completion_tokens": 1, "cached_tokens": 0, "total_tokens": 2},
+            None,
+        )
+
+    monkeypatch.setattr(AgentLoop, "_chat", fake_chat)
+    run_id = pipeline._new_phase_run(project, "worker", "worker")
+    loop = AgentLoop(
+        project_id=project,
+        role="worker",
+        phase="worker",
+        system_prompt="sys",
+        user_prompt="u",
+        phase_run_id=run_id,
+        pause_event=pause,
+        stop_when=lambda st: True,
+    )
+
+    def _phase_paused() -> bool:
+        with SessionLocal() as db:
+            pr = db.get(PhaseRun, run_id)
+            return bool(pr and pr.status == "paused")
+
+    t = threading.Thread(target=loop.run)
+    t.start()
+    try:
+        assert _wait_until(lambda: _phase_paused() and llm_thread_limiter.snapshot()[0] == 0)
+        assert t.is_alive()
+        assert not chatting.is_set()
+
+        second_got: list[bool] = []
+
+        def second() -> None:
+            with llm_thread_slot() as handle:
+                second_got.append(handle is not None)
+
+        t2 = threading.Thread(target=second)
+        t2.start()
+        t2.join(timeout=3)
+        assert second_got == [True]
+        assert llm_thread_limiter.snapshot()[0] == 0
+
+        pause.clear()
+        assert chatting.wait(timeout=3)
+        t.join(timeout=3)
+        assert not t.is_alive()
+        assert llm_thread_limiter.snapshot()[0] == 0
+    finally:
+        pause.clear()
+        t.join(timeout=3)
+        llm_thread_limiter.reset()
 
 
 def _followup_pool(monkeypatch):
@@ -458,12 +919,11 @@ def test_call_reviewer_llm_fails_over_quota_endpoint(monkeypatch):
         llm_thread_limiter.reset()
 
 
-def test_call_reviewer_llm_skips_known_quota_endpoint(monkeypatch):
+def test_call_reviewer_llm_skips_quota_endpoint_while_cooling(monkeypatch):
     from app.services.vuln_followup import _call_reviewer_llm
 
     seen = _followup_pool(monkeypatch)
     llm_gate.note_error("ep-2", "quota", message="insufficient_quota")
-    _expire_cooldown("ep-2")
     try:
         answer = _call_reviewer_llm(1, [{"role": "user", "content": "q"}])
         assert answer == "ok-from-ep-1"

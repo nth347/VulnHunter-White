@@ -16,12 +16,14 @@ def _ctx(project_id: int, role: str, **kwargs) -> ToolContext:
 
 SEVERITY_FACTORS = {
     "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
     "submission_tier": "cve_candidate",
     "submission_reason": "未认证可达且可造成敏感数据/权限影响，有 CVE 价值",
 }
 BACKEND_USER_FACTORS = {
     **SEVERITY_FACTORS,
     "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N",
+    "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
 }
 
 
@@ -515,6 +517,8 @@ def test_submit_and_confirm_flow(tmp_env, project):
     assert conf["severity"] == "high"
     assert conf["severity_score"] == 7.5
     assert conf["cvss_vector"] == "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
+    assert conf["cvss4_vector"] == "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N"
+    assert conf["cvss4_score"] == 8.7
     assert conf["submission_tier"] == "cve_candidate"
     assert conf["submission_tier_label"] == "有 CVE 价值"
     assert "CVE" in conf["submission_reason"]
@@ -532,9 +536,15 @@ def test_submit_and_confirm_flow(tmp_env, project):
         assert v.cvss_vector == "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
         assert v.submission_tier == "cve_candidate"
         assert v.submission_reason
+    advisory = (vuln_dir(project, vuln_id) / "advisory.md").read_text(encoding="utf-8")
+    assert "**CVSS 3.1:** 7.5 High" in advisory
+    assert "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N" in advisory
+    assert "**CVSS 4.0:** 8.7 High" in advisory
+    assert "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N" in advisory
     report = (vuln_dir(project, vuln_id) / "report.md").read_text(encoding="utf-8")
     assert "**产出时间**：" in report
-    assert report.index("**产出时间**：") < report.index("## 摘要")
+    assert report.index("**产出时间**：") < report.index("## 漏洞描述")
+    assert "## 摘要" not in report
     assert "## 漏洞描述" in report
     assert "## 互联网资产证明" in report
     assert "### 触发条件" in report
@@ -544,6 +554,8 @@ def test_submit_and_confirm_flow(tmp_env, project):
     assert "- 严重度：高危（high）" in report
     assert "- CVSS 3.1：7.5" in report
     assert "- 评分向量：CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N" in report
+    assert "- CVSS 4.0：8.7" in report
+    assert "- CVSS 4.0 向量：CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N" in report
     assert "- 价值分层：有 CVE 价值（cve_candidate）" in report
     assert "- 分层理由：" in report
     assert "原始类型映射" not in report
@@ -710,6 +722,7 @@ def test_confirm_indirect_consumer_requires_section_and_caps_tier(tmp_env, proje
             "required_account": "user",
             "exposure_mode": "indirect_consumer",
             "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:L/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:H/AT:N/PR:L/UI:N/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
             "submission_tier": "low_impact",
             "submission_reason": "须上游 SELECT 注入链",
         },
@@ -729,6 +742,7 @@ def test_confirm_indirect_consumer_requires_section_and_caps_tier(tmp_env, proje
             "required_account": "user",
             "exposure_mode": "indirect_consumer",
             "cvss_vector": "CVSS:3.1/AV:L/AC:H/PR:L/UI:N/S:U/C:H/I:L/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:L/AC:H/AT:N/PR:L/UI:N/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
             "submission_tier": "low_impact",
             "submission_reason": "须上游 SELECT 注入链",
         },
@@ -750,6 +764,7 @@ def test_confirm_indirect_consumer_requires_section_and_caps_tier(tmp_env, proje
             "required_account": "user",
             "exposure_mode": "indirect_consumer",
             "cvss_vector": "CVSS:3.1/AV:L/AC:H/PR:L/UI:N/S:U/C:H/I:L/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:L/AC:H/AT:N/PR:L/UI:N/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
             "submission_tier": "cve_candidate",
             "submission_reason": "错误分层",
         },
@@ -767,6 +782,7 @@ def test_confirm_indirect_consumer_requires_section_and_caps_tier(tmp_env, proje
             "required_account": "user",
             "exposure_mode": "indirect_consumer",
             "cvss_vector": "CVSS:3.1/AV:L/AC:H/PR:L/UI:N/S:U/C:H/I:L/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:L/AC:H/AT:N/PR:L/UI:N/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
             "submission_tier": "low_impact",
             "submission_reason": "组件缺陷成立但须上游 SELECT 注入链，真实环境难直接利用",
         },
@@ -832,6 +848,7 @@ def test_confirm_rejects_invalid_cvss_vector(tmp_env, project):
             "vuln_id": out["vuln_id"],
             "attack_surface": "frontend",
             "cvss_vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
             "submission_tier": "cve_candidate",
             "submission_reason": "未认证 SSRF",
         },
@@ -846,6 +863,7 @@ def test_confirm_rejects_invalid_cvss_vector(tmp_env, project):
             "vuln_id": out["vuln_id"],
             "attack_surface": "frontend",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
             "submission_tier": "cve_candidate",
             "submission_reason": "未认证 SSRF",
         },
@@ -878,6 +896,7 @@ def test_confirm_requires_submission_tier(tmp_env, project):
             "vuln_id": vuln_id,
             "attack_surface": "frontend",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
         },
     )
     assert conf["ok"] is False
@@ -907,6 +926,7 @@ def test_confirm_rejects_needs_more_evidence_tier(tmp_env, project):
             "evidence_level": "static_only",
             "attack_surface": "frontend",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
             "submission_tier": "证据不足",
             "submission_reason": "环境没打出来",
         },
@@ -940,6 +960,7 @@ def test_confirm_low_impact_and_duplicate_tiers(tmp_env, project):
             "vuln_id": vuln_id,
             "attack_surface": "frontend",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:L/VA:N/SC:N/SI:N/SA:N",
             "submission_tier": "低危害难利用",
             "submission_reason": "CORS 配置问题，默认按低危害难利用处理",
         },
@@ -962,6 +983,7 @@ def test_confirm_low_impact_and_duplicate_tiers(tmp_env, project):
             "vuln_id": out2["vuln_id"],
             "attack_surface": "frontend",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:L/VA:N/SC:N/SI:N/SA:N",
             "submission_tier": "duplicate_grouped",
             "submission_reason": "与已确认 CORS 同根因",
         },
@@ -977,6 +999,7 @@ def test_confirm_low_impact_and_duplicate_tiers(tmp_env, project):
             "vuln_id": out2["vuln_id"],
             "attack_surface": "frontend",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:L/VA:N/SC:N/SI:N/SA:N",
             "submission_tier": "duplicate_grouped",
             "submission_reason": "与已确认 CORS 同根因",
             "root_cause_key": "cors:JwtFilter",
@@ -990,6 +1013,7 @@ def test_confirm_low_impact_and_duplicate_tiers(tmp_env, project):
             "vuln_id": out2["vuln_id"],
             "attack_surface": "frontend",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:L/VA:N/SC:N/SI:N/SA:N",
             "submission_tier": "duplicate_grouped",
             "submission_reason": "与已确认 CORS 同根因",
             "root_cause_key": "cors:JwtFilter",
@@ -1022,6 +1046,7 @@ def test_confirm_low_impact_and_duplicate_tiers(tmp_env, project):
             "vuln_id": out3["vuln_id"],
             "attack_surface": "frontend",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:L/VA:N/SC:N/SI:N/SA:N",
             "submission_tier": "duplicate_grouped",
             "submission_reason": "与已确认 CORS 同根因",
             "root_cause_key": "cors:JwtFilter:again",
@@ -1036,6 +1061,7 @@ def test_confirm_low_impact_and_duplicate_tiers(tmp_env, project):
                 "vuln_id": out3["vuln_id"],
                 "attack_surface": "frontend",
                 "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N",
+                "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:L/VA:N/SC:N/SI:N/SA:N",
                 "submission_tier": "duplicate_grouped",
                 "submission_reason": "与已确认 CORS 同根因",
                 "root_cause_key": "cors:JwtFilter:again",
@@ -1222,6 +1248,7 @@ def test_bounty_mode_rejects_xss_submit_and_low_impact_confirm(tmp_env, project)
             "vuln_id": out["vuln_id"],
             "attack_surface": "frontend",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:L/VA:N/SC:N/SI:N/SA:N",
             "submission_tier": "hardening",
             "submission_reason": "CORS 配置问题",
         },
@@ -1298,6 +1325,7 @@ def test_bounty_mode_allows_stored_xss_and_source_hardcoded_secret(tmp_env, proj
             "attack_surface": "backend",
             "required_account": "admin",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:R/S:U/C:N/I:L/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:H/UI:P/VC:N/VI:L/VA:N/SC:N/SI:N/SA:N",
             "submission_tier": "cve_candidate",
             "submission_reason": "1-click CSRF，打开恶意页面即触发高危操作",
             "root_cause_key": "csrf:PluginController",
@@ -1313,6 +1341,7 @@ def test_bounty_mode_allows_stored_xss_and_source_hardcoded_secret(tmp_env, proj
             "attack_surface": "backend",
             "required_account": "admin",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:H/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
             "submission_tier": "cve_candidate",
             "submission_reason": "打开恶意页面即触发插件安装 RCE",
             "root_cause_key": "csrf:PluginController",
@@ -1416,6 +1445,7 @@ def test_confirm_backend_requires_account(tmp_env, project):
             "attack_surface": "后台",
             "required_account": "管理员",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:H/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
             "submission_tier": "cve_candidate",
             "submission_reason": "管理员可达但可完整控制，仍有 CVE 价值",
         },
@@ -1495,6 +1525,7 @@ def test_confirm_rejects_pr_mismatch_with_attack_surface(tmp_env, project):
             "attack_surface": "backend",
             "required_account": "user",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:H/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:H/SI:H/SA:N",
             "submission_tier": "cve_candidate",
             "submission_reason": "存储型 XSS",
             "root_cause_key": "stored_xss:Comment",
@@ -1517,6 +1548,7 @@ def test_confirm_rejects_pr_mismatch_with_attack_surface(tmp_env, project):
             "vuln_id": frontend["vuln_id"],
             "attack_surface": "frontend",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
             "submission_tier": "cve_candidate",
             "submission_reason": "未认证泄露",
         },
@@ -1537,6 +1569,7 @@ def test_confirm_rejects_pr_mismatch_with_attack_surface(tmp_env, project):
             "attack_surface": "backend",
             "required_account": "admin",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
             "submission_tier": "cve_candidate",
             "submission_reason": "管理员存储型 XSS",
             "root_cause_key": "stored_xss:AdminConfig",
@@ -1553,6 +1586,7 @@ def test_confirm_rejects_pr_mismatch_with_attack_surface(tmp_env, project):
             "attack_surface": "backend",
             "required_account": "user",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
             "submission_tier": "cve_candidate",
             "submission_reason": "存储型 XSS",
             "root_cause_key": "stored_xss:Comment",
@@ -1865,14 +1899,17 @@ def test_openai_tools_for_role_contains_expected(tmp_env, project):
     assert "不要用来改 PoC" in reviewer_descs["MarkFalsePositive"]
     assert "无害/受限文件操作" in reviewer_descs["ConfirmVuln"]
     assert "不可获取且不可预测" in reviewer_descs["ConfirmVuln"]
+    assert "已公开同类洞" in reviewer_descs["ConfirmVuln"]
     assert "无害/受限文件操作" in reviewer_descs["MarkFalsePositive"]
     assert "不可获取且不可预测" in reviewer_descs["MarkFalsePositive"]
+    assert "已公开同类洞" in reviewer_descs["MarkFalsePositive"]
     worker_descs = {
         t["function"]["name"]: t["function"]["description"]
         for t in registry.openai_tools_for_role("worker")
     }
     assert "无害/受限文件操作" in worker_descs["SubmitVuln"]
     assert "不可获取且不可预测" in worker_descs["SubmitVuln"]
+    assert "已公开同类洞" in worker_descs["SubmitVuln"]
     lab_names = {t["function"]["name"] for t in registry.openai_tools_for_role("reviewer_lab")}
     assert "FinishLab" in lab_names
     assert "Write" in lab_names
@@ -2212,6 +2249,57 @@ def test_recon_docs_ready_and_mark_batch(tmp_env, project):
     out = registry.dispatch(_ctx(project, "recon_mark"), "MarkWeight", {"paths": batch, "weight": 40})
     assert out["ok"] is True
     assert paths_fully_marked(project, batch) is True
+
+
+def test_paths_fully_marked_ignores_missing_index_rows(tmp_env, project):
+    from app.tools.phase_recon import paths_fully_marked, unmarked_paths
+
+    build_file_index(project)
+    batch = ["no/such.file"]
+    assert unmarked_paths(project, batch) == []
+    assert paths_fully_marked(project, batch) is True
+
+
+def test_unmarked_paths_lists_remaining_indexed_files(tmp_env, project):
+    from app.tools.phase_recon import unmarked_paths
+
+    src = src_dir(project)
+    (src / "app" / "Other.java").write_text("public class Other {}\n", encoding="utf-8")
+    build_file_index(project)
+    a, b = "app/Main.java", "app/Other.java"
+    assert set(unmarked_paths(project, [a, b, "ghost.py"])) == {a, b}
+    registry.dispatch(_ctx(project, "recon_mark"), "MarkWeight", {"path": a, "weight": 10})
+    assert unmarked_paths(project, [a, b, "ghost.py"]) == [b]
+
+
+def test_recon_mark_leftover_nudge_lists_exact_unmarked_paths(tmp_env, project):
+    from app.agent.loop import AgentLoop
+    from app.tools.phase_recon import unmarked_paths
+
+    build_file_index(project)
+    models = tmp_env["models"]
+    Session = tmp_env["Session"]
+    with Session() as db:
+        row = (
+            db.query(models.FileWeight)
+            .filter(models.FileWeight.project_id == project, models.FileWeight.weight.is_(None))
+            .order_by(models.FileWeight.path)
+            .first()
+        )
+        assert row is not None
+        leftover_path = row.path
+    loop = AgentLoop(
+        project_id=project,
+        role="recon_mark",
+        phase="recon-mark",
+        system_prompt="s",
+        user_prompt="u",
+    )
+    loop.state["mark_paths"] = [leftover_path, "ghost.py"]
+    text = loop._recon_mark_leftover_nudge()
+    assert leftover_path in text
+    assert "ghost.py" not in text
+    assert unmarked_paths(project, [leftover_path]) == [leftover_path]
 
 
 def _add_maven_source(project_id: int, rel: str = "src/main/java/im/zfile/Foo.java") -> str:

@@ -1,6 +1,6 @@
 import type { MouseEvent } from 'react'
-import { useTranslation } from 'react-i18next'
 import { ExternalLinkIcon } from 'lucide-react'
+import { useI18n } from '@/i18n'
 import { buttonVariants } from '@/components/ui/button'
 import { githubRepoHref, githubRepoLabel, type ProjectGithubFields } from '@/lib/github'
 import { cn } from '@/lib/utils'
@@ -14,7 +14,7 @@ export function GithubLink({
   variant?: 'inline' | 'button'
   className?: string
 }) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const href = githubRepoHref(project)
   if (!href) return null
   const label = githubRepoLabel(project) || 'GitHub'
@@ -22,7 +22,7 @@ export function GithubLink({
     href,
     target: '_blank' as const,
     rel: 'noopener noreferrer',
-    title: t('githubLink.openTitle', { label }),
+    title: t('comp.github.open', { label }),
     onClick: (e: MouseEvent) => e.stopPropagation(),
   }
   if (variant === 'button') {

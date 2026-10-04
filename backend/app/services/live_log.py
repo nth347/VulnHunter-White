@@ -50,6 +50,7 @@ PHASE_GROUPS: dict[str, frozenset[str]] = {
     "reviewer-review": frozenset({"reviewer"}),
     "verifier": frozenset({"verifier"}),
     "attack_chain": frozenset({"attack_chain", "attack-chain"}),
+    "vuln_dedup": frozenset({"vuln_dedup", "vuln-dedup"}),
 }
 
 # 日志轮次按小阶段独立计数；recon / worker 目录历史上可能混有子阶段事件。
@@ -70,6 +71,7 @@ LOG_PHASES = (
     "reviewer",
     "verifier",
     "attack_chain",
+    "vuln_dedup",
 )
 CONTROL_LOG_PHASES: dict[str, tuple[str, ...]] = {
     "recon": ("recon", "recon-source-ext", "recon-old-vuln", "recon-old-vuln-ghsa", "recon-mark"),
@@ -78,8 +80,11 @@ CONTROL_LOG_PHASES: dict[str, tuple[str, ...]] = {
     "reviewer": ("reviewer-lab", "reviewer"),
     "verifier": ("verifier",),
     "attack_chain": ("attack_chain",),
+    "vuln_dedup": ("vuln_dedup",),
 }
 _SESSION_START_MARK = "新开对话"
+# 最新一轮若只有 kickoff 系统日志，体积通常远小于对话页；超过此阈值视为已占用。
+_PREAMBLE_ROUND_MAX_BYTES = 8192
 
 _CST = timezone(timedelta(hours=8))
 _lock = threading.Lock()
@@ -103,6 +108,16 @@ class _EventCache:
     line_count: int = 0
     events: list[tuple[int, dict[str, Any]]] = field(default_factory=list)
     session_max: dict[str, int] = field(default_factory=dict)
+
+
+def _event_claims_session(ev: dict[str, Any]) -> bool:
+    """Kickoff 系统/错误日志不占用页码，好并进随后的 Agent 轮。"""
+    kind = str(ev.get("kind") or "")
+    if kind == "system":
+        return bool(ev.get("session_start"))
+    if kind == "error":
+        return False
+    return True
 
 
 def _ts() -> str:
@@ -168,6 +183,15 @@ class LiveLog:
             _session_used[key] = False
             return nxt
 
+    def mark_session_used(self, project_id: int, phase: str | None) -> None:
+        """调度器正式开轮后占用当前页，避免下一轮 if_used 误并进同一页。"""
+        lp = log_phase_of(phase)
+        if not lp:
+            return
+        self._hydrate_sessions(project_id)
+        with _session_lock:
+            _session_used[(project_id, lp)] = True
+
     def current_session(self, project_id: int, phase: str | None) -> int:
         lp = log_phase_of(phase)
         if not lp:
@@ -206,7 +230,7 @@ class LiveLog:
         if "session" not in ev and phase:
             ev["session"] = self.current_session(project_id, str(phase))
         lp = log_phase_of(str(phase or ""))
-        if lp:
+        if lp and _event_claims_session(ev):
             with _session_lock:
                 _session_used[(project_id, lp)] = True
         split_phase = lp or "system"
@@ -550,10 +574,9 @@ def log_phase_of(phase: str | None) -> str | None:
         return "recon"
     if p in ("recon-source-ext", "recon_source_ext"):
         return "recon-source-ext"
-    if p in ("recon-old-vuln", "recon_old_vuln"):
+    if p in ("recon-old-vuln", "recon_old_vuln", "recon-old-vuln-ghsa", "recon_old_vuln_ghsa"):
+        # 爬虫落盘与 WebSearch 补漏同属「历史漏洞」Tab，共用轮次目录。
         return "recon-old-vuln"
-    if p in ("recon-old-vuln-ghsa", "recon_old_vuln_ghsa"):
-        return "recon-old-vuln-ghsa"
     if p in ("recon-mark", "recon_mark"):
         return "recon-mark"
     if p in ("code_intel", "code-intel"):
@@ -578,6 +601,8 @@ def log_phase_of(phase: str | None) -> str | None:
         return "verifier"
     if p in ("attack_chain", "attack-chain"):
         return "attack_chain"
+    if p in ("vuln_dedup", "vuln-dedup"):
+        return "vuln_dedup"
     return None
 
 
@@ -597,7 +622,8 @@ def log_phases_for_filter(phase: str | None) -> tuple[str, ...] | None:
         return CONTROL_LOG_PHASES["verifier"]
     if phase in ("attack_chain", "attack-chain"):
         return CONTROL_LOG_PHASES["attack_chain"]
-    if phase in ("recon-old-vuln", "recon_old_vuln"):
+    if phase in ("recon-old-vuln", "recon_old_vuln", "recon-old-vuln-ghsa", "recon_old_vuln_ghsa"):
+        # 仍读旧的 recon-old-vuln-ghsa/ 目录，新事件写入 recon-old-vuln/。
         return ("recon-old-vuln", "recon-old-vuln-ghsa")
     if phase == "fast":
         return ("fast-worker", "sink-triage")
@@ -623,6 +649,8 @@ def control_phase_of(phase: str | None) -> str | None:
         return "verifier"
     if p in PHASE_GROUPS["attack_chain"]:
         return "attack_chain"
+    if p in PHASE_GROUPS["vuln_dedup"]:
+        return "vuln_dedup"
     return None
 
 
@@ -764,6 +792,20 @@ def _legacy_session_max(project_id: int, log_phase: str) -> int:
     return _annotate_sessions(parsed).get(log_phase, 1)
 
 
+def _round_file_claims_session(path: Path) -> bool:
+    """最新一轮是否已有对话事件。大文件直接视为占用，避免 hydrate 读完整历史页。"""
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return False
+    if size <= 0:
+        return False
+    if size > _PREAMBLE_ROUND_MAX_BYTES:
+        return True
+    _, parsed, _ = _load_cached_events(path)
+    return any(_event_claims_session(ev) for _, ev in parsed)
+
+
 def _round_max_in_dir(root: Path) -> int:
     if not root.exists():
         return 1
@@ -784,7 +826,7 @@ def _matching_session_max_in_dir(root: Path, log_phase: str) -> int:
 
 
 def _session_state_from_disk(project_id: int) -> tuple[dict[str, int], set[str]]:
-    """Max session per log phase + which phases already have events, without reading jsonl bodies."""
+    """Max session per log phase + which phases already have conversation events."""
     maxes = {lp: 1 for lp in LOG_PHASES}
     used: set[str] = set()
     base = _live_events_dir(project_id)
@@ -803,7 +845,7 @@ def _session_state_from_disk(project_id: int) -> tuple[dict[str, int], set[str]]
             maxes[lp] = max(maxes.get(lp, 1), n)
             latest = child / f"round-{n}.jsonl"
             try:
-                if latest.is_file() and latest.stat().st_size > 0:
+                if latest.is_file() and latest.stat().st_size > 0 and _round_file_claims_session(latest):
                     used.add(lp)
             except OSError:
                 pass

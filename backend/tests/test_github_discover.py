@@ -53,6 +53,34 @@ def test_parse_owner_repo_from_advisory_urls():
     ) == "acme/cms"
 
 
+def test_blocked_owner_helpers():
+    assert discover.is_blocked_owner(full_name="cirosantilli/linux-cheat")
+    assert discover.is_blocked_owner(full_name="CiroSantilli/Foo")
+    assert discover.is_blocked_owner(owner="cirosantilli")
+    assert not discover.is_blocked_owner(full_name="acme/cms")
+    assert discover.is_blocked_repo(
+        {"full_name": "other/repo", "owner": {"login": "cirosantilli"}},
+        "other/repo",
+    )
+    cutoff = _now() - timedelta(days=1)
+    recent = _iso(_now() - timedelta(days=10))
+    assert (
+        discover._repo_skip_reason(
+            {
+                "full_name": "cirosantilli/demo",
+                "private": False,
+                "archived": False,
+                "fork": False,
+                "stargazers_count": 9000,
+                "pushed_at": recent,
+            },
+            cutoff,
+            full_name="cirosantilli/demo",
+        )
+        == "blocked_owner"
+    )
+
+
 def test_classify_web_vs_library():
     kind, reason = discover.classify_target_kind(
         description="A self-hosted CMS dashboard",
@@ -582,3 +610,656 @@ def test_dismiss_candidate_stays_out_of_queue(tmp_env, monkeypatch):
         gone = db.query(models.GithubCandidate).filter_by(full_name="acme/gone").one()
         assert gone.status == "dismissed"
         assert gone.skip_reason == "dismissed"
+
+
+def test_clamp_user_prompt_and_fit_query():
+    assert discover.clamp_user_prompt("  hello  ") == "hello"
+    assert len(discover.clamp_user_prompt("x" * 5000)) == discover.MAX_USER_PROMPT_LEN
+    q = discover.fit_search_query("cms language:Java", cutoff_date="2025-09-18")
+    assert "cms" in q
+    assert "stars:>=" in q
+    assert "pushed:>=" in q
+    assert "AND" not in q
+    assert "-user:cirosantilli" in q.lower()
+    stripped = discover.fit_search_query(
+        "cms user:cirosantilli", cutoff_date="2025-09-18"
+    )
+    assert "user:cirosantilli" not in stripped.lower().replace("-user:cirosantilli", "")
+    assert "-user:cirosantilli" in stripped.lower()
+
+
+def test_plan_and_match_prompt_use_llm(monkeypatch):
+    monkeypatch.setattr(
+        discover,
+        "_ask_target_kind_llm",
+        lambda **kwargs: '{"queries":["cms language:Java"]}'
+        if "queries" in (kwargs.get("system") or "")
+        else '{"keep":["acme/cms"]}',
+    )
+    assert discover.plan_github_search_queries("找 Java CMS") == ["cms language:Java"]
+    keep = discover.match_repos_to_prompt(
+        "找 Java CMS",
+        [
+            {"full_name": "acme/cms", "description": "CMS", "language": "Java", "stargazers_count": 2000},
+            {"full_name": "acme/sdk", "description": "SDK", "language": "Go", "stargazers_count": 4000},
+        ],
+        limit=2,
+    )
+    assert keep == ["acme/cms"]
+
+
+def test_prompt_search_uses_github_search_not_ghsa(tmp_env, monkeypatch):
+    Session = tmp_env["Session"]
+    models = tmp_env["models"]
+    recent = _iso(_now() - timedelta(days=5))
+    repos = {
+        "acme/cms": {
+            "full_name": "acme/cms",
+            "html_url": "https://github.com/acme/cms",
+            "description": "Self-hosted CMS dashboard",
+            "language": "Java",
+            "stargazers_count": 2500,
+            "pushed_at": recent,
+            "private": False,
+            "archived": False,
+            "fork": False,
+            "topics": ["cms"],
+        },
+        "acme/sdk": {
+            "full_name": "acme/sdk",
+            "html_url": "https://github.com/acme/sdk",
+            "description": "JSON parser SDK",
+            "language": "Go",
+            "stargazers_count": 8000,
+            "pushed_at": recent,
+            "private": False,
+            "archived": False,
+            "fork": False,
+            "topics": ["library"],
+        },
+    }
+
+    def fake_llm(*, system="", **kwargs):
+        if "queries" in system:
+            return '{"queries":["cms language:Java"]}'
+        if "keep" in system:
+            return '{"keep":["acme/cms"]}'
+        return '{"target_kind":"web","reason":"CMS"}'
+
+    def fake_github_get(url, *, params=None, client=None, limiter=None):
+        if "api.github.com/advisories" in url:
+            raise AssertionError("prompt search should not crawl GHSA")
+        if "api.github.com/search/repositories" in url:
+            return _resp(200, {"total_count": 2, "items": list(repos.values())})
+        if url.endswith("/topics"):
+            return _resp(200, {"names": []})
+        if "/repos/" in url:
+            full = url.split("/repos/")[1]
+            return _resp(200, repos[full])
+        return _resp(404, {})
+
+    monkeypatch.setattr(discover, "_ask_target_kind_llm", fake_llm)
+    monkeypatch.setattr(discover, "github_get", fake_github_get)
+    monkeypatch.setattr(discover, "_has_github_token", lambda: True)
+    monkeypatch.setattr(
+        discover,
+        "http_client",
+        lambda timeout=45.0: MagicMock(__enter__=lambda s: s, __exit__=lambda *a: False),
+    )
+
+    result = discover.search_candidates(limit=5, prompt="找 Java 自托管 CMS")
+    assert result["ok"] is True
+    assert result["prompt"] == "找 Java 自托管 CMS"
+    names = [i["full_name"] for i in result["items"]]
+    assert names == ["acme/cms"]
+
+    with Session() as db:
+        stored = {r.full_name: r.status for r in db.query(models.GithubCandidate).all()}
+        assert stored.get("acme/cms") == "eligible"
+        assert "acme/sdk" not in stored
+
+
+def test_ghsa_search_skips_blocked_owner_without_fetch(tmp_env, monkeypatch):
+    Session = tmp_env["Session"]
+    models = tmp_env["models"]
+    recent = _iso(_now() - timedelta(days=5))
+    fetched: list[str] = []
+    repos = {
+        "acme/cms": {
+            "full_name": "acme/cms",
+            "html_url": "https://github.com/acme/cms",
+            "description": "Self-hosted CMS dashboard",
+            "language": "Java",
+            "stargazers_count": 2500,
+            "pushed_at": recent,
+            "private": False,
+            "archived": False,
+            "fork": False,
+            "topics": ["cms"],
+        }
+    }
+    advisories = [
+        {
+            "ghsa_id": "GHSA-blocked",
+            "html_url": "https://github.com/advisories/GHSA-blocked",
+            "repository_advisory_url": (
+                "https://api.github.com/repos/cirosantilli/demo/security-advisories/GHSA-blocked"
+            ),
+            "source_code_location": "https://github.com/cirosantilli/demo",
+        },
+        {
+            "ghsa_id": "GHSA-ok",
+            "html_url": "https://github.com/advisories/GHSA-ok",
+            "repository_advisory_url": (
+                "https://api.github.com/repos/acme/cms/security-advisories/GHSA-ok"
+            ),
+            "source_code_location": "https://github.com/acme/cms",
+        },
+    ]
+
+    def fake_github_get(url, *, params=None, client=None, limiter=None):
+        if "api.github.com/advisories" in url:
+            return _resp(200, advisories)
+        if url.endswith("/topics"):
+            return _resp(200, {"names": repos["acme/cms"]["topics"]})
+        if "/repos/" in url:
+            full = url.split("/repos/")[1]
+            fetched.append(full)
+            if "cirosantilli" in full.lower():
+                raise AssertionError("blocked owner should not be fetched")
+            return _resp(200, repos[full])
+        return _resp(404, {})
+
+    monkeypatch.setattr(discover, "github_get", fake_github_get)
+    monkeypatch.setattr(discover, "_has_github_token", lambda: True)
+    monkeypatch.setattr(
+        discover,
+        "http_client",
+        lambda timeout=45.0: MagicMock(__enter__=lambda s: s, __exit__=lambda *a: False),
+    )
+
+    result = discover.search_candidates(limit=5)
+    assert result["ok"] is True
+    names = [i["full_name"] for i in result["items"]]
+    assert names == ["acme/cms"]
+    assert all("cirosantilli" not in name.lower() for name in names)
+    assert fetched == ["acme/cms"]
+
+    with Session() as db:
+        blocked = db.query(models.GithubCandidate).filter_by(
+            full_name="cirosantilli/demo"
+        ).one()
+        assert blocked.status == "skipped"
+        assert blocked.skip_reason == "blocked_owner"
+
+
+def test_prompt_search_skips_blocked_owner(tmp_env, monkeypatch):
+    Session = tmp_env["Session"]
+    models = tmp_env["models"]
+    recent = _iso(_now() - timedelta(days=5))
+    repos = {
+        "cirosantilli/demo": {
+            "full_name": "cirosantilli/demo",
+            "html_url": "https://github.com/cirosantilli/demo",
+            "description": "Self-hosted CMS dashboard",
+            "language": "Java",
+            "stargazers_count": 9000,
+            "pushed_at": recent,
+            "private": False,
+            "archived": False,
+            "fork": False,
+            "topics": ["cms"],
+            "owner": {"login": "cirosantilli"},
+        },
+        "acme/cms": {
+            "full_name": "acme/cms",
+            "html_url": "https://github.com/acme/cms",
+            "description": "Self-hosted CMS dashboard",
+            "language": "Java",
+            "stargazers_count": 2500,
+            "pushed_at": recent,
+            "private": False,
+            "archived": False,
+            "fork": False,
+            "topics": ["cms"],
+        },
+    }
+
+    def fake_llm(*, system="", **kwargs):
+        if "queries" in system:
+            return '{"queries":["cms language:Java"]}'
+        if "keep" in system:
+            return '{"keep":["cirosantilli/demo","acme/cms"]}'
+        return '{"target_kind":"web","reason":"CMS"}'
+
+    def fake_github_get(url, *, params=None, client=None, limiter=None):
+        if "api.github.com/search/repositories" in url:
+            q = str((params or {}).get("q") or "")
+            assert "-user:cirosantilli" in q.lower()
+            return _resp(200, {"total_count": 2, "items": list(repos.values())})
+        if url.endswith("/topics"):
+            return _resp(200, {"names": []})
+        if "/repos/" in url:
+            full = url.split("/repos/")[1]
+            if "cirosantilli" in full.lower():
+                raise AssertionError("blocked owner should not be fetched")
+            return _resp(200, repos[full])
+        return _resp(404, {})
+
+    monkeypatch.setattr(discover, "_ask_target_kind_llm", fake_llm)
+    monkeypatch.setattr(discover, "github_get", fake_github_get)
+    monkeypatch.setattr(discover, "_has_github_token", lambda: True)
+    monkeypatch.setattr(
+        discover,
+        "http_client",
+        lambda timeout=45.0: MagicMock(__enter__=lambda s: s, __exit__=lambda *a: False),
+    )
+
+    result = discover.search_candidates(limit=5, prompt="找 Java CMS")
+    assert result["ok"] is True
+    names = [i["full_name"] for i in result["items"]]
+    assert names == ["acme/cms"]
+
+    with Session() as db:
+        stored = {r.full_name: r.status for r in db.query(models.GithubCandidate).all()}
+        assert stored.get("acme/cms") == "eligible"
+        assert stored.get("cirosantilli/demo") == "skipped"
+
+
+def test_list_hides_blocked_owner(tmp_env):
+    Session = tmp_env["Session"]
+    models = tmp_env["models"]
+    with Session() as db:
+        db.add(
+            models.GithubCandidate(
+                full_name="CiroSantilli/old-hit",
+                html_url="https://github.com/CiroSantilli/old-hit",
+                status="eligible",
+                target_kind="web",
+            )
+        )
+        db.add(
+            models.GithubCandidate(
+                full_name="acme/cms",
+                html_url="https://github.com/acme/cms",
+                status="eligible",
+                target_kind="web",
+            )
+        )
+        db.commit()
+
+    client = TestClient(app)
+    listed = client.get("/api/discoveries").json()
+    names = [i["full_name"] for i in listed["items"]]
+    assert names == ["acme/cms"]
+    assert listed["total"] == 1
+
+
+def test_search_api_passes_prompt(tmp_env, monkeypatch):
+    monkeypatch.setattr(
+        discover,
+        "search_candidates",
+        lambda **kwargs: {
+            "ok": True,
+            "added": 0,
+            "items": [],
+            "scanned_advisories": 0,
+            "scanned_repos": 0,
+            "skipped_seen": 0,
+            "pages": 0,
+            "authenticated": True,
+            "warning": None,
+            "limit": kwargs.get("limit") or 5,
+            "prompt": kwargs.get("prompt"),
+        },
+    )
+    client = TestClient(app)
+    resp = client.post("/api/discoveries/search", json={"limit": 3, "prompt": "  PHP CMS  "})
+    assert resp.status_code == 200
+    assert resp.json()["prompt"] == "PHP CMS"
+
+
+def test_dismiss_all_pending_keeps_imported(tmp_env):
+    Session = tmp_env["Session"]
+    models = tmp_env["models"]
+    with Session() as db:
+        db.add(
+            models.GithubCandidate(
+                full_name="acme/pending",
+                html_url="https://github.com/acme/pending",
+                status="eligible",
+                target_kind="web",
+            )
+        )
+        db.add(
+            models.GithubCandidate(
+                full_name="acme/done",
+                html_url="https://github.com/acme/done",
+                status="imported",
+                target_kind="web",
+                project_id=11,
+            )
+        )
+        db.commit()
+
+    client = TestClient(app)
+    resp = client.post("/api/discoveries/dismiss-all")
+    assert resp.status_code == 200
+    assert resp.json()["dismissed"] == 1
+
+    listed = client.get("/api/discoveries").json()
+    names = [i["full_name"] for i in listed["items"]]
+    assert "acme/pending" not in names
+    assert "acme/done" in names
+
+    with Session() as db:
+        pending = db.query(models.GithubCandidate).filter_by(full_name="acme/pending").one()
+        done = db.query(models.GithubCandidate).filter_by(full_name="acme/done").one()
+        assert pending.status == "dismissed"
+        assert done.status == "imported"
+        assert done.project_id == 11
+
+
+def test_search_timeout_sec_grows_after_five():
+    assert discover.search_timeout_sec(1) == 600
+    assert discover.search_timeout_sec(5) == 600
+    assert discover.search_timeout_sec(6) == 660
+    assert discover.search_timeout_sec(20) == 1500
+    msg = discover.search_timeout_message(8)
+    assert "780" in msg
+    assert "减少" in msg
+
+
+def test_demo_skip_reason_name_topic_and_description():
+    cutoff = _now() - timedelta(days=365)
+    recent = _iso(_now() - timedelta(days=10))
+    demo_repo = {
+        "full_name": "acme/cms-demo",
+        "private": False,
+        "archived": False,
+        "fork": False,
+        "stargazers_count": 4000,
+        "pushed_at": recent,
+        "description": "A self-hosted CMS",
+        "topics": ["cms"],
+    }
+    assert discover.demo_skip_reason(demo_repo, full_name="acme/cms-demo") == "demo"
+    assert discover._repo_skip_reason(demo_repo, cutoff, full_name="acme/cms-demo") == "demo"
+
+    topic_repo = {**demo_repo, "full_name": "acme/cms", "topics": ["tutorial"]}
+    assert discover.demo_skip_reason(topic_repo, full_name="acme/cms") == "demo"
+
+    desc_repo = {
+        **demo_repo,
+        "full_name": "acme/cms",
+        "topics": ["cms"],
+        "description": "Official demo of our CMS",
+    }
+    assert discover.demo_skip_reason(desc_repo, full_name="acme/cms") == "demo"
+
+    real = {
+        **demo_repo,
+        "full_name": "acme/cms",
+        "topics": ["cms"],
+        "description": "Self-hosted CMS dashboard",
+    }
+    assert discover.demo_skip_reason(real, full_name="acme/cms") is None
+    assert discover._repo_skip_reason(real, cutoff, full_name="acme/cms") is None
+
+
+def test_search_skips_demo_repos(tmp_env, monkeypatch):
+    Session = tmp_env["Session"]
+    models = tmp_env["models"]
+    recent = _iso(_now() - timedelta(days=5))
+    repos = {
+        "acme/cms-demo": {
+            "full_name": "acme/cms-demo",
+            "html_url": "https://github.com/acme/cms-demo",
+            "description": "Official demo of the CMS",
+            "language": "Java",
+            "stargazers_count": 8000,
+            "pushed_at": recent,
+            "private": False,
+            "archived": False,
+            "fork": False,
+            "topics": ["cms", "demo"],
+        },
+        "acme/cms": {
+            "full_name": "acme/cms",
+            "html_url": "https://github.com/acme/cms",
+            "description": "Self-hosted CMS dashboard",
+            "language": "Java",
+            "stargazers_count": 2500,
+            "pushed_at": recent,
+            "private": False,
+            "archived": False,
+            "fork": False,
+            "topics": ["cms"],
+        },
+    }
+    advisories = [
+        {
+            "ghsa_id": "GHSA-demo",
+            "html_url": "https://github.com/advisories/GHSA-demo",
+            "repository_advisory_url": (
+                "https://api.github.com/repos/acme/cms-demo/security-advisories/GHSA-demo"
+            ),
+            "source_code_location": "https://github.com/acme/cms-demo",
+        },
+        {
+            "ghsa_id": "GHSA-ok",
+            "html_url": "https://github.com/advisories/GHSA-ok",
+            "repository_advisory_url": (
+                "https://api.github.com/repos/acme/cms/security-advisories/GHSA-ok"
+            ),
+            "source_code_location": "https://github.com/acme/cms",
+        },
+    ]
+
+    def fake_github_get(url, *, params=None, client=None, limiter=None):
+        if "api.github.com/advisories" in url:
+            return _resp(200, advisories)
+        if url.endswith("/topics"):
+            full = url.split("/repos/")[1].split("/topics")[0]
+            return _resp(200, {"names": repos[full]["topics"]})
+        if "/repos/" in url:
+            full = url.split("/repos/")[1]
+            return _resp(200, repos[full])
+        return _resp(404, {})
+
+    monkeypatch.setattr(discover, "github_get", fake_github_get)
+    monkeypatch.setattr(discover, "_has_github_token", lambda: True)
+    monkeypatch.setattr(
+        discover,
+        "http_client",
+        lambda timeout=45.0: MagicMock(__enter__=lambda s: s, __exit__=lambda *a: False),
+    )
+
+    result = discover.search_candidates(limit=5)
+    assert result["ok"] is True
+    names = [i["full_name"] for i in result["items"]]
+    assert names == ["acme/cms"]
+
+    with Session() as db:
+        skipped = db.query(models.GithubCandidate).filter_by(full_name="acme/cms-demo").one()
+        assert skipped.status == "skipped"
+        assert skipped.skip_reason == "demo"
+
+
+def test_prompt_search_skips_demo_repo(tmp_env, monkeypatch):
+    Session = tmp_env["Session"]
+    models = tmp_env["models"]
+    recent = _iso(_now() - timedelta(days=5))
+    repos = {
+        "acme/cms-example": {
+            "full_name": "acme/cms-example",
+            "html_url": "https://github.com/acme/cms-example",
+            "description": "CMS tutorial project",
+            "language": "Java",
+            "stargazers_count": 5000,
+            "pushed_at": recent,
+            "private": False,
+            "archived": False,
+            "fork": False,
+            "topics": ["cms", "tutorial"],
+        },
+        "acme/cms": {
+            "full_name": "acme/cms",
+            "html_url": "https://github.com/acme/cms",
+            "description": "Self-hosted CMS dashboard",
+            "language": "Java",
+            "stargazers_count": 2500,
+            "pushed_at": recent,
+            "private": False,
+            "archived": False,
+            "fork": False,
+            "topics": ["cms"],
+        },
+    }
+
+    def fake_llm(*, system="", **kwargs):
+        if "queries" in system:
+            return '{"queries":["cms language:Java"]}'
+        if "keep" in system:
+            return '{"keep":["acme/cms-example","acme/cms"]}'
+        return '{"target_kind":"web","reason":"CMS"}'
+
+    def fake_github_get(url, *, params=None, client=None, limiter=None):
+        if "api.github.com/search/repositories" in url:
+            return _resp(200, {"total_count": 2, "items": list(repos.values())})
+        if url.endswith("/topics"):
+            return _resp(200, {"names": []})
+        if "/repos/" in url:
+            full = url.split("/repos/")[1]
+            return _resp(200, repos[full])
+        return _resp(404, {})
+
+    monkeypatch.setattr(discover, "_ask_target_kind_llm", fake_llm)
+    monkeypatch.setattr(discover, "github_get", fake_github_get)
+    monkeypatch.setattr(discover, "_has_github_token", lambda: True)
+    monkeypatch.setattr(
+        discover,
+        "http_client",
+        lambda timeout=45.0: MagicMock(__enter__=lambda s: s, __exit__=lambda *a: False),
+    )
+
+    result = discover.search_candidates(limit=5, prompt="找 Java CMS")
+    assert result["ok"] is True
+    names = [i["full_name"] for i in result["items"]]
+    assert names == ["acme/cms"]
+
+    with Session() as db:
+        stored = {r.full_name: r.status for r in db.query(models.GithubCandidate).all()}
+        assert stored.get("acme/cms") == "eligible"
+        assert stored.get("acme/cms-example") == "skipped"
+
+
+def test_search_timeout_keeps_partial_and_api_returns_body(tmp_env, monkeypatch):
+    Session = tmp_env["Session"]
+    models = tmp_env["models"]
+    recent = _iso(_now() - timedelta(days=5))
+    added = {"n": 0}
+    real_store = discover._store_eligible_from_repo
+
+    def store(*args, **kwargs):
+        row, status = real_store(*args, **kwargs)
+        if status == "eligible":
+            added["n"] += 1
+        return row, status
+
+    class AfterOne:
+        limit = 8
+        budget_sec = 780
+
+        def expired(self):
+            return added["n"] >= 1
+
+        def timeout_error(self):
+            return discover.search_timeout_message(8, budget_sec=780)
+
+    repos = {
+        "acme/one": {
+            "full_name": "acme/one",
+            "html_url": "https://github.com/acme/one",
+            "description": "Self-hosted CMS dashboard",
+            "language": "Java",
+            "stargazers_count": 2500,
+            "pushed_at": recent,
+            "private": False,
+            "archived": False,
+            "fork": False,
+            "topics": ["cms"],
+        },
+        "acme/two": {
+            "full_name": "acme/two",
+            "html_url": "https://github.com/acme/two",
+            "description": "Self-hosted CMS dashboard",
+            "language": "Java",
+            "stargazers_count": 2600,
+            "pushed_at": recent,
+            "private": False,
+            "archived": False,
+            "fork": False,
+            "topics": ["cms"],
+        },
+    }
+    advisories = [
+        {
+            "ghsa_id": "GHSA-one",
+            "html_url": "https://github.com/advisories/GHSA-one",
+            "repository_advisory_url": (
+                "https://api.github.com/repos/acme/one/security-advisories/GHSA-one"
+            ),
+            "source_code_location": "https://github.com/acme/one",
+        },
+        {
+            "ghsa_id": "GHSA-two",
+            "html_url": "https://github.com/advisories/GHSA-two",
+            "repository_advisory_url": (
+                "https://api.github.com/repos/acme/two/security-advisories/GHSA-two"
+            ),
+            "source_code_location": "https://github.com/acme/two",
+        },
+    ]
+
+    def fake_github_get(url, *, params=None, client=None, limiter=None):
+        if "api.github.com/advisories" in url:
+            return _resp(200, advisories)
+        if url.endswith("/topics"):
+            full = url.split("/repos/")[1].split("/topics")[0]
+            return _resp(200, {"names": repos[full]["topics"]})
+        if "/repos/" in url:
+            full = url.split("/repos/")[1]
+            return _resp(200, repos[full])
+        return _resp(404, {})
+
+    monkeypatch.setattr(discover, "_store_eligible_from_repo", store)
+    monkeypatch.setattr(discover, "_make_search_deadline", lambda limit: AfterOne())
+    monkeypatch.setattr(discover, "github_get", fake_github_get)
+    monkeypatch.setattr(discover, "_has_github_token", lambda: True)
+    monkeypatch.setattr(
+        discover,
+        "http_client",
+        lambda timeout=45.0: MagicMock(__enter__=lambda s: s, __exit__=lambda *a: False),
+    )
+
+    result = discover.search_candidates(limit=8)
+    assert result["ok"] is False
+    assert result["timed_out"] is True
+    assert result["added"] == 1
+    assert "减少" in (result["error"] or "")
+    names = [i["full_name"] for i in result["items"]]
+    assert names == ["acme/one"]
+
+    with Session() as db:
+        stored = {r.full_name: r.status for r in db.query(models.GithubCandidate).all()}
+        assert stored.get("acme/one") == "eligible"
+        assert "acme/two" not in stored
+
+    client = TestClient(app)
+    resp = client.post("/api/discoveries/search", json={"limit": 8})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is False
+    assert body["timed_out"] is True
+    assert "减少" in (body["error"] or "")

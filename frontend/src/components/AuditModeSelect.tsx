@@ -1,8 +1,8 @@
-import { useTranslation } from 'react-i18next'
+import { useI18n } from '@/i18n'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { BountyScopeButton } from './BountyScopeDialog'
 import {
-  auditModeOptions,
+  getAuditModeOptions,
   cn,
   formatAuditMode,
   formatAuditModeHint,
@@ -29,7 +29,7 @@ export function AuditModeSelect({
   showHint?: boolean
   className?: string
 }) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const mode: AuditMode =
     value === 'full' ? 'full' : value === 'custom' ? 'custom' : 'bounty'
   const selectedCustomId =
@@ -60,7 +60,7 @@ export function AuditModeSelect({
             <SelectValue>{formatAuditMode(mode, customModeName)}</SelectValue>
           </SelectTrigger>
           <SelectContent className="w-auto min-w-72 max-w-80" alignItemWithTrigger={false} align="start">
-            {auditModeOptions().map((opt) => (
+            {getAuditModeOptions().map((opt) => (
               <SelectItem key={opt.value} value={opt.value} className="items-start py-2">
                 <span className="flex max-w-72 flex-col gap-0.5 whitespace-normal">
                   <span>{opt.label}</span>
@@ -81,11 +81,7 @@ export function AuditModeSelect({
             disabled={!customModes.length}
           >
             <SelectTrigger className="w-auto min-w-36">
-              <SelectValue
-                placeholder={
-                  customModes.length ? t('auditModeSelect.pickCustom') : t('auditModeSelect.noCustom')
-                }
-              />
+              <SelectValue placeholder={customModes.length ? t('comp.audit.pickCustom') : t('comp.audit.noCustom')} />
             </SelectTrigger>
             <SelectContent className="w-auto min-w-56 max-w-80" alignItemWithTrigger={false} align="start">
               {customModes.map((m) => (
@@ -102,7 +98,7 @@ export function AuditModeSelect({
       {showHint ? (
         <p className="mt-1.5 max-w-xl text-xs leading-relaxed text-muted-foreground">
           {formatAuditModeHint(mode, customModeName)}
-          {mode === 'custom' && !customModes.length ? ` ${t('auditModeSelect.addCustomFirst')}` : ''}
+          {mode === 'custom' && !customModes.length ? t('comp.audit.addCustom') : ''}
         </p>
       ) : null}
     </div>

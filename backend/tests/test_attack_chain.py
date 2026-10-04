@@ -63,6 +63,7 @@ def _submit_and_confirm(project, *, title="洞 A", file_path="a.java", root_caus
             "vuln_id": vuln_id,
             "attack_surface": "frontend",
             "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+            "cvss4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
             "submission_tier": "cve_candidate",
             "submission_reason": "高危害，可独立利用",
             "root_cause_key": payload["root_cause_key"],
@@ -342,10 +343,73 @@ def test_project_complete_gates_waits_for_attack_chain(tmp_env, project):
 
     with _db() as db:
         proj = db.get(Project, project)
+        proj.attack_chain_enabled = True
+        proj.attack_chain_done = False
+        proj.attack_chain_stopped = True
+        db.commit()
+    assert attack_chain_ready(project) is False
+    assert project_complete_gates(project) is True
+
+    with _db() as db:
+        proj = db.get(Project, project)
         proj.attack_chain_enabled = False
         proj.attack_chain_done = False
+        proj.attack_chain_stopped = False
         db.commit()
     assert project_complete_gates(project) is True
+    _ = (a, b)
+
+
+def test_attack_chain_stop_and_start_and_resume_clears_flag(tmp_env, project, monkeypatch):
+    from app.services import pipeline
+    from app.services.conversation import get_conversation_state, request_conversation
+
+    a = _submit_and_confirm(project, title="洞 A")
+    b = _submit_and_confirm(project, title="洞 B", file_path="b.java")
+    _make_mining_done(project)
+    with _db() as db:
+        proj = db.get(Project, project)
+        proj.attack_chain_enabled = True
+        proj.attack_chain_done = False
+        proj.attack_chain_stopped = False
+        proj.status = "auditing"
+        db.commit()
+
+    state = get_conversation_state(project, "attack_chain")
+    assert state["can_stop"] is True
+    assert state["can_start"] is False
+    assert state["path_stopped"] is False
+    assert attack_chain_ready(project) is True
+
+    out = request_conversation(project, "attack_chain", "stop")
+    assert out["ok"] is True
+    assert out["path_stopped"] is True
+    assert out["project_completed"] is True
+    with _db() as db:
+        proj = db.get(Project, project)
+        assert proj.attack_chain_stopped is True
+        assert proj.attack_chain_done is False
+        assert proj.status == "completed"
+    assert attack_chain_ready(project) is False
+    state = get_conversation_state(project, "attack_chain")
+    assert state["can_start"] is True
+    assert state["can_stop"] is False
+    assert state["path_stopped"] is True
+
+    monkeypatch.setattr(pipeline, "start_audit", lambda pid: None)
+    started = request_conversation(project, "attack_chain", "start")
+    assert started["path_stopped"] is False
+    with _db() as db:
+        proj = db.get(Project, project)
+        assert proj.attack_chain_stopped is False
+        assert proj.status != "completed"
+    assert attack_chain_ready(project) is True
+
+    request_conversation(project, "attack_chain", "stop")
+    pipeline.request_resume(project)
+    with _db() as db:
+        proj = db.get(Project, project)
+        assert proj.attack_chain_stopped is False
     _ = (a, b)
 
 

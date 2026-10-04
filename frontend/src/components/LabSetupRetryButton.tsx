@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { api, formatApiError, type Project } from '../api'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
+import { useI18n } from '@/i18n'
 
 type LabSetupRetryButtonProps = {
   project: Project
@@ -18,7 +18,7 @@ type LabSetupRetryButtonProps = {
 }
 
 export function LabSetupRetryButton({ project, onStarted }: LabSetupRetryButtonProps) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -55,13 +55,13 @@ export function LabSetupRetryButton({ project, onStarted }: LabSetupRetryButtonP
         type="button"
         variant="outline"
         disabled={busy}
-        title={t('labRetry.title')}
+        title={t('flow.labRetry.tip')}
         onClick={() => {
           setError('')
           setOpen(true)
         }}
       >
-        {t('labRetry.button')}
+        {t('flow.labRetry.btn')}
       </Button>
       <Dialog
         open={open}
@@ -71,20 +71,20 @@ export function LabSetupRetryButton({ project, onStarted }: LabSetupRetryButtonP
       >
         <DialogContent className="sm:max-w-lg" showCloseButton={!busy}>
           <DialogHeader>
-            <DialogTitle>{t('labRetry.dialogTitle')}</DialogTitle>
+            <DialogTitle>{t('flow.labRetry.title')}</DialogTitle>
             <DialogDescription className="whitespace-pre-wrap leading-relaxed">
-              {t('labRetry.dialogDescription')}
+              {t('flow.labRetry.body')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <label className="text-sm text-muted-foreground" htmlFor="lab-retry-message">
-              {t('labRetry.noteLabel')}
+              {t('flow.labRetry.note')}
             </label>
             <Textarea
               id="lab-retry-message"
               value={userMessage}
               onChange={(e) => setUserMessage(e.target.value)}
-              placeholder={t('labRetry.notePlaceholder')}
+              placeholder={t('flow.labRetry.placeholder')}
               rows={4}
               disabled={busy}
             />
@@ -95,7 +95,7 @@ export function LabSetupRetryButton({ project, onStarted }: LabSetupRetryButtonP
               {t('common.cancel')}
             </Button>
             <Button type="button" disabled={busy} onClick={() => void confirm()}>
-              {busy ? t('labRetry.starting') : t('labRetry.start')}
+              {busy ? t('flow.composer.launching') : t('flow.labRetry.start')}
             </Button>
           </DialogFooter>
         </DialogContent>

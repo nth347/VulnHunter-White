@@ -1,24 +1,63 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api, formatApiError, type PhaseReport, type PhaseReportDetail, type PhaseReportList } from '../api'
-import i18n from '../i18n'
-import { translateBackendText } from '../i18n/backendText'
 import { formatDateTime } from '../lib/utils'
 import { startVisibilityPoll } from '../lib/visibilityPoll'
 import { Badge } from '@/components/ui/badge'
+import { useI18n } from '@/i18n'
+import type { MessageVars } from '@/i18n/t'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 
-const PHASE_KEYS = ['recon', 'worker', 'reviewer', 'verifier', 'attack_chain'] as const
+type Translate = (key: string, vars?: MessageVars) => string
 
-const SUB_TAB_KEYS: Record<string, readonly string[]> = {
-  recon: ['all', 'map', 'source_ext', 'old_vulns', 'mark'],
-  worker: ['all', 'mine', 'fast', 'bypass', 'unconstrained', 'fix'],
-  reviewer: ['all', 'lab', 'reviewer'],
-  verifier: ['all', 'verify'],
-  attack_chain: ['all', 'chain'],
+function reportPhases(t: Translate) {
+  return [
+    ['recon', t('flow.reports.recon')],
+    ['worker', t('flow.reports.worker')],
+    ['reviewer', t('flow.reports.reviewer')],
+    ['verifier', t('flow.reports.verifier')],
+    ['attack_chain', t('flow.reports.attackChain')],
+    ['vuln_dedup', t('flow.reports.dedup')],
+  ] as const
+}
+
+function reportSubTabs(t: Translate): Record<string, readonly [string, string][]> {
+  return {
+    recon: [
+      ['all', t('flow.reports.all')],
+      ['map', t('flow.reports.map')],
+      ['source_ext', t('flow.reports.ext')],
+      ['old_vulns', t('flow.reports.oldVulns')],
+      ['mark', t('flow.reports.mark')],
+    ],
+    worker: [
+      ['all', t('flow.reports.all')],
+      ['mine', t('flow.reports.mine')],
+      ['fast', t('mining.fast')],
+      ['bypass', t('mining.bypass')],
+      ['unconstrained', t('mining.unconstrained')],
+      ['fix', t('flow.reports.fix')],
+    ],
+    reviewer: [
+      ['all', t('flow.reports.all')],
+      ['lab', t('flow.reports.lab')],
+      ['reviewer', t('flow.reports.reviewer')],
+    ],
+    verifier: [
+      ['all', t('flow.reports.all')],
+      ['verify', t('flow.reports.internet')],
+    ],
+    attack_chain: [
+      ['all', t('flow.reports.all')],
+      ['chain', t('flow.reports.chain')],
+    ],
+    vuln_dedup: [
+      ['all', t('flow.reports.all')],
+      ['dedup', t('flow.reports.dedupVulns')],
+    ],
+  }
 }
 
 const KIND_VARIANT: Record<string, 'info' | 'success' | 'warning' | 'outline'> = {
@@ -39,26 +78,15 @@ const EMPTY_REPORT_LIST: PhaseReportList = {
   subphase: '',
 }
 
-function roundHint(r: { kind: string; round: number | null }): string {
+function roundHint(r: { kind: string; round: number | null }, t: Translate): string {
   if (r.round == null) return ''
-  return ` · ${
-    r.kind === 'round'
-      ? i18n.t('phaseReports.roundOrdinal', { n: r.round })
-      : i18n.t('phaseReports.attemptOrdinal', { n: r.round })
-  }`
+  if (r.kind === 'round') return t('flow.reports.round', { n: r.round })
+  return t('flow.reports.times', { n: r.round })
 }
 
 function reportsOf(groups: { phase: string; reports: PhaseReport[] }[], phase: string): PhaseReport[] {
   return groups.find((g) => g.phase === phase)?.reports ?? []
 }
-
-// The backend supplies the *_label fields in Chinese; translate by id, fall back to the backend text.
-const phaseLabelOf = (r: { phase: string; phase_label: string }) =>
-  i18n.t(`phaseReports.phase.${r.phase}`, { defaultValue: r.phase_label })
-const subLabelOf = (r: { phase: string; subphase: string; subphase_label: string }) =>
-  i18n.t(`phaseReports.sub.${r.phase}.${r.subphase}`, { defaultValue: r.subphase_label })
-const kindLabelOf = (r: { kind: string; kind_label: string }) =>
-  i18n.t(`phaseReports.kind.${r.kind}`, { defaultValue: r.kind_label })
 
 export default function PhaseReportsPanel({
   projectId,
@@ -67,7 +95,9 @@ export default function PhaseReportsPanel({
   projectId: number
   initialPhase?: string
 }) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
+  const PHASES = reportPhases(t)
+  const SUB_TABS = reportSubTabs(t)
   const [phase, setPhase] = useState(
     initialPhase === 'reviewer'
       ? 'reviewer'
@@ -77,7 +107,9 @@ export default function PhaseReportsPanel({
           ? 'verifier'
           : initialPhase === 'attack_chain'
             ? 'attack_chain'
-            : 'worker',
+            : initialPhase === 'vuln_dedup'
+              ? 'vuln_dedup'
+              : 'worker',
   )
   const [sub, setSub] = useState('all')
   const [reportList, setReportList] = useState<PhaseReportList>(EMPTY_REPORT_LIST)
@@ -87,7 +119,6 @@ export default function PhaseReportsPanel({
   const [error, setError] = useState<string | null>(null)
 
   const groups = reportList.phases
-  const subTabs = SUB_TAB_KEYS[phase]
   const all = useMemo(() => reportsOf(groups, phase), [groups, phase])
   const filtered = useMemo(
     () => (sub === 'all' ? all : all.filter((r) => r.subphase === sub)),
@@ -152,14 +183,15 @@ export default function PhaseReportsPanel({
       .catch((e) => {
         if (!alive) return
         setDetail(null)
-        setError(formatApiError(e, t('phaseReports.readTimeout')))
+        setError(formatApiError(e, t('flow.reports.loadTimeout')))
       })
     return () => {
       alive = false
     }
-  }, [projectId, selectedId])
+  }, [projectId, selectedId, t])
 
   const counts = Object.fromEntries(groups.map((g) => [g.phase, g.count]))
+  const subTabs = SUB_TABS[phase]
   const activeListMatches =
     reportList.phase === phase && reportList.subphase === (sub === 'all' ? '' : sub)
   const selectedTotal = activeListMatches ? reportList.selected_count : filtered.length
@@ -168,18 +200,18 @@ export default function PhaseReportsPanel({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
-        {PHASE_KEYS.map((k) => (
+        {PHASES.map(([k, label]) => (
           <Button key={k} variant={phase === k ? 'default' : 'outline'} onClick={() => setPhase(k)}>
-            {t(`phaseReports.phase.${k}`)}
+            {label}
             {counts[k] ? ` ${counts[k]}` : ''}
           </Button>
         ))}
       </div>
       {subTabs ? (
         <div className="flex flex-wrap gap-2">
-          {subTabs.map((k) => (
+          {subTabs.map(([k, label]) => (
             <Button key={k} variant={sub === k ? 'default' : 'outline'} onClick={() => setSub(k)}>
-              {t(`phaseReports.sub.${phase}.${k}`)}
+              {label}
             </Button>
           ))}
         </div>
@@ -198,25 +230,23 @@ export default function PhaseReportsPanel({
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="truncate font-medium">{translateBackendText(r.title)}</div>
-                  <Badge variant={KIND_VARIANT[r.kind] || 'outline'}>{kindLabelOf(r)}</Badge>
+                  <div className="truncate font-medium">{r.title}</div>
+                  <Badge variant={KIND_VARIANT[r.kind] || 'outline'}>{r.kind_label}</Badge>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {subLabelOf(r)}
-                  {roundHint(r)}
+                  {r.subphase_label}
+                  {roundHint(r, t)}
                   {` · ${formatDateTime(r.mtime)}`}
                 </div>
                 {r.preview ? <div className="mt-1 line-clamp-2 text-xs text-muted-foreground/70">{r.preview}</div> : null}
               </div>
             </Button>
           ))}
-          {filtered.length === 0 ? (
-            <div className="p-4 text-sm text-muted-foreground">{t('phaseReports.noReports')}</div>
-          ) : null}
+          {filtered.length === 0 ? <div className="p-4 text-sm text-muted-foreground">{t('flow.reports.emptyFilter')}</div> : null}
           {selectedTotal > 0 ? (
             <div className="space-y-2 p-3 text-center text-xs text-muted-foreground">
               <div>
-                {t('phaseReports.shownCount', { shown: filtered.length, total: selectedTotal })}
+                {t('flow.reports.shown', { shown: filtered.length, total: selectedTotal })}
               </div>
               {canLoadMore ? (
                 <Button
@@ -226,7 +256,7 @@ export default function PhaseReportsPanel({
                   className="w-full"
                   onClick={() => setVisibleLimit((n) => n + PAGE_SIZE)}
                 >
-                  {t('phaseReports.loadEarlier', { n: PAGE_SIZE })}
+                  {t('flow.reports.loadMoreShort')}
                 </Button>
               ) : null}
             </div>
@@ -238,23 +268,19 @@ export default function PhaseReportsPanel({
           {detail ? (
             <div className="space-y-3">
               <div>
-                <h2 className="text-lg font-semibold">{translateBackendText(detail.title)}</h2>
+                <h2 className="text-lg font-semibold">{detail.title}</h2>
                 <div className="mt-1 text-xs text-slate-400">
-                  {phaseLabelOf(detail)} · {subLabelOf(detail)} · {kindLabelOf(detail)}
-                  {roundHint(detail)}
+                  {detail.phase_label} · {detail.subphase_label} · {detail.kind_label}
+                  {roundHint(detail, t)}
                   {` · ${formatDateTime(detail.mtime)}`}
                 </div>
               </div>
               <div className="vh-md">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {detail.content || t('phaseReports.emptyReport')}
-                </ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{detail.content || t('flow.reports.emptyMdGfm')}</ReactMarkdown>
               </div>
             </div>
           ) : (
-            <div className="text-sm text-muted-foreground">
-              {error ? '' : t('phaseReports.selectHint')}
-            </div>
+            <div className="text-sm text-muted-foreground">{error ? '' : t('flow.reports.pickHint')}</div>
           )}
           </CardContent>
         </Card>

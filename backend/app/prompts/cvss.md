@@ -16,9 +16,9 @@ ConfirmVuln / SetCveRecordField 只填基础向量（8 个度量），不要手�
 | 后台 | 普通权限 user | PR:L |
 | 后台 | 管理员 admin | PR:H |
 
-- 不要用「SNMP / 设备侧 / 邮件 / 回调注入不需要登录」把**后台**洞写成 PR:N。若攻击者确实无需本应用账号即可注入，且受害者页面也未认证，应标 `attack_surface=frontend` 再用 PR:N。
+- 不要用「SNMP / unix-agent / 设备侧 / 邮件 / 回调注入不需要登录」把**后台**洞写成 PR:N。若利用须管理员先把攻击者控制的设备、邮箱、Webhook、SNMP agent、unix-agent 等登记进系统，再靠轮询/回调注入，应标 `attack_surface=backend` + `required_account=admin`（PR:H），不要标 `user`。普通用户打开页面中招不是前台，也不是 PR:L。只有攻击者能从本应用公开/未登录接口直接送入 payload、且不必先由管理员登记攻击者控制的源时，才标 `frontend` / PR:N。
 - 需要登录才能改数据或打接口 → 不是 PR:N。需要管理员账号 → PR:H，不要写成 PR:L。
-- 需要登录不是 AC:H（那是 PR）。
+- 需要登录不是 AC:H（那是 PR）。管理员先加入攻击者设备也不是 PR:N。普通用户打开页面中招不是 PR:N / PR:L。
 
 **间接消费型（exposure_mode=indirect_consumer）**
 - 适用：JDBC 连接池 / SQL 防火墙（如 Druid WallFilter）/ 编解码库 / 中间件 consumer 等**本身无直接 HTTP/RPC 入口**，缺陷只在「上游应用把攻击者输入传入组件 API」时才能利用。
@@ -65,3 +65,18 @@ ConfirmVuln / SetCveRecordField 只填基础向量（8 个度量），不要手�
 - XSS 写成 `C:H/I:H` 得到 9.3/9.6。
 - 把 S:C 用在没有跨权威冲击的服务端洞上抬分。
 - 用复杂向量掩盖种文件、换 sink、组合第二个洞。
+
+# CVSS 4.0 度量标准
+
+ConfirmVuln 还须传 `cvss4_vector`（11 个基础度量），不要手填分数；系统按 FIRST CVSS 4.0 计分并写入 advisory.md / cve.json。
+向量：`CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N`
+取值：AV=N|A|L|P，AC=L|H，AT=N|P，PR=N|L|H，UI=N|P|A，VC/VI/VA/SC/SI/SA=H|L|N。
+PR 规则与 3.1 相同。分数阈值相同。
+
+**与 3.1 的对应**
+- AT:N 默认；仅当利用还依赖攻击者无法单独准备的部署条件时 AT:P（接近 3.1 的 AC:H 里「额外条件」那一半）。
+- UI:N 无交互；UI:P 被动（打开页面/看后台即可，XSS 默认）；UI:A 还须主动点击。不要写 3.1 的 UI:R。
+- VC/VI/VA = 脆弱系统冲击（对应 3.1 的 C/I/A，且 S:U 时后续系统全 N）。
+- SC/SI/SA = 后续系统。无跨安全边界时全 N。不要把普通 RCE/SQLi 的后续系统标 H。
+- XSS 默认 `UI:P/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N`，不要因 Cookie/账户接管把 VC/VI 标 H。
+- 间接消费型：AC:H、AV 不得 N；未证明上游链时 VC/VI/VA 至多一项 H。

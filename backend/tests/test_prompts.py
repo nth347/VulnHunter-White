@@ -8,15 +8,15 @@ import pytest
 
 import functools
 
-from app.prompts import PROMPTS_DIR, render_prompt as _render_prompt
+from app.prompts import PROMPTS_DIR
 from app.prompts import load_prompt as _load_prompt
-from app.services import pipeline
+from app.prompts import render_prompt as _render_prompt
 
-# This module asserts the wording of the Chinese prompts, so it pins the
-# language rather than relying on the default (English). The English siblings
-# are covered by tests/test_i18n_english.py.
+# This module asserts the Chinese prompt wording, so pin the language;
+# English is the product default.
 load_prompt = functools.partial(_load_prompt, language="zh")
 render_prompt = functools.partial(_render_prompt, language="zh")
+from app.services import pipeline
 
 INITIAL_DOCS = (
     "recon.md",
@@ -55,6 +55,7 @@ INITIAL_DOCS = (
     "unconstrained-worker.md",
     "sink_triage.md",
     "cli_indexer.md",
+    "vuln_dedup.md",
 )
 
 
@@ -91,8 +92,7 @@ def test_render_prompt_missing_file():
 
 
 def test_initial_prompt_helper_loads_from_initial_dir():
-    text = pipeline._initial_prompt("fix.md", vuln_id=9, title="SQLi", reason="需要证据", report_path="vulns/9/report.md")
-    # No project_id -> the helper resolves the default language (English).
+    text = pipeline._initial_prompt("fix.md", vuln_id=9, title="SQLi", reason="needs evidence", report_path="vulns/9/report.md")
     assert "ID=9" in text
     assert "title=SQLi" in text
     assert "FinishFix(vuln_id=9)" in text
@@ -122,7 +122,9 @@ def test_recon_mark_and_reviewer_docs_render_runtime_fields():
     assert "advisory.md" in review
     assert "ok" in review
     assert "cvss_vector" in review
+    assert "cvss4_vector" in review
     assert "CVSS 3.1" in review
+    assert "CVSS 4.0" in review
     assert "submission_tier" in review
     assert "submission_reason" in review
     assert "submission_reason (in English)" in review
@@ -139,7 +141,9 @@ def test_reviewer_prompt_requires_attack_surface_and_severity_factors():
     assert "attack_surface" in text
     assert "required_account" in text
     assert "cvss_vector" in text
+    assert "cvss4_vector" in text
     assert "CVSS 3.1" in text
+    assert "CVSS 4.0" in text
     assert "submission_tier" in text
     assert "submission_reason" in text
     assert "中文" in text or "须用中文" in text
@@ -161,14 +165,25 @@ def test_reviewer_prompt_requires_attack_surface_and_severity_factors():
     assert "后台" in text
     assert "无认证可达" in text
     assert "不要照抄 Worker" in text
+    assert "管理员先加入的可信源不是前台" in text
+    assert "普通用户打开页面中招不是前台" in text
+    assert "unix-agent" in text
+    assert "required_account=admin" in text
     assert "无认证可达" in load_prompt("initial/reviewer.md")
     assert "不要标 attack_surface=frontend" in load_prompt("initial/reviewer.md")
+    assert "SNMP 不用登录" in load_prompt("initial/reviewer.md")
+    assert "unix-agent" in load_prompt("initial/reviewer.md")
+    assert "普通用户打开页面中招不是前台" in load_prompt("initial/reviewer.md")
     assert "互联网资产证明" in text
     assert "FOFA" in text
     assert "X 情报社区" in text
     assert "CollectLabFingerprints" in text
     assert "fofa_fingerprint" in text
     assert "成立性否决" in text
+    assert "kind=old" in text
+    assert "已公开同类洞" in text
+    assert "confirm_not_known_public" in text
+    assert "已公开同类洞" in load_prompt("initial/reviewer.md")
     assert "docker exec" in text
     assert "不要按漏洞类型" in text
     assert "默认密码" in text
@@ -235,6 +250,8 @@ def test_harmless_file_ops_and_unguessable_uuid_are_discarded():
     ):
         assert "无害/受限文件操作" in text
         assert "不可获取且不可预测" in text
+    assert "分享链接" in worker
+    assert "分享链接" in reviewer
     assert "匿名文件操作" in worker
     assert "匿名文件操作" in reviewer
     assert "MarkFalsePositive" in reviewer
@@ -248,6 +265,8 @@ def test_cvss_scoring_prompt_covers_metrics_and_is_injected(tmp_env, project):
 
     text = load_prompt("cvss.md")
     assert "PR 必须与 attack_surface" in text
+    assert "CVSS 4.0" in text
+    assert "AT:N" in text
     assert "普通权限" in text
     assert "PR:L" in text
     assert "XSS" in text
@@ -261,15 +280,22 @@ def test_cvss_scoring_prompt_covers_metrics_and_is_injected(tmp_env, project):
     assert "PR 必须与攻击面一致" in initial
     overlay = pipeline._phase_system_prompt(project, "reviewer.md")
     assert "CVSS 3.1 度量标准" in overlay
+    assert "CVSS 4.0 度量标准" in overlay
     assert "XSS（含存储型）" in overlay
     spec = registry.get("ConfirmVuln")
     assert spec is not None
     assert "CVSS 3.1 度量标准" in spec.description
     assert "PR:L" in spec.description
     assert "独立核验无认证可达" in spec.description
+    assert "SNMP 源" in spec.description
+    assert "unix-agent" in spec.description
+    assert "普通用户打开页面中招" in spec.description
     vector_desc = spec.parameters["properties"]["cvss_vector"]["description"]
     assert "CVSS 3.1 度量标准" in vector_desc
     assert "Cookie" in vector_desc
+    v4_desc = spec.parameters["properties"]["cvss4_vector"]["description"]
+    assert "CVSS:4.0/" in v4_desc
+    assert "UI:P" in v4_desc
     cve_spec = registry.get("SetCveRecordField")
     assert cve_spec is not None
     assert "PR 须与已确认的 attack_surface 一致" in cve_spec.description
@@ -328,6 +354,9 @@ def test_poc_prompt_requires_cli_parameters():
     assert "SSRF exfil" in poc
     assert "--zh" in poc
     assert "默认英语" in poc
+    assert "[en, zh]" in poc
+    assert "逗号运算符" in poc
+    assert "harness.js" in poc
     assert "argparse" in poc
     assert "通/不通" in poc
     assert "不要写死" in poc
@@ -376,7 +405,9 @@ def test_audit_mode_overlay_prompts(tmp_env, project):
     assert "不要 docker" in bounty_worker
     assert "禁止主动搭建漏洞利用环境" not in bounty_worker
     assert "被测应用必须是" in bounty_worker
-    assert "旧应用镜像" in bounty_worker
+    assert "不要写成未认证前台 CVE" in bounty_worker
+    assert "后台管理员" in bounty_worker
+    assert "unix-agent" in bounty_worker
     full = load_prompt("modes/full.md")
     assert "全量模式" in full
     assert "low_impact" in full
@@ -386,6 +417,8 @@ def test_audit_mode_overlay_prompts(tmp_env, project):
     assert "无害/受限文件操作" in full
     assert "不可获取且不可预测" in full
     assert "不要标 `low_impact` 入库" in full
+    assert "unix-agent" in full
+    assert "backend" in full and "admin" in full
 
     from app.models import Project, SessionLocal
     from app.services import pipeline
@@ -459,10 +492,16 @@ def test_harness_verify_overlay_prompt(tmp_env, project):
     assert "完整相对路径" in text
     assert "--zh" in text
     assert "默认英语" in text
+    assert "[en, zh]" in text
+    assert "逗号运算符" in text
     assert "运行时" in text
     assert "success" in text
     assert "JDK 8" in text
     assert "java-release: 17" in text
+    assert "unsupported_language" in text or "rustc" in text
+    assert "language=c" in text
+    assert "gcc" in text
+    assert "UTF-8" in text
     assert "请求级加强验证" in text
     assert "httptest" in text
     assert "不要只拷" in text
@@ -473,8 +512,11 @@ def test_harness_verify_overlay_prompt(tmp_env, project):
     assert "### 漏洞代码" in followup
     assert "完整文件路径" in followup
     assert "运行时实际数据" in followup
+    assert "[en, zh]" in followup
+    assert "逗号运算符" in followup
     assert "JDK 8" in followup
     assert "java-release: 17" in followup
+    assert "language=c" in followup
     assert "请求级加强验证" in followup
     with SessionLocal() as db:
         p = db.get(Project, project)
@@ -488,6 +530,7 @@ def test_harness_verify_overlay_prompt(tmp_env, project):
     assert "### 漏洞代码" in overlay
     assert "--zh" in overlay
     assert "默认英语" in overlay
+    assert "[en, zh]" in overlay
     assert "运行时实际数据" in overlay
     assert "JDK 8" in overlay
     assert "java-release: 17" in overlay
@@ -626,13 +669,15 @@ def test_unconstrained_worker_prompts():
     assert "无约束扫描" in worker
     assert "不注入" in worker
     assert "FinishRound" in worker
-    assert "不要求" in worker
+    assert "压缩满 2 次" in worker
+    assert "没有 `FinishFile`" in worker
     assert "不要为了结束路径而硬写成" in worker
     assert "赏金闸门" in worker
     assert "即使项目挖掘模式是全量或自定义" in worker
     assert "rce_effect=true" in worker
     assert "不由 `vuln_type`" in worker
-    assert "FinishFile" in initial
+    assert "没有 FinishFile" in initial
+    assert "压缩满 2 次" in initial
     assert "FinishRound" in initial
     assert "侦察文档" in initial
     assert "docs/code-map.md" in worker
@@ -645,8 +690,12 @@ def test_unconstrained_worker_prompts():
     assert "提交前再核前台可达" in worker
     assert "方法无注解" in worker
     assert "docs/auth.md" in worker
+    assert "SNMP agent" in worker
+    assert "unix-agent" in worker
     assert "再核一次是否真的前台可达" in initial
     assert "auth_premise" in initial
+    assert "SNMP 源" in initial
+    assert "unix-agent" in initial
 
 
 def test_recon_source_ext_prompt_and_map_does_not_add_ext():
@@ -685,6 +734,8 @@ def test_worker_prompt_requires_asset_search_fingerprints():
     assert "外带内网信息" in text
     assert "仅响应差别（内网端口探测）" in text
     assert "标题须为中文" in text
+    assert "一两句成因概要" in text
+    assert "不要展开成原理长文" in text
     advisory = Path(__file__).resolve().parents[2] / "templates" / "vuln-advisory.md"
     advisory_text = advisory.read_text(encoding="utf-8")
     assert "## Title" in advisory_text
@@ -697,6 +748,8 @@ def test_worker_prompt_requires_asset_search_fingerprints():
     assert "## Severity / CWE" in advisory_text
     assert "**CVSS 3.1:**" in advisory_text
     assert "CVSS:3.1/" in advisory_text
+    assert "**CVSS 4.0:**" in advisory_text
+    assert "CVSS:4.0/" in advisory_text
     assert "raw HTTP request packet" in advisory_text
     assert "<BASE64_PAYLOAD>" in advisory_text
     assert "Write all fill-in content in English" in advisory_text
@@ -709,6 +762,10 @@ def test_report_format_prompt_is_shared_with_generation_and_revision(tmp_env, pr
     assert "# 报告 / Advisory / CVE 格式" in text
     assert "必须为中文" in text
     assert "标题须为中文" in text
+    assert "## 漏洞描述" in text
+    assert "不要写 `## 摘要`" in text
+    assert "一两句成因概要" in text
+    assert "不要在本节展开原理长文" in text
     assert "必须为英文 GitHub Advisory 填表稿" in text
     assert "不要把中文报告粘进去" in text
     assert "VULNHUNTER_PENDING" in text
@@ -807,7 +864,10 @@ def test_reviewer_lab_prompt_is_setup_only(tmp_env, project):
     assert "被测应用必须用最新版本" in text
     assert "vulhub" in text
     assert "业务应用本身可达" in text
+    assert "credentials.low" in text
+    assert "credentials.high" in text
     initial = load_prompt("initial/reviewer-lab.md")
+    assert "credentials.low" in initial
     assert "FinishLab" in initial
     assert "不要审核漏洞" in initial
     assert "${lab_image}" in initial
@@ -822,6 +882,9 @@ def test_reviewer_lab_prompt_is_setup_only(tmp_env, project):
     assert "Audited app = latest" in docker
     assert "vulhub" in docker
     assert "application itself" in docker
+    assert "credentials.low" in docker
+    assert "credentials.high" in docker
+    assert "IDOR" in docker
     rendered = pipeline._lab_system_prompt(project)
     assert f"demo-{project}:lab" in rendered
     assert f"demo-{project}" in rendered
@@ -841,6 +904,8 @@ def test_verifier_prompt_requires_fofa_and_three_successes():
     assert "FinishVerifier" in text
     assert "10" in text
     assert "3 个" in text
+    assert "不同 IP" in text
+    assert "同 IP" in text
     assert "expand" in text
     assert "poc" in text
     assert "response" in text
@@ -850,6 +915,8 @@ def test_verifier_prompt_requires_fofa_and_three_successes():
     assert "fofa_query" in text
     assert "5 轮" in text
     assert "50" in text
+    assert "超时" in text
+    assert "不会新开轮" in text or "不再新开" in text
     initial = load_prompt("initial/verifier.md")
     assert "FofaSearch" in initial
     assert "FinishVerifier" in initial
@@ -863,9 +930,12 @@ def test_verifier_prompt_requires_fofa_and_three_successes():
     assert "未测" in initial
     assert "共享" in initial
     assert "3 个" in initial
+    assert "不同 IP" in initial
+    assert "同 IP" in initial
     assert "expand=true" in initial
     assert "5 轮" in initial
     assert "50" in initial
+    assert "超时" in initial
     assert "增删改" in text or "禁止" in text
     assert "AskUser" in text
     assert "AskUser" in initial
@@ -930,3 +1000,31 @@ def test_discover_target_kind_prompt_exists():
     assert "target_kind" in text
     assert "关键词" in text
     assert "一轮" in text
+
+
+def test_discover_search_prompt_exists():
+    search = load_prompt("discover-search.md")
+    assert "queries" in search
+    assert "最高优先级" in search
+    assert "demo" in search
+    match = load_prompt("discover-match.md")
+    assert "keep" in match
+    assert "最高优先级" in match
+    assert "演示" in match
+
+
+def test_vuln_dedup_prompt_checks_latest_source():
+    text = load_prompt("vuln_dedup.md")
+    assert "source_status" in text
+    assert "最新" in text
+    assert "src/" in text
+    assert "分组" in text
+    assert "立刻" in text
+    assert "RecordVulnDedup" in text
+    assert "不要等全部漏洞分析完再一次性标记" in text
+    initial = load_prompt("initial/vuln_dedup.md")
+    assert "${source_note}" in initial
+    assert "source_status" in initial
+    assert "Read" in initial
+    assert "每组约 5 条" in initial
+    assert "不要等全部漏洞分析完再一次性标记" in initial

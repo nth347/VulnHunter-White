@@ -1,5 +1,4 @@
-import i18n from './i18n'
-import { translateBackendText } from './i18n/backendText'
+import { t } from './i18n/t'
 
 export type WeightExt = {
   ext: string
@@ -21,6 +20,7 @@ export type Project = {
   code_intel_done?: boolean
   code_intel_error?: string
   code_intel_stale?: boolean
+  code_intel_backends?: string[]
   audit_mode: 'bounty' | 'full' | 'custom'
   target_kind: 'web' | 'library' | 'mixed'
   custom_audit_mode_id: number | null
@@ -31,6 +31,7 @@ export type Project = {
   verifier_enabled: boolean
   attack_chain_enabled: boolean
   attack_chain_done: boolean
+  attack_chain_stopped?: boolean
   dynamic_verify_enabled: boolean
   dynamic_verify_mode: 'off' | 'lab' | 'harness'
   heuristic_enabled: boolean
@@ -41,10 +42,15 @@ export type Project = {
   bypass_queue_frozen: boolean
   unconstrained_enabled: boolean
   unconstrained_done: boolean
+  heuristic_stopped?: boolean
+  fast_stopped?: boolean
+  bypass_stopped?: boolean
   llm_model: string
   worker_hint?: string
   recon_hint?: string
   max_token_usage: number
+  source_sync_error?: string | null
+  source_sync_notice?: string | null
   error: string | null
   worker_concurrency: number | null
   created_at: string
@@ -193,9 +199,13 @@ export type ConversationState = {
   can_steer: boolean
   has_archived: boolean
   latest_session: number
+  can_stop?: boolean
+  can_start?: boolean
+  unconstrained_done?: boolean
+  path_stopped?: boolean
 }
 
-export type ConversationAction = 'steer' | 'continue' | 'new'
+export type ConversationAction = 'steer' | 'continue' | 'new' | 'stop' | 'start'
 
 export type VulnTrackingStatus = 'none' | 'submitted' | 'ignored'
 
@@ -339,6 +349,8 @@ export type VulnDetail = Vuln & {
   verifier_fofa_query?: string | null
   can_dynamic_verify?: boolean
   dynamic_verify_queued?: boolean
+  can_internet_verify?: boolean
+  internet_verify_queued?: boolean
 }
 
 export type VerifierTarget = {
@@ -475,7 +487,10 @@ export type LlmPoolEndpoint = {
   base_url: string
   api_key_set: boolean
   model: string
+  wire_api?: string
   max_inflight: number
+  weight?: number
+  disabled: boolean
 }
 
 export type Settings = {
@@ -491,6 +506,7 @@ export type Settings = {
   llm_roles: Record<string, { provider_id: string; model: string; reasoning_effort: string }>
   llm_endpoints: LlmPoolEndpoint[]
   llm_thread_limit: number
+  llm_min_request_interval_sec: number
   github_pat_set: boolean
   fofa_key_set: boolean
   fofa_base_url: string
@@ -503,6 +519,7 @@ export type Settings = {
   cli_tools_dir: string
   jadx_path: string
   codegraph_path: string
+  jar_analyzer_path?: string
   access_token_set: boolean
 }
 
@@ -554,6 +571,39 @@ export type LiveLogPurge = {
   projects: number
   files: number
   bytes: number
+}
+
+export type AppUpdateStatus = {
+  git_available: boolean
+  docker_runtime: boolean
+  current_version: string
+  current_sha: string
+  current_sha_short: string
+  remote_name: string
+  remote_url: string
+  remote_ref: string
+  remote_sha: string
+  remote_sha_short: string
+  remote_version: string
+  update_available: boolean
+  can_apply: boolean
+  apply_blocked_reason: string
+  dirty: boolean
+  applying: boolean
+  restarting: boolean
+  last_checked_at: string | null
+  last_error: string
+  check_interval_sec: number
+}
+
+export type AppUpdateApply = {
+  ok: boolean
+  restarting: boolean
+  reason: string
+  error: string
+  old_sha: string
+  new_sha: string
+  pulled: boolean
 }
 
 export type DockerContainer = {
@@ -669,6 +719,19 @@ export type CodegraphTest = {
   error: string | null
 }
 
+export type JarAnalyzerProbeBody = {
+  jar_analyzer_path?: string | null
+}
+
+export type JarAnalyzerTest = {
+  ok: boolean
+  path: string
+  version: string
+  java: string
+  latency_ms: number | null
+  error: string | null
+}
+
 export type GithubCandidate = {
   id: number
   full_name: string
@@ -708,6 +771,12 @@ export type GithubDiscoverSearch = {
   authenticated: boolean
   warning: string | null
   limit: number
+  prompt?: string | null
+  timed_out?: boolean
+}
+
+export type GithubDiscoverDismissAll = {
+  dismissed: number
 }
 
 const ACCESS_TOKEN_KEY = 'vulnhunter_access_token'
@@ -753,45 +822,21 @@ export function isTimeoutError(e: unknown): boolean {
 }
 
 export function formatApiError(e: unknown, timeoutMessage?: string): string {
-  if (isTimeoutError(e)) return timeoutMessage ?? i18n.t('common.requestTimeout')
+  if (isTimeoutError(e)) return timeoutMessage || t('api.timeout')
   const text = e instanceof Error ? e.message : String(e || '')
-  if (!text) return i18n.t('common.requestFailed')
+  if (!text) return t('api.failed')
   try {
     const parsed = JSON.parse(text) as { detail?: unknown }
-    const detail = extractDetail(parsed?.detail)
-    if (detail) return detail
+    if (typeof parsed?.detail === 'string' && parsed.detail.trim()) return parsed.detail
   } catch {
     /* keep raw */
   }
-  return translateBackendText(text)
-}
-
-/** FastAPI puts a string in `detail` for HTTPException and an array of
- *  `{loc, msg}` for request-validation (422) errors. Returns display-ready
- *  (already localized) text, or '' when there is nothing usable. */
-export function extractDetail(detail: unknown): string {
-  if (typeof detail === 'string') {
-    return detail.trim() ? translateBackendText(detail.trim()) : ''
-  }
-  if (Array.isArray(detail)) {
-    return detail
-      .map((d) => {
-        const msg = typeof d?.msg === 'string' ? (d.msg as string) : ''
-        // pydantic prefixes custom ValueError text with "Value error, "
-        return msg.replace(/^Value error,\s*/, '')
-      })
-      .filter(Boolean)
-      .map((m) => translateBackendText(m))
-      .join('; ')
-  }
-  return ''
+  return text
 }
 
 export function formatProjectsListError(e: unknown, hasCached: boolean): string {
   if (isTimeoutError(e)) {
-    return hasCached
-      ? i18n.t('apiErrors.projectsRefreshTimeout')
-      : i18n.t('apiErrors.projectsLoadTimeout')
+    return hasCached ? t('api.projectsRefreshTimeout') : t('api.projectsLoadTimeout')
   }
   return formatApiError(e)
 }
@@ -816,8 +861,11 @@ const IO_TIMEOUT_MS = 180_000
 const DOCKER_TIMEOUT_MS = 180_000
 /** Lab start/stop waits on `docker compose up` (backend up to 600s). */
 const LAB_TIMEOUT_MS = 660_000
-/** GHSA discovery crawl (up to 10 pages). */
-const DISCOVER_TIMEOUT_MS = 180_000
+/** Discover search: 600s base, +60s per repo over 5, plus client buffer. */
+export const DISCOVER_TIMEOUT_BASE_SEC = 600
+export const DISCOVER_TIMEOUT_EXTRA_SEC = 60
+export const DISCOVER_TIMEOUT_BASE_LIMIT = 5
+const DISCOVER_TIMEOUT_CLIENT_BUFFER_MS = 30_000
 /** Ask/revise a vuln report: backend LLM read is 3–10 min plus pool wait. */
 const FOLLOWUP_LLM_TIMEOUT_MS = 900_000
 const UPLOAD_TIMEOUT_MIN_MS = 120_000
@@ -831,6 +879,26 @@ export function uploadTimeoutMs(sizeBytes: number): number {
   return Math.min(UPLOAD_TIMEOUT_MAX_MS, Math.max(UPLOAD_TIMEOUT_MIN_MS, bySize))
 }
 
+export function clampDiscoverLimit(limit = 5): number {
+  const n = Math.trunc(Number(limit) || 5)
+  if (!Number.isFinite(n)) return 5
+  return Math.max(1, Math.min(20, n))
+}
+
+/** Backend wall-clock budget for one discovery search. */
+export function discoverSearchTimeoutSec(limit = 5): number {
+  const n = clampDiscoverLimit(limit)
+  return (
+    DISCOVER_TIMEOUT_BASE_SEC +
+    Math.max(0, n - DISCOVER_TIMEOUT_BASE_LIMIT) * DISCOVER_TIMEOUT_EXTRA_SEC
+  )
+}
+
+/** Fetch timeout: backend budget plus a short buffer so the API can return a timeout body. */
+export function discoverSearchTimeoutMs(limit = 5): number {
+  return discoverSearchTimeoutSec(limit) * 1000 + DISCOVER_TIMEOUT_CLIENT_BUFFER_MS
+}
+
 type ApiFetchInit = RequestInit & {
   /** Omit to use DEFAULT_API_TIMEOUT_MS; null disables the client timeout. */
   timeoutMs?: number | null
@@ -842,11 +910,6 @@ function apiFetch(url: string, init?: ApiFetchInit): Promise<Response> {
   if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`)
   }
-  // Lets the backend resolve its own message catalog instead of relying only on
-  // the known-string mapping in i18n/backendText.ts.
-  if (!headers.has('Accept-Language')) {
-    headers.set('Accept-Language', i18n.language || 'en')
-  }
   const { timeoutMs, signal, ...rest } = init ?? {}
   let nextSignal = signal
   if (!nextSignal) {
@@ -855,7 +918,7 @@ function apiFetch(url: string, init?: ApiFetchInit): Promise<Response> {
   }
   return fetch(url, { ...rest, signal: nextSignal, headers }).catch((e) => {
     if (isTimeoutError(e)) {
-      const err = new Error(i18n.t('common.requestTimeout'))
+      const err = new Error(t('api.timeout'))
       err.name = 'TimeoutError'
       throw err
     }
@@ -867,8 +930,7 @@ function errorFromResponse(status: number, text: string, statusText: string): Er
   const raw = text || statusText
   try {
     const parsed = JSON.parse(raw) as { detail?: unknown }
-    const detail = extractDetail(parsed?.detail)
-    if (detail) return new Error(detail)
+    if (typeof parsed?.detail === 'string') return new Error(parsed.detail)
   } catch {
     /* keep raw body */
   }
@@ -940,15 +1002,17 @@ export const api = {
     const s = params.toString()
     return request<GithubCandidateList>(`/api/discoveries${s ? `?${s}` : ''}`)
   },
-  searchDiscoveries: (limit = 5) =>
+  searchDiscoveries: (limit = 5, prompt = '') =>
     request<GithubDiscoverSearch>('/api/discoveries/search', {
       method: 'POST',
-      timeoutMs: DISCOVER_TIMEOUT_MS,
+      timeoutMs: discoverSearchTimeoutMs(limit),
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ limit }),
+      body: JSON.stringify({ limit, prompt: prompt.trim() || undefined }),
     }),
   dismissDiscovery: (id: number) =>
     request<GithubCandidate>(`/api/discoveries/${id}`, { method: 'DELETE' }),
+  dismissAllDiscoveries: () =>
+    request<GithubDiscoverDismissAll>('/api/discoveries/dismiss-all', { method: 'POST' }),
   createGithub: (
     source_url: string,
     name = '',
@@ -1111,6 +1175,12 @@ export const api = {
     request<{ ok: boolean; status?: string; error?: string }>(`/api/projects/${id}/code-intelligence/rebuild`, {
       method: 'POST',
       timeoutMs: PROJECT_READ_TIMEOUT_MS,
+    }),
+  requestVulnDedup: (id: number, vulnIds: number[]) =>
+    request<{ ok: boolean; vuln_ids: number[]; count: number }>(`/api/projects/${id}/vuln-dedup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vuln_ids: vulnIds }),
     }),
   openCodeIntelUi: (id: number) =>
     request<{ ok: boolean; url?: string; reused?: boolean; builtin?: boolean }>(
@@ -1311,6 +1381,14 @@ export const api = {
       `/api/vulns/${id}/dynamic-verify`,
       { method: 'POST' },
     ),
+  requestInternetVerify: (id: number) =>
+    request<{
+      ok: boolean
+      vuln_id: number
+      project_id: number
+      verifier_status: string
+      verifier_enabled: boolean
+    }>(`/api/vulns/${id}/internet-verify`, { method: 'POST' }),
   downloadVulns: async (ids: number[]) => {
     const res = await apiFetch('/api/vulns/download', {
       timeoutMs: IO_TIMEOUT_MS,
@@ -1340,6 +1418,14 @@ export const api = {
     return { blob, filename }
   },
   authStatus: () => request<{ ok: boolean; required: boolean }>('/api/auth/status', { timeoutMs: 15_000 }),
+  health: () =>
+    request<{
+      ok: boolean
+      service?: string
+      runtime?: string
+      docker_lab_build_enabled?: boolean
+      manual_lab_allowed?: boolean
+    }>('/api/health', { timeoutMs: 15_000 }),
   authLogin: (token: string) =>
     request<{ ok: boolean; required: boolean }>('/api/auth/login', {
       method: 'POST',
@@ -1402,12 +1488,31 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
+  testJarAnalyzer: (body: JarAnalyzerProbeBody) =>
+    request<JarAnalyzerTest>('/api/settings/jar-analyzer/test', {
+      method: 'POST',
+      timeoutMs: PROBE_TIMEOUT_MS,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
   purgeLiveLogs: (olderThanDays: number) =>
     request<LiveLogPurge>('/api/settings/logs/purge', {
       method: 'POST',
       timeoutMs: IO_TIMEOUT_MS,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ older_than_days: olderThanDays }),
+    }),
+  getAppUpdate: (refresh = false) =>
+    request<AppUpdateStatus>(`/api/settings/app-update${refresh ? '?refresh=true' : ''}`),
+  checkAppUpdate: () =>
+    request<AppUpdateStatus>('/api/settings/app-update/check', {
+      method: 'POST',
+      timeoutMs: PROBE_TIMEOUT_MS,
+    }),
+    applyAppUpdate: () =>
+    request<AppUpdateApply>('/api/settings/app-update/apply', {
+      method: 'POST',
+      timeoutMs: 360_000,
     }),
   listContainers: (runningOnly = false) =>
     request<DockerContainer[]>(`/api/docker/containers${runningOnly ? '?running_only=true' : ''}`, {

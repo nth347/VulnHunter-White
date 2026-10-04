@@ -1,18 +1,38 @@
 import { Fragment, type ReactElement, type ReactNode } from 'react'
-import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import i18n from '../i18n'
+import { useI18n } from '@/i18n'
+import type { MessageVars } from '@/i18n/t'
+
+type Translate = (key: string, vars?: MessageVars) => string
 
 const PHASE_IDS = ['recon', 'code_intel', 'worker', 'reviewer', 'verifier', 'attack_chain', 'done'] as const
+type PhaseId = (typeof PHASE_IDS)[number]
 
-const phaseLabel = (id: string) => i18n.t(`phaseFlow.phase.${id}.label`)
-const phaseHint = (id: string) => i18n.t(`phaseFlow.phase.${id}.hint`)
-const branchHint = (id: string) => i18n.t(`phaseFlow.branchHint.${id}`)
-// The backend labels recon sub-phases in Chinese; translate by id, keep the backend text as fallback.
-const reconStepLabel = (id: string, fallback: string) =>
-  i18n.t(`auditFlow.recon.step.${id}`, { defaultValue: fallback })
+function flowPhases(t: Translate) {
+  return [
+    { id: 'recon' as const, label: t('flow.phase.recon'), hint: t('flow.phase.reconHint') },
+    { id: 'code_intel' as const, label: t('flow.phase.codeIntel'), hint: t('flow.phase.codeIntelHint') },
+    { id: 'worker' as const, label: t('flow.phase.worker'), hint: t('flow.phase.workerHint') },
+    { id: 'reviewer' as const, label: t('flow.phase.reviewer'), hint: t('flow.phase.reviewerHint') },
+    { id: 'verifier' as const, label: t('flow.phase.verifier'), hint: t('flow.phase.verifierHint') },
+    { id: 'attack_chain' as const, label: t('flow.phase.attackChain'), hint: t('flow.phase.attackChainHint') },
+    { id: 'done' as const, label: t('flow.phase.done'), hint: t('flow.phase.doneHint') },
+  ]
+}
+
+function branchHints(t: Translate): Record<string, string> {
+  return {
+    map: t('flow.branch.map'),
+    source_ext: t('flow.branch.sourceExt'),
+    old_vulns: t('flow.branch.oldVulns'),
+    mark: t('flow.branch.mark'),
+    lab: t('flow.branch.lab'),
+    manualLab: t('flow.branch.manualLab'),
+    harness: t('flow.branch.harness'),
+  }
+}
 
 type Tone = 'neutral' | 'success' | 'info'
 
@@ -51,6 +71,7 @@ type FlowState = {
   verifierPending?: number
   attackChainEnabled?: boolean
   attackChainDone?: boolean
+  attackChainStopped?: boolean
   heuristicEnabled?: boolean
   heuristicLite?: boolean
   fastEnabled?: boolean
@@ -63,6 +84,9 @@ type FlowState = {
   bypassDone?: number
   unconstrainedEnabled?: boolean
   unconstrainedDone?: boolean
+  heuristicStopped?: boolean
+  fastStopped?: boolean
+  bypassStopped?: boolean
 }
 
 type BranchItem = {
@@ -78,6 +102,7 @@ function miningPrereqs(s: FlowState): boolean {
 
 function heuristicFinished(s: FlowState): boolean {
   if (s.heuristicEnabled === false) return true
+  if (s.heuristicStopped === true) return true
   if (!miningPrereqs(s)) return false
   if (s.heuristicLite === true) {
     return (s.filesWeight100Audited ?? 0) >= (s.filesWeight100 ?? 0)
@@ -89,12 +114,14 @@ function heuristicFinished(s: FlowState): boolean {
 
 function fastFinished(s: FlowState): boolean {
   if (s.fastEnabled !== true) return true
+  if (s.fastStopped === true) return true
   if (!miningPrereqs(s) || !s.fastQueueFrozen) return false
   return (s.sinksDone ?? 0) >= (s.sinksQueued ?? 0)
 }
 
 function bypassFinished(s: FlowState): boolean {
   if (s.bypassEnabled !== true) return true
+  if (s.bypassStopped === true) return true
   if (!s.bypassQueueFrozen) return false
   return (s.bypassDone ?? 0) >= (s.bypassQueued ?? 0)
 }
@@ -196,6 +223,7 @@ function phaseTone(id: string, s: FlowState): Tone {
   if (id === 'attack_chain') {
     if (!s.attackChainEnabled) return 'neutral'
     if (s.attackChainDone || s.status === 'completed' || s.phase === 'done') return 'success'
+    if (s.attackChainStopped) return 'neutral'
     if (s.phase === 'attack_chain' || s.phase === 'attack-chain') return 'info'
     return 'neutral'
   }
@@ -280,6 +308,7 @@ export default function PhaseFlow({
   verifierPending,
   attackChainEnabled,
   attackChainDone,
+  attackChainStopped,
   heuristicEnabled,
   heuristicLite,
   fastEnabled,
@@ -292,9 +321,11 @@ export default function PhaseFlow({
   bypassDone,
   unconstrainedEnabled,
   unconstrainedDone,
+  heuristicStopped,
+  fastStopped,
+  bypassStopped,
   onSelect,
 }: FlowState & { onSelect?: (id: string) => void }) {
-  const { t } = useTranslation()
   const state: FlowState = {
     phase,
     status,
@@ -318,6 +349,7 @@ export default function PhaseFlow({
     verifierPending,
     attackChainEnabled,
     attackChainDone,
+    attackChainStopped,
     heuristicEnabled,
     heuristicLite,
     fastEnabled,
@@ -330,25 +362,28 @@ export default function PhaseFlow({
     bypassDone,
     unconstrainedEnabled,
     unconstrainedDone,
+    heuristicStopped,
+    fastStopped,
+    bypassStopped,
   }
+  const { t } = useI18n()
+  const PHASES = flowPhases(t)
+  const BRANCH_HINTS = branchHints(t)
   const subs = reconSubphases ?? []
 
   function branchOf(id: string): BranchItem[] {
     if (id === 'recon') {
-      return subs.map((item) => {
-        const label = reconStepLabel(item.id, item.label)
-        return {
-          id: item.id,
-          node: (
-            <FlowTip hint={branchHint(item.id) || t('phaseFlow.subStageOf', { label })} side="right">
-              <Badge variant={badgeVariant(subphaseTone(item, subs, state))}>
-                {label}
-                {item.done ? ' ✓' : ''}
-              </Badge>
-            </FlowTip>
-          ),
-        }
-      })
+      return subs.map((item) => ({
+        id: item.id,
+        node: (
+          <FlowTip hint={BRANCH_HINTS[item.id] || t('flow.branch.subphase', { label: item.label })} side="right">
+            <Badge variant={badgeVariant(subphaseTone(item, subs, state))}>
+              {item.label}
+              {item.done ? ' ✓' : ''}
+            </Badge>
+          </FlowTip>
+        ),
+      }))
     }
     if (id === 'worker') {
       const items: BranchItem[] = []
@@ -360,9 +395,9 @@ export default function PhaseFlow({
           id: 'mine',
           node: (
             <Badge variant={badgeVariant(heuristicTone(state))}>
-              {lite ? t('phaseFlow.badge.heuristicLite') : t('phaseFlow.badge.heuristic')}
-              {` ${t('phaseFlow.badge.rounds', { n: rounds })}`}
-              {done ? ' ✓' : ''}
+              {lite ? t('mining.heuristicLite') : t('flow.reports.mine')}
+              {t('flow.badge.rounds', { rounds })}
+              {state.heuristicStopped ? t('flow.badge.paused') : done ? ' ✓' : ''}
             </Badge>
           ),
         })
@@ -375,9 +410,9 @@ export default function PhaseFlow({
           id: 'fast',
           node: (
             <Badge variant={badgeVariant(fastTone(state))}>
-              {t('phaseFlow.badge.fast')}
-              {state.fastQueueFrozen ? ` ${progressed}/${queued}` : ` ${t('phaseFlow.badge.preparing')}`}
-              {done ? ' ✓' : ''}
+              {t('mining.fast')}
+              {state.fastQueueFrozen ? ` ${progressed}/${queued}` : t('flow.badge.preparing')}
+              {state.fastStopped ? t('flow.badge.paused') : done ? ' ✓' : ''}
             </Badge>
           ),
         })
@@ -390,11 +425,9 @@ export default function PhaseFlow({
           id: 'bypass',
           node: (
             <Badge variant={badgeVariant(bypassTone(state))}>
-              {t('phaseFlow.badge.bypass')}
-              {state.bypassQueueFrozen
-                ? ` ${progressed}/${queued}`
-                : ` ${t('phaseFlow.badge.waitingHistory')}`}
-              {done ? ' ✓' : ''}
+              {t('mining.bypass')}
+              {state.bypassQueueFrozen ? ` ${progressed}/${queued}` : t('flow.badge.waitOldVulns')}
+              {state.bypassStopped ? t('flow.badge.paused') : done ? ' ✓' : ''}
             </Badge>
           ),
         })
@@ -405,7 +438,7 @@ export default function PhaseFlow({
           id: 'unconstrained',
           node: (
             <Badge variant={badgeVariant(unconstrainedTone(state))}>
-              {t('phaseFlow.badge.unconstrained')}
+              {t('mining.unconstrained')}
               {done ? ' ✓' : ''}
             </Badge>
           ),
@@ -420,8 +453,8 @@ export default function PhaseFlow({
           {
             id: 'harness',
             node: (
-              <FlowTip hint={branchHint('harness')} side="right">
-                <Badge variant="info">{t('phaseFlow.badge.localVerify')}</Badge>
+              <FlowTip hint={BRANCH_HINTS.harness} side="right">
+                <Badge variant="info">{t('verify.harness')}</Badge>
               </FlowTip>
             ),
           },
@@ -432,14 +465,13 @@ export default function PhaseFlow({
         {
           id: 'lab',
           node: (
-            <FlowTip hint={branchHint('lab')} side="right">
+            <FlowTip hint={BRANCH_HINTS.lab} side="right">
               <Badge
                 variant={badgeVariant(
                   state.labSetupDone ? 'success' : phaseTone('reviewer', state) === 'info' ? 'info' : 'neutral',
                 )}
               >
-                {t('phaseFlow.badge.labSetup')}
-                {state.labSetupDone ? ' ✓' : ''}
+                {t('flow.badge.labSetup')}{state.labSetupDone ? ' ✓' : ''}
               </Badge>
             </FlowTip>
           ),
@@ -449,8 +481,8 @@ export default function PhaseFlow({
               {
                 id: 'manual-lab',
                 node: (
-                  <FlowTip hint={branchHint('manualLab')} side="right">
-                    <Badge variant="info">{t('phaseFlow.badge.manualLab')}</Badge>
+                  <FlowTip hint={BRANCH_HINTS.manualLab} side="right">
+                    <Badge variant="info">{t('verify.manual')}</Badge>
                   </FlowTip>
                 ),
               },
@@ -461,7 +493,7 @@ export default function PhaseFlow({
     return []
   }
 
-  const branches: Record<(typeof PHASE_IDS)[number], BranchItem[]> = {
+  const branches: Record<PhaseId, BranchItem[]> = {
     recon: branchOf('recon'),
     code_intel: [],
     worker: branchOf('worker'),
@@ -472,32 +504,32 @@ export default function PhaseFlow({
   }
   const workerPaths = branches.worker
   const workerHints: Record<string, string> = {
-    mine: t('phaseFlow.workerHint.mine'),
-    fast: t('phaseFlow.workerHint.fast'),
-    bypass: t('phaseFlow.workerHint.bypass'),
-    unconstrained: t('phaseFlow.workerHint.unconstrained'),
+    mine: t('flow.hint.mine'),
+    fast: t('flow.hint.fast'),
+    bypass: t('flow.hint.bypass'),
+    unconstrained: t('flow.hint.unconstrained'),
   }
 
+  const codeIntel = PHASES.find((p) => p.id === 'code_intel')
   const ciOn = state.codeIntelEnabled === true
   const ciStatus = state.codeIntelStatus || 'pending'
   const ciLabel =
     !ciOn || ciStatus === 'skipped'
-      ? t('phaseFlow.codeIntel.off')
+      ? t('flow.ci.off')
       : ciStatus === 'stale'
-        ? t('phaseFlow.codeIntel.stale')
+        ? t('flow.ci.stale')
         : ciStatus === 'degraded'
-          ? t('phaseFlow.codeIntel.degraded')
-          : t('phaseFlow.phase.code_intel.label')
+          ? t('flow.ci.degraded')
+          : t('flow.ci.on')
   const ciDoneMark =
     ciOn && (ciStatus === 'ready' || ciStatus === 'stale' || ciStatus === 'degraded' || state.codeIntelDone)
 
   return (
     <TooltipProvider delay={200}>
       <div className="flex flex-nowrap items-start gap-2 overflow-x-auto">
-        {PHASE_IDS.map((pid, i) => {
-          if (pid === 'code_intel') return null
-          const p = { id: pid, label: phaseLabel(pid), hint: phaseHint(pid) }
-          const visibleAfter = PHASE_IDS.slice(i + 1).find((x) => x !== 'code_intel')
+        {PHASES.map((p, i) => {
+          if (p.id === 'code_intel') return null
+          const visibleAfter = PHASES.slice(i + 1).find((x) => x.id !== 'code_intel')
           return (
           <Fragment key={p.id}>
             <div className="shrink-0">
@@ -517,15 +549,14 @@ export default function PhaseFlow({
                       }
                     >
                       <Badge variant={badgeVariant(phaseTone('recon', state))}>
-                        {phaseLabel('recon')}
-                        {state.reconDone ? ' ✓' : ''}
+                        {t('flow.phase.recon')}{state.reconDone ? ' ✓' : ''}
                       </Badge>
                     </FlowTip>
                   </div>
-                  {
+                  {codeIntel ? (
                     <div className="flex h-6 items-center">
                       <FlowTip
-                        hint={phaseHint('code_intel')}
+                        hint={codeIntel.hint}
                         render={
                           <Button
                             type="button"
@@ -542,7 +573,7 @@ export default function PhaseFlow({
                         </Badge>
                       </FlowTip>
                     </div>
-                  }
+                  ) : null}
                 </div>
               ) : p.id === 'worker' && workerPaths.length > 0 ? (
                 <div className="flex flex-col gap-1">
@@ -581,10 +612,11 @@ export default function PhaseFlow({
                   >
                     <Badge variant={badgeVariant(phaseTone(p.id, state))}>
                       {p.label}
-                      {p.id === 'reviewer' && (state.dynamicVerifyMode || (state.dynamicVerifyEnabled ? 'lab' : 'off')) === 'off' ? ` ${t('phaseFlow.suffix.static')}` : ''}
-                      {p.id === 'reviewer' && (state.dynamicVerifyMode || (state.dynamicVerifyEnabled ? 'lab' : 'off')) === 'harness' ? ` ${t('phaseFlow.suffix.local')}` : ''}
-                      {p.id === 'verifier' && !state.verifierEnabled ? ` ${t('phaseFlow.suffix.off')}` : ''}
-                      {p.id === 'attack_chain' && !state.attackChainEnabled ? ` ${t('phaseFlow.suffix.off')}` : ''}
+                      {p.id === 'reviewer' && (state.dynamicVerifyMode || (state.dynamicVerifyEnabled ? 'lab' : 'off')) === 'off' ? t('flow.badge.static') : ''}
+                      {p.id === 'reviewer' && (state.dynamicVerifyMode || (state.dynamicVerifyEnabled ? 'lab' : 'off')) === 'harness' ? t('flow.badge.partial') : ''}
+                      {p.id === 'verifier' && !state.verifierEnabled ? t('flow.badge.off') : ''}
+                      {p.id === 'attack_chain' && !state.attackChainEnabled ? t('flow.badge.off') : ''}
+                      {p.id === 'attack_chain' && state.attackChainEnabled && state.attackChainStopped ? t('flow.badge.pausedShort') : ''}
                     </Badge>
                   </FlowTip>
                 </div>

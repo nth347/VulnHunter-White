@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { api, formatApiError, type Project } from '../api'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -12,6 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+import { useI18n } from '@/i18n'
 
 const RESET_OK_STATUSES = new Set(['paused', 'completed', 'cancelled', 'error'])
 
@@ -21,7 +21,7 @@ type ResetProgressButtonProps = {
 }
 
 export function ResetProgressButton({ project, onReset }: ResetProgressButtonProps) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [acked, setAcked] = useState(false)
@@ -52,7 +52,7 @@ export function ResetProgressButton({ project, onReset }: ResetProgressButtonPro
       setAcked(false)
       onReset?.(next)
     } catch (e) {
-      setError(formatApiError(e, t('resetProgress.timeout')))
+      setError(formatApiError(e, t('comp.reset.timeout')))
     } finally {
       setBusy(false)
     }
@@ -64,10 +64,10 @@ export function ResetProgressButton({ project, onReset }: ResetProgressButtonPro
         type="button"
         variant="warning"
         disabled={!allowed}
-        title={allowed ? t('resetProgress.titleAllowed') : t('resetProgress.titleBlocked')}
+        title={allowed ? t('comp.reset.tipOk') : t('comp.reset.tipNeedPause')}
         onClick={openDialog}
       >
-        {t('resetProgress.button')}
+        {t('comp.reset.btn')}
       </Button>
       <Dialog
         open={open}
@@ -78,8 +78,8 @@ export function ResetProgressButton({ project, onReset }: ResetProgressButtonPro
       >
         <DialogContent className="sm:max-w-lg" showCloseButton={!busy}>
           <DialogHeader>
-            <DialogTitle>{t('resetProgress.title')}</DialogTitle>
-            <DialogDescription>{t('resetProgress.description', { name: project.name })}</DialogDescription>
+            <DialogTitle>{t('comp.reset.title')}</DialogTitle>
+            <DialogDescription>{t('comp.reset.body', { name: project.name })}</DialogDescription>
           </DialogHeader>
           <Label className="items-start font-normal">
             <Checkbox
@@ -88,7 +88,7 @@ export function ResetProgressButton({ project, onReset }: ResetProgressButtonPro
               disabled={busy}
               onCheckedChange={(checked) => setAcked(checked === true)}
             />
-            <span className="min-w-0 text-sm leading-relaxed">{t('resetProgress.ack')}</span>
+            <span className="min-w-0 text-sm leading-relaxed">{t('comp.reset.ack')}</span>
           </Label>
           {error ? <p className="text-sm text-red-300">{error}</p> : null}
           <DialogFooter>
@@ -101,7 +101,7 @@ export function ResetProgressButton({ project, onReset }: ResetProgressButtonPro
               disabled={busy || !acked}
               onClick={() => void confirmReset()}
             >
-              {busy ? t('resetProgress.resetting') : t('resetProgress.confirm')}
+              {busy ? t('comp.reset.resetting') : t('comp.reset.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

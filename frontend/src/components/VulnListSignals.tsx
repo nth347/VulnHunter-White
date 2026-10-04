@@ -1,6 +1,6 @@
 import { Fragment } from 'react'
-import { useTranslation } from 'react-i18next'
 import { EllipsisIcon } from 'lucide-react'
+import { useI18n } from '@/i18n'
 import type { Vuln } from '../api'
 import { vulnListAttributeLines, vulnListSecondaryTags } from '../lib/vulnListTags'
 import AttackSurfaceBadge from './AttackSurfaceBadge'
@@ -34,7 +34,7 @@ function InlineTag({ label, tooltip }: { label: string; tooltip?: string | null 
 }
 
 function AllAttributesTip({ v, projectName }: { v: Vuln; projectName?: string }) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const lines = vulnListAttributeLines(v, projectName)
   return (
     <Tooltip>
@@ -43,7 +43,7 @@ function AllAttributesTip({ v, projectName }: { v: Vuln; projectName?: string })
           <button
             type="button"
             className="inline-flex size-4 shrink-0 items-center justify-center rounded text-slate-500 hover:bg-muted hover:text-slate-300"
-            aria-label={t('vulnSignals.allAttributes')}
+            aria-label={t('comp.signals.allAttrs')}
           />
         }
       >

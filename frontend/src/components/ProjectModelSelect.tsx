@@ -1,14 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { api, formatApiError } from '../api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useI18n } from '@/i18n'
+import { t } from '@/i18n/t'
 import { cn } from '@/lib/utils'
 
 const GLOBAL = '__global__'
 const NONE = '__none__'
+
+export function projectModelHint(): string {
+  return t('comp.model.hint')
+}
+
+export const PROJECT_MODEL_HINT = projectModelHint
 
 export function ProjectModelSelect({
   value,
@@ -19,7 +26,7 @@ export function ProjectModelSelect({
   onValueChange: (value: string) => void
   className?: string
 }) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const [defaultModel, setDefaultModel] = useState('')
   const [models, setModels] = useState<string[]>([])
   const [modelFilter, setModelFilter] = useState('')
@@ -40,9 +47,7 @@ export function ProjectModelSelect({
   }, [models, modelFilter])
 
   const trimmed = value.trim()
-  const globalLabel = defaultModel
-    ? t('projectModel.useGlobalNamed', { model: defaultModel })
-    : t('projectModel.useGlobal')
+  const globalLabel = defaultModel ? t('comp.model.globalNamed', { model: defaultModel }) : t('comp.model.global')
   const selectValue = !trimmed ? GLOBAL : models.includes(trimmed) ? trimmed : NONE
 
   async function fetchModels() {
@@ -52,14 +57,14 @@ export function ProjectModelSelect({
       const out = await api.listLlmModels({})
       if (out.ok) {
         setModels(out.models)
-        if (!out.models.length) setListError(t('projectModel.listEmpty'))
+        if (!out.models.length) setListError(t('comp.model.emptyList'))
       } else {
         setModels([])
-        setListError(out.error || t('projectModel.fetchFailed'))
+        setListError(out.error || t('comp.model.fetchFail'))
       }
     } catch (e) {
       setModels([])
-      setListError(formatApiError(e, t('projectModel.fetchTimeout')))
+      setListError(formatApiError(e, t('comp.model.fetchTimeout')))
     } finally {
       setListing(false)
     }
@@ -67,16 +72,12 @@ export function ProjectModelSelect({
 
   return (
     <div className={cn('space-y-2', className)}>
-      <Label className="font-medium">{t('projectModel.label')}</Label>
-      <p className="text-xs leading-relaxed text-muted-foreground">{t('projectModel.hint')}</p>
+      <Label className="font-medium">{t('comp.model.label')}</Label>
+      <p className="text-xs leading-relaxed text-muted-foreground">{projectModelHint()}</p>
       <Input
         value={value}
         onChange={(e) => onValueChange(e.target.value)}
-        placeholder={
-          defaultModel
-            ? t('projectModel.placeholderNamed', { model: defaultModel })
-            : t('projectModel.placeholder')
-        }
+        placeholder={defaultModel ? t('comp.model.phNamed', { model: defaultModel }) : t('comp.model.phGlobal')}
       />
       {models.length > 0 ? (
         <>
@@ -84,7 +85,7 @@ export function ProjectModelSelect({
             <Input
               value={modelFilter}
               onChange={(e) => setModelFilter(e.target.value)}
-              placeholder={t('projectModel.filterPlaceholder', { count: models.length })}
+              placeholder={t('comp.model.filter', { n: models.length })}
             />
           ) : null}
           <Select
@@ -100,10 +101,7 @@ export function ProjectModelSelect({
             <SelectContent alignItemWithTrigger={false} align="start" className="max-h-72 w-(--anchor-width)">
               <SelectItem value={GLOBAL}>{globalLabel}</SelectItem>
               <SelectItem value={NONE}>
-                {t('projectModel.pickFromList', {
-                  shown: filteredModels.length,
-                  total: models.length,
-                })}
+                {t('comp.model.fromList', { shown: filteredModels.length, total: models.length })}
               </SelectItem>
               {filteredModels.map((m) => (
                 <SelectItem key={m} value={m}>
@@ -116,7 +114,7 @@ export function ProjectModelSelect({
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" disabled={listing} onClick={() => void fetchModels()}>
-          {listing ? t('projectModel.fetching') : t('projectModel.fetch')}
+          {listing ? t('comp.model.fetching') : t('comp.model.fetch')}
         </Button>
         {listError ? <span className="text-xs text-red-300">{listError}</span> : null}
       </div>

@@ -6,7 +6,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -56,15 +56,25 @@ from ..dynamic_verify import (
     VERIFY_MODE_HARNESS,
     VERIFY_MODE_LAB,
     VERIFY_MODE_OFF,
+    effective_project_verify_mode,
     is_harness_mode,
     is_lab_mode,
-    project_verify_mode,
     review_timeouts_before_static,
     review_timeouts_exhausted,
     static_after_review_timeouts,
     verify_mode_enabled,
 )
-from ..mining_paths import HEURISTIC_LITE_WEIGHT, heuristic_lite_active, mining_path_label
+from ..mining_paths import (
+    HEURISTIC_LITE_WEIGHT,
+    MINING_PATH_DB_PHASES,
+    MINING_PATH_LABELS,
+    MINING_PATH_STOPPED_ATTR,
+    heuristic_lite_active,
+    mining_path_enabled,
+    mining_path_from_db_phase,
+    mining_path_label,
+    mining_path_user_stopped,
+)
 from ..models import FileWeight, PhaseRun, Project, SessionLocal, Sink, Source, Vuln, utcnow
 from ..i18n import project_language
 from ..prompts import load_prompt, normalize_language, render_prompt
@@ -82,6 +92,7 @@ from ..services.ingest import (
     clone_github,
     extract_zip,
     prefilter_extensions,
+    sync_github_source,
 )
 from ..services.lab import (
     clear_lab_bring_up_failed,
@@ -91,6 +102,7 @@ from ..services.lab import (
     format_lab_repairs_for_prompt,
     handoff_lab_for_repair,
     increment_lab_setup_timeout_streak,
+    invalidate_lab_for_rebuild,
     lab_bring_up_failed,
     lab_had_docker_lab,
     lab_naming,
@@ -132,7 +144,13 @@ from ..tools.phase_recon import (
     recon_old_vulns_ready,
     recon_source_ext_ready,
 )
-from ..tools.phase_worker import heuristic_complete, mining_complete, project_complete_gates, unconstrained_complete
+from ..tools.phase_worker import (
+    heuristic_complete,
+    mining_complete,
+    path_is_user_stopped,
+    project_complete_gates,
+    unconstrained_complete,
+)
 
 register_all_tools()
 
@@ -143,6 +161,8 @@ _cancel_events: dict[int, threading.Event] = {}
 _pause_flags: dict[int, threading.Event] = {}
 _phase_pause_flags: dict[tuple[int, str], threading.Event] = {}
 _phase_generation: dict[tuple[int, str], int] = {}
+_unconstrained_generation: dict[int, int] = {}
+_mining_path_generation: dict[tuple[int, str], int] = {}
 _force_new_run: set[tuple[int, str]] = set()
 _pending_inject: dict[tuple[int, str], list[dict[str, Any]]] = {}
 _threads: dict[int, list[threading.Thread]] = {}
@@ -153,6 +173,8 @@ _code_intel_threads: dict[int, threading.Thread] = {}
 _reviewer_threads: dict[int, threading.Thread] = {}
 _verifier_threads: dict[int, threading.Thread] = {}
 _attack_chain_threads: dict[int, threading.Thread] = {}
+_vuln_dedup_threads: dict[int, threading.Thread] = {}
+_vuln_dedup_locks: dict[int, threading.Lock] = {}
 _reviewer_inflight: dict[int, bool] = {}
 _verifier_inflight: dict[int, bool] = {}
 _attack_chain_inflight: dict[int, bool] = {}
@@ -162,6 +184,8 @@ _pending_conversation_message: dict[tuple[int, str], str] = {}
 _fast_prepare_threads: dict[int, threading.Thread] = {}
 _fast_last_dir: dict[int, str] = {}
 _DB_LOCK_RETRY_SECONDS = 1.0
+_SOURCE_SYNC_UNSET = object()
+_CST = timezone(timedelta(hours=8))
 
 # Role pools: Recon 1 / Worker 2 (mine 1 + fix 1) / Reviewer 1
 RECON_POOL = 1
@@ -169,7 +193,7 @@ WORKER_MINE_POOL = 1
 WORKER_FIX_POOL = 1
 REVIEWER_POOL = 1
 
-CONTROL_PHASES = ("recon", "code_intel", "worker", "reviewer", "verifier", "attack_chain")
+CONTROL_PHASES = ("recon", "code_intel", "worker", "reviewer", "verifier", "attack_chain", "vuln_dedup")
 CONTROL_DB_PHASES: dict[str, tuple[str, ...]] = {
     "recon": ("recon", "recon-source-ext", "recon-old-vuln", "recon-old-vuln-ghsa", "recon-mark"),
     "code_intel": ("code_intel",),
@@ -177,6 +201,7 @@ CONTROL_DB_PHASES: dict[str, tuple[str, ...]] = {
     "reviewer": ("reviewer", "reviewer-lab"),
     "verifier": ("verifier",),
     "attack_chain": ("attack_chain",),
+    "vuln_dedup": ("vuln_dedup",),
 }
 CONTROL_LABELS = {
     "recon": "侦察",
@@ -185,6 +210,7 @@ CONTROL_LABELS = {
     "reviewer": "审核",
     "verifier": "验证",
     "attack_chain": "攻击链",
+    "vuln_dedup": "产出去重",
 }
 RECON_RERUN_SUBPHASES = ("map", "old_vulns")
 RECON_RERUN_LABELS = {"map": "地图/鉴权", "old_vulns": "历史漏洞"}
@@ -279,6 +305,8 @@ def control_phase(phase: str) -> str:
         return "verifier"
     if p in ("attack_chain", "attack-chain"):
         return "attack_chain"
+    if p in ("vuln_dedup", "vuln-dedup"):
+        return "vuln_dedup"
     raise ValueError(f"未知阶段: {phase}")
 
 
@@ -310,6 +338,67 @@ def _loop_cancel(project_id: int, phase: str) -> GenerationCancel:
     return GenerationCancel(_cancel_event(project_id), project_id, control_phase(phase), _phase_generation_of(project_id, phase))
 
 
+class MiningPathLoopCancel:
+    """Project cancel, worker 新跑, or user pause of one mining path."""
+
+    def __init__(self, project_id: int, path: str) -> None:
+        self._project = _cancel_event(project_id)
+        self._project_id = project_id
+        self._path = path
+        self._worker_gen = _phase_generation_of(project_id, "worker")
+        self._path_gen = _mining_path_generation.get((project_id, path), 0)
+        self._u_gen = _unconstrained_generation.get(project_id, 0)
+
+    def is_set(self) -> bool:
+        if self._project.is_set():
+            return True
+        if _phase_generation_of(self._project_id, "worker") != self._worker_gen:
+            return True
+        if _mining_path_generation.get((self._project_id, self._path), 0) != self._path_gen:
+            return True
+        if self._path == "unconstrained":
+            return _unconstrained_generation.get(self._project_id, 0) != self._u_gen
+        return False
+
+    def wait(self, timeout: float | None = None) -> bool:
+        deadline = None if timeout is None else time.time() + max(0.0, timeout)
+        while not self.is_set():
+            remaining = None if deadline is None else deadline - time.time()
+            if remaining is not None and remaining <= 0:
+                return False
+            time.sleep(min(0.2, remaining if remaining is not None else 0.2))
+        return True
+
+
+class UnconstrainedLoopCancel(MiningPathLoopCancel):
+    """Project cancel, worker 新跑, or user stop of unconstrained scanning."""
+
+    def __init__(self, project_id: int) -> None:
+        super().__init__(project_id, "unconstrained")
+
+
+def _mining_path_loop_cancel(project_id: int, path: str) -> MiningPathLoopCancel:
+    return MiningPathLoopCancel(project_id, path)
+
+
+def _unconstrained_loop_cancel(project_id: int) -> UnconstrainedLoopCancel:
+    return UnconstrainedLoopCancel(project_id)
+
+
+def _bump_mining_path_generation(project_id: int, path: str) -> int:
+    key = (project_id, path)
+    with _lock:
+        nxt = _mining_path_generation.get(key, 0) + 1
+        _mining_path_generation[key] = nxt
+        if path == "unconstrained":
+            _unconstrained_generation[project_id] = _unconstrained_generation.get(project_id, 0) + 1
+        return nxt
+
+
+def _bump_unconstrained_generation(project_id: int) -> int:
+    return _bump_mining_path_generation(project_id, "unconstrained")
+
+
 def _phase_is_paused(project_id: int, phase: str) -> bool:
     return _pause_event(project_id).is_set() or _phase_pause_event(project_id, phase).is_set()
 
@@ -323,6 +412,8 @@ def reset_runtime_state() -> None:
         _pause_flags.clear()
         _phase_pause_flags.clear()
         _phase_generation.clear()
+        _unconstrained_generation.clear()
+        _mining_path_generation.clear()
         _force_new_run.clear()
         _pending_inject.clear()
         _threads.clear()
@@ -333,6 +424,8 @@ def reset_runtime_state() -> None:
         _reviewer_threads.clear()
         _verifier_threads.clear()
         _attack_chain_threads.clear()
+        _vuln_dedup_threads.clear()
+        _vuln_dedup_locks.clear()
         _reviewer_inflight.clear()
         _verifier_inflight.clear()
         _attack_chain_inflight.clear()
@@ -464,6 +557,11 @@ def note_attack_chain_enabled(project_id: int) -> None:
     from ..tools.phase_attack_chain import clear_attack_chain_done
 
     clear_attack_chain_done(project_id)
+    with SessionLocal() as db:
+        proj = db.get(Project, project_id)
+        if proj and bool(getattr(proj, "attack_chain_stopped", False)):
+            proj.attack_chain_stopped = False
+            db.commit()
     if not _pause_event(project_id).is_set():
         _phase_pause_event(project_id, "attack_chain").clear()
     _force_new_run.add((project_id, "attack_chain"))
@@ -471,13 +569,19 @@ def note_attack_chain_enabled(project_id: int) -> None:
 
 
 def note_code_intel_enabled(project_id: int) -> None:
-    """User turned Code Intelligence on; start a build even if mining is paused."""
+    """User turned Code Intelligence on; wait for Recon MarkCodeIntel before building."""
     _phase_pause_event(project_id, "code_intel").clear()
     live_log.system(
         project_id,
-        "已开启代码库，开始构建调用图；挖掘会等构建结束后再继续",
+        "已开启代码库；等待侦察地图 Agent 调用 MarkCodeIntel 点名 CodeGraph / Jar Analyzer 后再构建。"
+        "挖掘会等构建结束后再继续",
         phase="code_intel",
     )
+
+
+def request_code_intel_after_choice(project_id: int) -> None:
+    """Start build after Recon Agent named backends via MarkCodeIntel."""
+    _phase_pause_event(project_id, "code_intel").clear()
     _start_code_intel_thread(project_id, force=False)
 
 
@@ -503,6 +607,12 @@ def note_dynamic_verify_changed(project_id: int, *, enabled: bool) -> None:
 
 
 class DynamicVerifyRequestError(RuntimeError):
+    def __init__(self, message: str, *, status_code: int = 400) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class InternetVerifyRequestError(RuntimeError):
     def __init__(self, message: str, *, status_code: int = 400) -> None:
         super().__init__(message)
         self.status_code = status_code
@@ -545,6 +655,8 @@ def can_append_dynamic_verify(vuln: Vuln, verify_mode: str) -> bool:
     - harness-confirmed (sink/module) + poc → append L3 integration (harness project)
     - harness-confirmed → append Docker lab only (upgrade evidence to dynamic/mcp)
     """
+    from .runtime import docker_lab_build_enabled
+
     if vuln.status == "merged":
         return False
     if not verify_mode_enabled(verify_mode):
@@ -554,6 +666,9 @@ def can_append_dynamic_verify(vuln: Vuln, verify_mode: str) -> bool:
     if is_harness_mode(verify_mode) and is_harness_integration_upgradeable(vuln):
         return True
     if is_harness_confirmed_vuln(vuln) and is_lab_mode(verify_mode):
+        # Docker Desktop: no auto lab build - cannot upgrade harness → Docker lab.
+        if not docker_lab_build_enabled():
+            return False
         return True
     return False
 
@@ -581,8 +696,28 @@ def dynamic_verify_flags(vuln: Vuln, *, project: Project | None = None) -> tuple
             proj = db.get(Project, vuln.project_id)
     can = bool(
         proj is not None
-        and can_append_dynamic_verify(vuln, project_verify_mode(proj))
+        and can_append_dynamic_verify(vuln, effective_project_verify_mode(proj))
         and proj.status not in ("cancelled", "error", "pending", "ingesting")
+    )
+    return can, queued
+
+
+def internet_verify_flags(vuln: Vuln, *, project: Project | None = None) -> tuple[bool, bool]:
+    """Whether this confirmed frontend vuln can be (re)queued for FOFA internet verify."""
+    from .verifier import CONFIRMED_STATUSES, VERIFIER_PENDING, normalize_verifier_status
+
+    queued = normalize_verifier_status(vuln.verifier_status) == VERIFIER_PENDING
+    proj = project
+    if proj is None:
+        with SessionLocal() as db:
+            proj = db.get(Project, vuln.project_id)
+    merged = vuln.status == "merged" or bool(getattr(vuln, "merged_into_id", None))
+    can = bool(
+        proj is not None
+        and proj.status not in ("cancelled", "error", "pending", "ingesting")
+        and vuln.status in CONFIRMED_STATUSES
+        and (vuln.attack_surface or "") == "frontend"
+        and not merged
     )
     return can, queued
 
@@ -600,7 +735,7 @@ def request_dynamic_verify(vuln_id: int, *, followup_kind: str = "") -> dict[str
         db.expunge(proj)
     if proj.status in ("cancelled", "error", "pending", "ingesting"):
         raise DynamicVerifyRequestError("当前项目状态不可追加动态验证")
-    verify_mode = project_verify_mode(proj)
+    verify_mode = effective_project_verify_mode(proj)
     if not verify_mode_enabled(verify_mode):
         raise DynamicVerifyRequestError("请先在项目设置中开启靶场动态或局部验证")
     if vuln.status == "merged":
@@ -663,6 +798,7 @@ def request_dynamic_verify(vuln_id: int, *, followup_kind: str = "") -> dict[str
     )
     _force_new_run.discard((proj.id, "reviewer"))
     if _pause_event(proj.id).is_set():
+        _sync_github_before_unpause(proj.id)
         for phase in CONTROL_PHASES:
             if phase != "reviewer":
                 _phase_pause_event(proj.id, phase).set()
@@ -689,18 +825,222 @@ def request_dynamic_verify(vuln_id: int, *, followup_kind: str = "") -> dict[str
     return {"ok": True, "vuln_id": vuln.id, "project_id": proj.id, "phase_run_id": run_id}
 
 
+def request_internet_verify(vuln_id: int) -> dict[str, Any]:
+    """Manually queue FOFA internet verification for one confirmed frontend vuln.
+
+    Enables project Verifier if it was off. Re-queues skipped / failed / verified / none.
+    Does not enqueue sibling vulns.
+    """
+    from .verifier import (
+        CONFIRMED_STATUSES,
+        VERIFIER_AWAITING_USER,
+        VERIFIER_PENDING,
+        normalize_verifier_status,
+    )
+
+    with SessionLocal() as db:
+        vuln = db.get(Vuln, vuln_id)
+        if not vuln:
+            raise InternetVerifyRequestError("漏洞不存在", status_code=404)
+        proj = db.get(Project, vuln.project_id)
+        if not proj:
+            raise InternetVerifyRequestError("项目不存在", status_code=404)
+
+        if proj.status in ("cancelled", "error", "pending", "ingesting"):
+            raise InternetVerifyRequestError("当前项目状态不可发起互联网验证")
+        if vuln.status == "merged" or vuln.merged_into_id:
+            raise InternetVerifyRequestError("该漏洞已并入其他报告")
+        if vuln.status not in CONFIRMED_STATUSES:
+            raise InternetVerifyRequestError("仅已确认的前台漏洞可发起互联网验证")
+        if (vuln.attack_surface or "") != "frontend":
+            raise InternetVerifyRequestError("仅前台漏洞可发起互联网验证")
+
+        current = normalize_verifier_status(vuln.verifier_status)
+        if current == VERIFIER_PENDING:
+            raise InternetVerifyRequestError("该漏洞已在互联网验证中", status_code=409)
+        if current == VERIFIER_AWAITING_USER:
+            raise InternetVerifyRequestError(
+                "该漏洞正在等待「验证确认」页处理，请先跳过或同意后再发起",
+                status_code=409,
+            )
+
+        enabled = not bool(proj.verifier_enabled)
+        if enabled:
+            proj.verifier_enabled = True
+        vuln.verifier_status = VERIFIER_PENDING
+        if proj.status in ("completed", "paused"):
+            proj.status = "auditing"
+            proj.phase = "verifier"
+            proj.error = None
+        project_id = int(proj.id)
+        db.commit()
+
+    _abandon_verifier_runs_for_vuln(project_id, vuln_id, reason="用户再次发起互联网验证")
+    if _pause_event(project_id).is_set():
+        for phase in CONTROL_PHASES:
+            if phase != "verifier":
+                _phase_pause_event(project_id, phase).set()
+        _pause_event(project_id).clear()
+    _phase_pause_event(project_id, "verifier").clear()
+    cancel = _cancel_event(project_id)
+    if cancel.is_set():
+        cancel.clear()
+    _queue_inject_vuln(project_id, "verifier", vuln_id)
+    if enabled:
+        note_verifier_enabled(project_id)
+        live_log.system(
+            project_id,
+            f"用户对漏洞 #{vuln_id} 发起互联网验证，已开启 Verifier",
+            phase="verifier",
+        )
+    else:
+        live_log.system(
+            project_id,
+            f"用户对漏洞 #{vuln_id} 再次发起互联网验证",
+            phase="verifier",
+        )
+    start_audit(project_id)
+    kick_verifier(project_id)
+    return {
+        "ok": True,
+        "vuln_id": int(vuln_id),
+        "project_id": project_id,
+        "verifier_status": VERIFIER_PENDING,
+        "verifier_enabled": True,
+    }
+
+
+def _source_sync_notice_text(result: dict[str, Any]) -> str:
+    old = str(result.get("old_sha") or "")[:7] or "?"
+    new = str(result.get("new_sha") or "")[:7] or "?"
+    idx = result.get("index") if isinstance(result.get("index"), dict) else {}
+    n_changed = len(result.get("changed_paths") or [])
+    stamp = datetime.now(_CST).strftime("%Y-%m-%d %H:%M")
+    return (
+        f"{stamp} 已同步上游最新代码 {old} → {new}："
+        f"变更 {n_changed} 个路径，"
+        f"新索引 {int(idx.get('added') or 0)}，"
+        f"删除 {int(idx.get('removed') or 0)}，"
+        f"待重审 {int(idx.get('unaudited') or 0)}"
+    )
+
+
+def _maybe_sync_github_on_resume(project_id: int) -> None:
+    """Pull upstream GitHub HEAD if it moved; zip / failures keep the current snapshot."""
+    with SessionLocal() as db:
+        proj = db.get(Project, project_id)
+        if not proj or (proj.source_type or "").strip() != "github":
+            return
+    live_log.system(project_id, "正在检查上游仓库是否有更新")
+    try:
+        result = sync_github_source(project_id)
+    except Exception as e:  # noqa: BLE001
+        reason = str(e) or e.__class__.__name__
+        _set_source_sync_state(project_id, error=reason)
+        live_log.system(project_id, f"检查上游仓库失败: {reason}，仍用当前源码续跑")
+        return
+    if result.get("skipped"):
+        _set_source_sync_state(project_id, error=None)
+        return
+    err = str(result.get("error") or "").strip()
+    if err:
+        _set_source_sync_state(project_id, error=err)
+        live_log.system(project_id, f"检查上游仓库失败: {err}，仍用当前源码续跑")
+        return
+    if not result.get("updated"):
+        _set_source_sync_state(project_id, error=None)
+        live_log.system(project_id, "上游仓库无更新，继续使用当前源码")
+        return
+    notice = _source_sync_notice_text(result)
+    _set_source_sync_state(project_id, error=None, notice=notice)
+    live_log.system(project_id, notice)
+    try:
+        from ..code_intelligence.service import mark_stale_if_source_changed
+
+        mark_stale_if_source_changed(project_id, force=True)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        if lab_had_docker_lab(project_id):
+            invalidate_lab_for_rebuild(project_id, "上游源码已更新，靶场需按当前 src/ 重建")
+            live_log.system(project_id, "源码已更新，已标记靶场需按当前源码重建")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _clip_source_sync_text(text: str | None) -> str | None:
+    clipped = (text or "").strip() or None
+    if clipped and len(clipped) > 4000:
+        return clipped[:4000]
+    return clipped
+
+
+def _set_source_sync_state(
+    project_id: int,
+    *,
+    error: str | None | object = _SOURCE_SYNC_UNSET,
+    notice: str | None | object = _SOURCE_SYNC_UNSET,
+) -> None:
+    error_set = error is not _SOURCE_SYNC_UNSET
+    notice_set = notice is not _SOURCE_SYNC_UNSET
+    error_text = _clip_source_sync_text(error if isinstance(error, str) or error is None else None) if error_set else None
+    notice_text = (
+        _clip_source_sync_text(notice if isinstance(notice, str) or notice is None else None) if notice_set else None
+    )
+    with SessionLocal() as db:
+        proj = db.get(Project, project_id)
+        if not proj:
+            return
+        dirty = False
+        if error_set:
+            current = (getattr(proj, "source_sync_error", None) or "").strip() or None
+            if current != error_text:
+                proj.source_sync_error = error_text
+                dirty = True
+        if notice_set:
+            current = (getattr(proj, "source_sync_notice", None) or "").strip() or None
+            if current != notice_text:
+                proj.source_sync_notice = notice_text
+                dirty = True
+        if not dirty:
+            return
+        proj.updated_at = utcnow()
+        db.commit()
+
+
+def _set_source_sync_error(project_id: int, error: str | None) -> None:
+    _set_source_sync_state(project_id, error=error)
+
+
+def _should_sync_source_on_restart(project_id: int) -> bool:
+    if _pause_event(project_id).is_set():
+        return True
+    with SessionLocal() as db:
+        proj = db.get(Project, project_id)
+        if not proj:
+            return False
+        return (proj.status or "") in ("paused", "completed")
+
+
+def _sync_github_before_unpause(project_id: int) -> None:
+    """When restarting a paused/completed project, sync GitHub src/ first."""
+    _maybe_sync_github_on_resume(project_id)
+
+
 def request_resume(project_id: int) -> None:
     from .token_budget import token_budget_block_reason
 
     blocked = token_budget_block_reason(project_id)
     if blocked:
         raise ValueError(blocked)
+    _sync_github_before_unpause(project_id)
     _pause_event(project_id).clear()
     for phase in CONTROL_PHASES:
         _phase_pause_event(project_id, phase).clear()
     cancel = _cancel_event(project_id)
     if cancel.is_set():
         cancel.clear()
+    _clear_user_stopped_mining_paths(project_id)
     _prepare_project_resume(project_id)
     _set_project_running(project_id)
     live_log.system(project_id, "全部阶段续跑（接续原上下文）")
@@ -753,7 +1093,14 @@ def request_recon_subphase_rerun(project_id: int, subphase: str) -> dict[str, An
     _bump_phase_generation(project_id, "recon")
     _force_new_run.discard((project_id, "recon"))
 
+    was_completed = False
+    with SessionLocal() as db:
+        proj = db.get(Project, project_id)
+        was_completed = bool(proj and proj.status == "completed")
+
     was_paused = _pause_event(project_id).is_set()
+    if _should_sync_source_on_restart(project_id):
+        _sync_github_before_unpause(project_id)
     _pause_event(project_id).clear()
     _phase_pause_event(project_id, "recon").clear()
     cancel = _cancel_event(project_id)
@@ -773,7 +1120,7 @@ def request_recon_subphase_rerun(project_id: int, subphase: str) -> dict[str, An
                 proj.error = None
                 db.commit()
 
-    # 日志并入地图/鉴权或历史漏洞小阶段；由后续 AgentLoop 的 _start_log_session 新开一轮。
+    # 不在这里写系统日志，避免单独占一轮；kickoff 由子阶段写入后并进 _start_log_session。
     rt = threading.Thread(
         target=_run_recon_subphase_rerun,
         args=(project_id, sub, was_paused),
@@ -784,6 +1131,8 @@ def request_recon_subphase_rerun(project_id: int, subphase: str) -> dict[str, An
         _recon_rerun_threads[project_id] = rt
         _threads.setdefault(project_id, []).append(rt)
     rt.start()
+    if was_completed and not was_paused:
+        start_audit(project_id)
     return {"ok": True, "subphase": sub, "label": label, **get_phase_states(project_id)}
 
 
@@ -809,6 +1158,8 @@ def request_lab_setup_retry(project_id: int, user_message: str = "") -> dict[str
     reset_lab_setup_for_retry(project_id, user_message)
 
     was_paused = _pause_event(project_id).is_set()
+    if _should_sync_source_on_restart(project_id):
+        _sync_github_before_unpause(project_id)
     _phase_pause_event(project_id, "reviewer").clear()
     cancel = _cancel_event(project_id)
     if cancel.is_set():
@@ -896,6 +1247,7 @@ def request_worker_progress_reset(project_id: int) -> dict[str, Any]:
         # Re-mining may add vulns; allow attack-chain to re-run after the next review drain.
         if bool(getattr(proj, "attack_chain_enabled", False)):
             proj.attack_chain_done = False
+            proj.attack_chain_stopped = False
         db.commit()
 
     n_fix = _reset_fixing_to_returned(project_id, except_ids=set())
@@ -953,7 +1305,11 @@ def _start_log_session(
     *,
     role: str | None = None,
 ) -> int:
-    """调度器新开 AgentLoop 时翻日志页；当前页还没有事件则留在第 1 页。"""
+    """调度器新开 AgentLoop 时翻日志页；当前页还没有对话事件则并入该页。
+
+    拉起线程 / 爬虫 / 用户点去重等 kickoff 系统日志不占用页码，
+    会和随后这一轮 Agent 落在同一页。
+    """
     control = control_phase(phase)
     prev = live_log.current_session(project_id, phase)
     nxt = live_log.begin_session(project_id, phase, if_used=True)
@@ -967,6 +1323,7 @@ def _start_log_session(
         role=role,
         session_start=started,
     )
+    live_log.mark_session_used(project_id, phase)
     return nxt
 
 
@@ -975,12 +1332,12 @@ def _set_project_running(project_id: int) -> None:
 
     with SessionLocal() as db:
         proj = db.get(Project, project_id)
-        if proj and proj.status != "completed":
+        if proj and proj.status not in ("cancelled", "error"):
             recon_done = bool(proj.recon_done)
             ci_ready = code_intel_ready_for_mining(proj)
             if recon_done and ci_ready:
                 proj.status = "auditing"
-                if proj.phase in ("pending", "recon", "code_intel"):
+                if proj.phase in ("pending", "recon", "code_intel", "done"):
                     proj.phase = "worker"
             elif recon_done:
                 proj.status = "recon"
@@ -1078,6 +1435,15 @@ def _abandon_db_phase_runs(project_id: int, db_phases: tuple[str, ...], *, reaso
             _finish_phase_run(pr.id, "cancelled", reason)
 
 
+def _abandon_verifier_runs_for_vuln(project_id: int, vuln_id: int, *, reason: str) -> None:
+    """Drop leftover Verifier checkpoints for this vuln so a manual retry starts a fresh round."""
+    for pr in list_resumable_runs(project_id, "verifier"):
+        if pr.vuln_id is None or int(pr.vuln_id) != int(vuln_id):
+            continue
+        _release_adopted(project_id, pr.id)
+        _finish_phase_run(pr.id, "cancelled", reason)
+
+
 def _abandon_phase_checkpoints(project_id: int, phase: str, *, reason: str = "用户新跑") -> None:
     _abandon_db_phase_runs(project_id, CONTROL_DB_PHASES[control_phase(phase)], reason=reason)
 
@@ -1139,6 +1505,14 @@ def _take_pending_inject(project_id: int, phase: str) -> list[dict[str, Any]]:
     key = (project_id, control_phase(phase))
     with _lock:
         return list(_pending_inject.pop(key, []))
+
+
+def _queue_inject_vuln(project_id: int, phase: str, vuln_id: int) -> None:
+    key = (project_id, control_phase(phase))
+    with _lock:
+        items = list(_pending_inject.get(key, []))
+        items.append({"vuln_id": int(vuln_id)})
+        _pending_inject[key] = items
 
 
 def _take_inject_file(project_id: int, worker_id: str) -> FileWeight | None:
@@ -1233,6 +1607,9 @@ def _phase_thread_alive(project_id: int, phase: str) -> bool:
         return t is not None and t.is_alive()
     if control == "attack_chain":
         t = _attack_chain_threads.get(project_id)
+        return t is not None and t.is_alive()
+    if control == "vuln_dedup":
+        t = _vuln_dedup_threads.get(project_id)
         return t is not None and t.is_alive()
     for t in _threads.get(project_id, []):
         name = t.name or ""
@@ -1588,7 +1965,7 @@ def _read_attack_chain_enabled(project_id: int) -> bool:
 def _read_dynamic_verify_mode(project_id: int) -> str:
     with SessionLocal() as db:
         proj = db.get(Project, project_id)
-        return project_verify_mode(proj)
+        return effective_project_verify_mode(proj)
 
 
 def _read_dynamic_verify_enabled(project_id: int) -> bool:
@@ -1596,7 +1973,30 @@ def _read_dynamic_verify_enabled(project_id: int) -> bool:
 
 
 def _reviewer_has_lab_work(project_id: int) -> bool:
+    from .lab import finish_manual_lab
+    from .runtime import docker_lab_build_enabled
+
     if not is_lab_mode(_read_dynamic_verify_mode(project_id)):
+        return False
+    # Docker Desktop: never schedule auto lab build; mark setup done once.
+    if not docker_lab_build_enabled():
+        if not lab_setup_finished(project_id):
+            _enabled, prompt = _read_manual_lab(project_id)
+            if prompt:
+                finish_manual_lab(project_id, prompt)
+            else:
+                mark_lab_setup_finished(
+                    project_id,
+                    skipped=True,
+                    notes="跳过自动靶场搭建（Docker 发行版）",
+                    via="docker-runtime",
+                )
+        return False
+    # Host: manual lab skips Docker setup.
+    _enabled, prompt = _read_manual_lab(project_id)
+    if prompt:
+        if not lab_setup_finished(project_id):
+            finish_manual_lab(project_id, prompt)
         return False
     return not lab_setup_finished(project_id) or bool(list_resumable_runs(project_id, "reviewer-lab"))
 
@@ -1767,6 +2167,8 @@ def _pending_lab_repair_review_note(project_id: int) -> str:
 
 
 def _reviewer_lab_note(project_id: int) -> str:
+    from .runtime import docker_lab_build_enabled
+
     mode = _read_dynamic_verify_mode(project_id)
     repair_note = _pending_lab_repair_review_note(project_id)
     if mode == VERIFY_MODE_OFF:
@@ -1780,17 +2182,19 @@ def _reviewer_lab_note(project_id: int) -> str:
         return f"{extra}{_BRINGUP_FAILED_NOTE}\n{_ASSET_PROOF_LAB_HINT}"
     _enabled, prompt = _read_manual_lab(project_id)
     docker_note = _docker_lab_note(project_id)
+    allow_docker_fallback = docker_lab_build_enabled()
     if prompt:
         parts = [
             "优先使用用户提供的人工靶场（地址、账号、路径以用户说明为准）：",
             prompt,
         ]
-        if docker_note:
+        if allow_docker_fallback and docker_note:
             parts.append("若人工环境不可达，回退到已有 Docker 靶场：")
             parts.append(docker_note)
         else:
             parts.append(
-                "Docker 靶场尚未就绪。若人工环境不可达，无法动态验证时用 evidence_level=static_only 或误报。"
+                "若人工环境不可达，无法动态验证时用 evidence_level=static_only 或误报。"
+                + ("" if allow_docker_fallback else "（Docker 版不自动搭建靶场，不要尝试 docker build 被测应用。）")
             )
         parts.append(_ASSET_PROOF_LAB_HINT)
         return "\n".join(parts)
@@ -1901,6 +2305,9 @@ def _phase_system_prompt(
 ) -> str:
     lang = _read_language(project_id)
     base = load_prompt(name, language=lang).rstrip()
+    if name == "vuln_dedup.md":
+        parts = [base, _target_kind_overlay(project_id, lang), _language_contract(lang)]
+        return "\n\n".join(p for p in parts if p) + "\n"
     if name == "worker-unconstrained.md":
         overlay = load_prompt("modes/bounty.md", language=lang).strip()
         parts = [base, overlay, _target_kind_overlay(project_id, lang)]
@@ -2103,6 +2510,8 @@ def _log_phase_control(log_phase: str) -> str:
         return "verifier"
     if lp == "attack_chain":
         return "attack_chain"
+    if lp in ("vuln_dedup", "vuln-dedup"):
+        return "vuln_dedup"
     return control_phase(lp)
 
 
@@ -2154,25 +2563,30 @@ def request_conversation_continue(project_id: int, log_phase: str, message: str 
     save_checkpoint(cp, status="running")
     set_phase_run_status(run_id, "running")
 
+    if lp in ("vuln_dedup", "vuln-dedup"):
+        _phase_pause_event(project_id, "vuln_dedup").clear()
+        live_log.system(project_id, "用户接续对话（vuln_dedup）", phase=cp.phase, role=cp.role)
+        _kick_vuln_dedup_thread(project_id)
+        return {"ok": True, "action": "continue", "log_phase": "vuln_dedup", **get_phase_states(project_id)}
+
     control = _log_phase_control(lp)
     was_paused = _pause_event(project_id).is_set()
+    with SessionLocal() as db:
+        _proj = db.get(Project, project_id)
+        was_completed = bool(_proj and _proj.status == "completed")
+    if _should_sync_source_on_restart(project_id):
+        _sync_github_before_unpause(project_id)
     _pause_event(project_id).clear()
     _phase_pause_event(project_id, control).clear()
     cancel = _cancel_event(project_id)
     if cancel.is_set():
         cancel.clear()
-    if not was_paused:
-        _set_project_running(project_id)
-    elif control != "recon":
+    # Only resume the target phase; keep all others paused.
+    if was_paused or was_completed:
         for p in CONTROL_PHASES:
             if p != control:
                 _phase_pause_event(project_id, p).set()
-        with SessionLocal() as db:
-            proj = db.get(Project, project_id)
-            if proj and proj.status == "paused":
-                proj.status = "recon" if not proj.recon_done else "auditing"
-                proj.error = None
-                db.commit()
+    _set_project_running(project_id)
 
     live_log.system(project_id, f"用户接续对话（{lp}）", phase=cp.phase, role=cp.role)
     start_audit(project_id)
@@ -2186,6 +2600,9 @@ def request_conversation_new(project_id: int, log_phase: str, message: str = "")
 
     lp = normalize_log_phase(log_phase)
     _set_conversation_message(project_id, lp, message)
+
+    if lp in ("vuln_dedup", "vuln-dedup"):
+        return request_vuln_dedup(project_id, vuln_ids=None, user_message=message)
 
     if lp == "recon-map":
         if not recon_map_ready(project_id):
@@ -2212,12 +2629,20 @@ def request_conversation_new(project_id: int, log_phase: str, message: str = "")
             reset_lab_setup_for_retry(project_id, message)
             _force_new_run.add((project_id, "reviewer"))
         was_paused = _pause_event(project_id).is_set()
+        with SessionLocal() as _db:
+            _proj = _db.get(Project, project_id)
+            _was_completed = bool(_proj and _proj.status == "completed")
+        _pause_event(project_id).clear()
         _phase_pause_event(project_id, "reviewer").clear()
         cancel = _cancel_event(project_id)
         if cancel.is_set():
             cancel.clear()
-        if not was_paused:
-            _set_project_running(project_id)
+        # Only resume the reviewer phase; keep all others paused.
+        if was_paused or _was_completed:
+            for p in CONTROL_PHASES:
+                if p != "reviewer":
+                    _phase_pause_event(project_id, p).set()
+        _set_project_running(project_id)
         live_log.system(project_id, "用户新开环境搭建对话", phase="reviewer-lab", role="reviewer_lab")
         _ensure_reviewer(project_id, cancel)
         return {"ok": True, "action": "new", "log_phase": lp, **get_phase_states(project_id)}
@@ -2235,29 +2660,386 @@ def request_conversation_new(project_id: int, log_phase: str, message: str = "")
         _abandon_db_phase_runs(project_id, (db_phase,), reason="用户新开对话")
 
     was_paused = _pause_event(project_id).is_set()
+    with SessionLocal() as db:
+        _proj = db.get(Project, project_id)
+        was_completed = bool(_proj and _proj.status == "completed")
+    if _should_sync_source_on_restart(project_id):
+        _sync_github_before_unpause(project_id)
     _pause_event(project_id).clear()
     _phase_pause_event(project_id, control).clear()
     cancel = _cancel_event(project_id)
     if cancel.is_set():
         cancel.clear()
-    if not was_paused:
-        _set_project_running(project_id)
-    else:
+    # Only resume the target phase; keep all others paused.
+    if was_paused or was_completed:
         for p in CONTROL_PHASES:
             if p != control:
                 _phase_pause_event(project_id, p).set()
-        with SessionLocal() as db:
-            proj = db.get(Project, project_id)
-            if proj and proj.status == "paused":
-                proj.status = "recon" if control == "recon" and not proj.recon_done else "auditing"
-                if control == "recon" and not proj.recon_done:
-                    proj.status = "recon"
-                proj.error = None
-                db.commit()
+    _set_project_running(project_id)
 
     live_log.system(project_id, f"用户新开对话（{lp}）", phase=db_phases[0] if db_phases else lp)
     start_audit(project_id)
     return {"ok": True, "action": "new", "log_phase": lp, **get_phase_states(project_id)}
+
+
+def _mining_log_phase(path: str) -> str:
+    return {
+        "heuristic": "mine",
+        "fast": "fast",
+        "bypass": "bypass",
+        "unconstrained": "unconstrained",
+    }.get(path, path)
+
+
+def _mining_live_phase(path: str) -> str:
+    phases = MINING_PATH_DB_PHASES.get(path) or (path,)
+    return phases[0]
+
+
+def _clear_user_stopped_mining_paths(project_id: int) -> None:
+    """Resume-all: reopen paths the user paused from the log composer."""
+    with SessionLocal() as db:
+        proj = db.get(Project, project_id)
+        if not proj:
+            return
+        changed = False
+        unconstrained_was_stopped = bool(getattr(proj, "unconstrained_stopped", False))
+        for attr in MINING_PATH_STOPPED_ATTR.values():
+            if bool(getattr(proj, attr, False)):
+                setattr(proj, attr, False)
+                changed = True
+        if unconstrained_was_stopped:
+            proj.unconstrained_done = False
+            changed = True
+        if bool(getattr(proj, "attack_chain_stopped", False)):
+            proj.attack_chain_stopped = False
+            changed = True
+        if changed:
+            db.commit()
+            live_log.system(project_id, "全部续跑：已恢复用户暂停的挖掘路径与攻击链")
+
+
+def _release_mining_path_claims(project_id: int, path: str) -> None:
+    if path == "heuristic":
+        _release_claims(project_id)
+        return
+    if path == "fast":
+        from ..models import Sink
+
+        with SessionLocal() as db:
+            rows = (
+                db.query(Sink)
+                .filter(Sink.project_id == project_id, Sink.status == "claimed")
+                .all()
+            )
+            n = 0
+            for row in rows:
+                row.status = "queued"
+                row.claimed_by = None
+                row.claimed_at = None
+                n += 1
+            if n:
+                db.commit()
+        return
+    if path == "bypass":
+        from ..models import BypassTarget
+
+        with SessionLocal() as db:
+            rows = (
+                db.query(BypassTarget)
+                .filter(BypassTarget.project_id == project_id, BypassTarget.status == "claimed")
+                .all()
+            )
+            n = 0
+            for row in rows:
+                row.status = "queued"
+                row.claimed_by = None
+                row.claimed_at = None
+                n += 1
+            if n:
+                db.commit()
+
+
+def _abandon_mining_path_runs(project_id: int, path: str) -> None:
+    label = MINING_PATH_LABELS.get(path, path)
+    reason = f"用户暂停{label}"
+    db_phases = MINING_PATH_DB_PHASES.get(path) or ()
+    _abandon_db_phase_runs(project_id, db_phases, reason=reason)
+    with SessionLocal() as db:
+        rows = (
+            db.query(PhaseRun)
+            .filter(
+                PhaseRun.project_id == project_id,
+                PhaseRun.phase.in_(db_phases),
+                PhaseRun.status.in_(("running", "paused", "awaiting_user")),
+            )
+            .all()
+        )
+        ids = [int(r.id) for r in rows]
+    for rid in ids:
+        _release_adopted(project_id, rid)
+        _finish_phase_run(rid, "cancelled", reason)
+    _release_mining_path_claims(project_id, path)
+
+
+def _abandon_unconstrained_runs(project_id: int) -> None:
+    _abandon_mining_path_runs(project_id, "unconstrained")
+
+
+def _try_complete_after_mining_path_stop(project_id: int) -> bool:
+    with _lock:
+        fix_busy = bool(_fix_inflight.get(project_id))
+        reviewer_busy = bool(_reviewer_inflight.get(project_id))
+        verifier_busy = bool(_verifier_inflight.get(project_id))
+        attack_chain_busy = bool(_attack_chain_inflight.get(project_id))
+    return _maybe_complete_project(
+        project_id,
+        reviewer_busy=reviewer_busy,
+        fix_busy=fix_busy,
+        verifier_busy=verifier_busy,
+        attack_chain_busy=attack_chain_busy,
+    )
+
+
+def request_mining_path_stop(project_id: int, path: str) -> dict[str, Any]:
+    """Pause one mining path; complete the project if other gates already pass."""
+    from ..mining_paths import normalize_mining_path
+
+    key = normalize_mining_path(path)
+    if not key:
+        raise ValueError("仅挖掘路径支持暂停")
+    label = MINING_PATH_LABELS[key]
+    log_phase = _mining_log_phase(key)
+    live_phase = _mining_live_phase(key)
+    stop_attr = MINING_PATH_STOPPED_ATTR[key]
+    with SessionLocal() as db:
+        proj = db.get(Project, project_id)
+        if not proj:
+            raise ValueError("项目不存在")
+        if proj.status in ("cancelled", "ingesting", "error"):
+            raise ValueError(f"当前项目状态不可暂停{label}")
+        if not mining_path_enabled(proj, key):
+            raise ValueError(f"未开启{label}")
+        already_complete = proj.status == "completed"
+        already_stopped = mining_path_user_stopped(proj, key)
+        if key == "unconstrained":
+            already_stopped = already_stopped or bool(getattr(proj, "unconstrained_done", False))
+            if not bool(getattr(proj, "unconstrained_done", False)):
+                proj.unconstrained_done = True
+        if not already_stopped:
+            setattr(proj, stop_attr, True)
+        db.commit()
+
+    if already_complete:
+        out = {
+            "ok": True,
+            "action": "stop",
+            "log_phase": log_phase,
+            "path_stopped": True,
+            "project_completed": True,
+            **get_phase_states(project_id),
+        }
+        if key == "unconstrained":
+            out["unconstrained_done"] = True
+        return out
+
+    _bump_mining_path_generation(project_id, key)
+    _abandon_mining_path_runs(project_id, key)
+    live_log.system(
+        project_id,
+        f"用户暂停{label}，不再新开本路径轮次",
+        phase=live_phase,
+    )
+    completed = _try_complete_after_mining_path_stop(project_id)
+    if completed:
+        live_log.system(
+            project_id,
+            f"{label}已暂停，其他阶段均已结束，项目标为完成",
+            phase=live_phase,
+        )
+    out = {
+        "ok": True,
+        "action": "stop",
+        "log_phase": log_phase,
+        "path_stopped": True,
+        "project_completed": completed,
+        **get_phase_states(project_id),
+    }
+    if key == "unconstrained":
+        out["unconstrained_done"] = True
+    return out
+
+
+def request_mining_path_start(project_id: int, path: str) -> dict[str, Any]:
+    """Resume one mining path after a user pause (or unconstrained RCE stop)."""
+    from ..mining_paths import normalize_mining_path
+
+    key = normalize_mining_path(path)
+    if not key:
+        raise ValueError("仅挖掘路径支持恢复")
+    label = MINING_PATH_LABELS[key]
+    log_phase = _mining_log_phase(key)
+    live_phase = _mining_live_phase(key)
+    stop_attr = MINING_PATH_STOPPED_ATTR[key]
+    with SessionLocal() as db:
+        proj = db.get(Project, project_id)
+        if not proj:
+            raise ValueError("项目不存在")
+        if proj.status in ("cancelled", "ingesting", "error"):
+            raise ValueError(f"当前项目状态不可恢复{label}")
+        if not mining_path_enabled(proj, key):
+            raise ValueError(f"未开启{label}")
+        setattr(proj, stop_attr, False)
+        if key == "unconstrained":
+            proj.unconstrained_done = False
+            proj.unconstrained_stopped = False
+        if proj.status == "completed":
+            proj.status = "paused"
+            proj.phase = "worker"
+            proj.error = None
+        db.commit()
+
+    _sync_github_before_unpause(project_id)
+    _pause_event(project_id).clear()
+    # Only resume the worker control phase; keep all others paused.
+    for p in CONTROL_PHASES:
+        if p != "worker":
+            _phase_pause_event(project_id, p).set()
+    _phase_pause_event(project_id, "worker").clear()
+    cancel = _cancel_event(project_id)
+    if cancel.is_set():
+        cancel.clear()
+    _set_project_running(project_id)
+    live_log.system(project_id, f"用户恢复{label}", phase=live_phase)
+    start_audit(project_id)
+    out = {
+        "ok": True,
+        "action": "start",
+        "log_phase": log_phase,
+        "path_stopped": False,
+        **get_phase_states(project_id),
+    }
+    if key == "unconstrained":
+        out["unconstrained_done"] = False
+    return out
+
+
+def request_unconstrained_stop(project_id: int) -> dict[str, Any]:
+    """End unconstrained scanning; complete the project if other gates already pass."""
+    return request_mining_path_stop(project_id, "unconstrained")
+
+
+def request_unconstrained_start(project_id: int) -> dict[str, Any]:
+    """Restart unconstrained scanning after a stop or RCE-effect confirm."""
+    return request_mining_path_start(project_id, "unconstrained")
+
+
+def _abandon_attack_chain_runs(project_id: int) -> None:
+    reason = "用户暂停攻击链串联"
+    _abandon_db_phase_runs(project_id, ("attack_chain",), reason=reason)
+    with SessionLocal() as db:
+        rows = (
+            db.query(PhaseRun)
+            .filter(
+                PhaseRun.project_id == project_id,
+                PhaseRun.phase == "attack_chain",
+                PhaseRun.status.in_(("running", "paused", "awaiting_user")),
+            )
+            .all()
+        )
+        ids = [int(r.id) for r in rows]
+    for rid in ids:
+        _release_adopted(project_id, rid)
+        _finish_phase_run(rid, "cancelled", reason)
+
+
+def request_attack_chain_stop(project_id: int) -> dict[str, Any]:
+    """Pause attack-chain; complete the project if other gates already pass."""
+    with SessionLocal() as db:
+        proj = db.get(Project, project_id)
+        if not proj:
+            raise ValueError("项目不存在")
+        if proj.status in ("cancelled", "ingesting", "error"):
+            raise ValueError("当前项目状态不可暂停攻击链串联")
+        if not bool(getattr(proj, "attack_chain_enabled", False)):
+            raise ValueError("未开启攻击链串联")
+        already_complete = proj.status == "completed"
+        already_stopped = bool(getattr(proj, "attack_chain_stopped", False))
+        if not already_stopped:
+            proj.attack_chain_stopped = True
+        db.commit()
+
+    if already_complete:
+        return {
+            "ok": True,
+            "action": "stop",
+            "log_phase": "attack_chain",
+            "path_stopped": True,
+            "project_completed": True,
+            **get_phase_states(project_id),
+        }
+
+    _bump_phase_generation(project_id, "attack_chain")
+    _abandon_attack_chain_runs(project_id)
+    live_log.system(
+        project_id,
+        "用户暂停攻击链串联，不再新开本阶段轮次",
+        phase="attack_chain",
+    )
+    completed = _try_complete_after_mining_path_stop(project_id)
+    if completed:
+        live_log.system(
+            project_id,
+            "攻击链串联已暂停，其他阶段均已结束，项目标为完成",
+            phase="attack_chain",
+        )
+    return {
+        "ok": True,
+        "action": "stop",
+        "log_phase": "attack_chain",
+        "path_stopped": True,
+        "project_completed": completed,
+        **get_phase_states(project_id),
+    }
+
+
+def request_attack_chain_start(project_id: int) -> dict[str, Any]:
+    """Resume attack-chain after a user pause."""
+    with SessionLocal() as db:
+        proj = db.get(Project, project_id)
+        if not proj:
+            raise ValueError("项目不存在")
+        if proj.status in ("cancelled", "ingesting", "error"):
+            raise ValueError("当前项目状态不可恢复攻击链串联")
+        if not bool(getattr(proj, "attack_chain_enabled", False)):
+            raise ValueError("未开启攻击链串联")
+        proj.attack_chain_stopped = False
+        if proj.status == "completed":
+            proj.status = "paused"
+            proj.phase = "attack_chain"
+            proj.error = None
+        db.commit()
+
+    _sync_github_before_unpause(project_id)
+    _pause_event(project_id).clear()
+    # Only resume the attack_chain control phase; keep all others paused.
+    for p in CONTROL_PHASES:
+        if p != "attack_chain":
+            _phase_pause_event(project_id, p).set()
+    _phase_pause_event(project_id, "attack_chain").clear()
+    cancel = _cancel_event(project_id)
+    if cancel.is_set():
+        cancel.clear()
+    _set_project_running(project_id)
+    live_log.system(project_id, "用户恢复攻击链串联", phase="attack_chain")
+    start_audit(project_id)
+    return {
+        "ok": True,
+        "action": "start",
+        "log_phase": "attack_chain",
+        "path_stopped": False,
+        **get_phase_states(project_id),
+    }
 
 
 def _worker_hint_block(project_id: int) -> str:
@@ -2346,6 +3128,7 @@ def _initial_prompt(name: str, **kwargs: object) -> str:
     kwargs.setdefault("prior_basis", "static_only")
     kwargs.setdefault("prior_conclusion", "静态结论")
     kwargs.setdefault("unconstrained_note", "")
+    kwargs.setdefault("source_note", "")
     return render_prompt(f"initial/{name}", language=language, **kwargs)
 
 
@@ -2474,10 +3257,16 @@ def _loop_from_checkpoint(
     llm=None,
     resumed: bool = True,
 ) -> AgentLoop:
+    unconstrained = (cp.phase or "") in ("unconstrained-worker", "unconstrained")
+    mining = mining_path_from_db_phase(cp.phase)
+    if mining:
+        cancel_event = _mining_path_loop_cancel(cp.project_id, mining)
+    else:
+        cancel_event = _loop_cancel(cp.project_id, cp.phase)
     return AgentLoop.from_checkpoint(
         cp,
-        cancel_event=_loop_cancel(cp.project_id, cp.phase),
-        pause_event=_combined_pause(cp.project_id, cp.phase),
+        cancel_event=cancel_event,
+        pause_event=_pause_event(cp.project_id) if unconstrained else _combined_pause(cp.project_id, cp.phase),
         stop_when=stop_when,
         context_window=_context_window(),
         timeout_sec=timeout_sec,
@@ -2689,6 +3478,33 @@ def _stop_lab_on_project_complete(project_id: int) -> None:
         live_log.error(project_id, f"自动停止靶场异常: {e}")
 
 
+def reclaim_premature_project_complete(project_id: int) -> bool:
+    """Reopen a completed project when completion gates are no longer satisfied."""
+    from ..tools.phase_worker import project_complete_gates
+
+    with SessionLocal() as db:
+        proj = db.get(Project, project_id)
+        if not proj or proj.status != "completed":
+            return False
+    if project_complete_gates(project_id):
+        return False
+    with SessionLocal() as db:
+        proj = db.get(Project, project_id)
+        if not proj or proj.status != "completed":
+            return False
+        proj.status = "auditing"
+        proj.phase = "reviewer"
+        proj.error = None
+        db.commit()
+    live_log.system(
+        project_id,
+        "项目曾提前标为完成，仍有待审漏洞或进行中的无约束轮次，已改回运行",
+        phase="worker",
+    )
+    start_audit(project_id)
+    return True
+
+
 def _maybe_complete_project(
     project_id: int,
     *,
@@ -2704,7 +3520,10 @@ def _maybe_complete_project(
     ):
         return False
     if list_resumable_runs(project_id, "attack_chain"):
-        return False
+        from ..tools.phase_attack_chain import is_attack_chain_user_stopped
+
+        if not is_attack_chain_user_stopped(project_id):
+            return False
     if not project_complete_gates(project_id):
         return False
     with SessionLocal() as db:
@@ -2809,7 +3628,7 @@ def _ensure_recon(project_id: int, cancel: threading.Event) -> None:
 
 
 def _ensure_code_intel(project_id: int, cancel: threading.Event) -> None:
-    from ..code_intelligence.service import is_code_intel_enabled, mark_skipped
+    from ..code_intelligence.service import is_code_intel_enabled, mark_skipped, requested_backends
 
     with SessionLocal() as db:
         proj = db.get(Project, project_id)
@@ -2827,6 +3646,9 @@ def _ensure_code_intel(project_id: int, cancel: threading.Event) -> None:
     if done and status != "building":
         return
     if cancel.is_set():
+        return
+    # Do not auto-build until Recon Agent calls MarkCodeIntel.
+    if not requested_backends(project_id):
         return
     _start_code_intel_thread(project_id, force=False)
 
@@ -2867,6 +3689,8 @@ def _run_code_intel(project_id: int, force: bool = False) -> None:
 
 
 def request_code_intel_rebuild(project_id: int) -> dict[str, Any]:
+    from ..code_intelligence.service import requested_backends, status_payload
+
     with SessionLocal() as db:
         proj = db.get(Project, project_id)
         if not proj:
@@ -2875,6 +3699,8 @@ def request_code_intel_rebuild(project_id: int) -> dict[str, Any]:
             raise ValueError("当前项目状态不可重建代码库")
         if not bool(getattr(proj, "code_intel_enabled", False)):
             raise ValueError("未开启代码库。请先在项目配置中开启（需暂停或完成）")
+    if not requested_backends(project_id):
+        raise ValueError("尚未点名后端。请先在侦察地图用 MarkCodeIntel 选择 CodeGraph / Jar Analyzer")
     _bump_phase_generation(project_id, "code_intel")
     _phase_pause_event(project_id, "code_intel").clear()
     live_log.system(project_id, "用户请求重建代码库", phase="code_intel")
@@ -2887,8 +3713,6 @@ def request_code_intel_rebuild(project_id: int) -> dict[str, Any]:
         if still is not None and still.is_alive():
             raise ValueError("上一轮构建尚未退出，请稍后重试")
     _start_code_intel_thread(project_id, force=True)
-    from ..code_intelligence.service import status_payload
-
     return {"ok": True, **status_payload(project_id)}
 
 
@@ -3098,11 +3922,14 @@ def _ensure_attack_chain(project_id: int, cancel: threading.Event) -> None:
         confirmed_vuln_count,
         is_attack_chain_done,
         is_attack_chain_enabled,
+        is_attack_chain_user_stopped,
         mark_attack_chain_done,
         reclaim_premature_attack_chain_done,
     )
 
     if not is_attack_chain_enabled(project_id):
+        return
+    if is_attack_chain_user_stopped(project_id):
         return
     reclaim_premature_attack_chain_done(project_id)
     if is_attack_chain_done(project_id):
@@ -3143,6 +3970,7 @@ def _run_attack_chain_loop(project_id: int) -> None:
         confirmed_vuln_count,
         is_attack_chain_done,
         is_attack_chain_enabled,
+        is_attack_chain_user_stopped,
         mark_attack_chain_done,
         reclaim_premature_attack_chain_done,
     )
@@ -3153,6 +3981,9 @@ def _run_attack_chain_loop(project_id: int) -> None:
             if not _wait_if_paused(project_id, _loop_cancel(project_id, "attack_chain"), "attack_chain"):
                 break
             if not is_attack_chain_enabled(project_id):
+                break
+            if is_attack_chain_user_stopped(project_id):
+                _try_complete_after_mining_path_stop(project_id)
                 break
             reclaim_premature_attack_chain_done(project_id)
             if is_attack_chain_done(project_id):
@@ -3181,6 +4012,9 @@ def _run_attack_chain_loop(project_id: int) -> None:
             finally:
                 with _lock:
                     _attack_chain_inflight[project_id] = False
+            if is_attack_chain_user_stopped(project_id):
+                _try_complete_after_mining_path_stop(project_id)
+                break
             if is_attack_chain_done(project_id):
                 break
     except Exception as e:  # noqa: BLE001
@@ -3213,6 +4047,8 @@ def _ensure_workers(
             q = q.filter(FileWeight.weight == HEURISTIC_LITE_WEIGHT)
         unaudited_weighted = q.limit(1).first() is not None
     if _phase_is_paused(project_id, "worker"):
+        return [t for t in active_workers if t.is_alive()]
+    if path_is_user_stopped(project_id, "heuristic"):
         return [t for t in active_workers if t.is_alive()]
 
     alive = [t for t in active_workers if t.is_alive()]
@@ -3264,6 +4100,8 @@ def _ensure_fast_prepare(project_id: int) -> None:
             return
         if proj.status in ("completed", "cancelled", "error"):
             return
+        if mining_path_user_stopped(proj, "fast"):
+            return
     if _phase_is_paused(project_id, "worker"):
         return
     with _lock:
@@ -3298,6 +4136,8 @@ def _ensure_fast_workers(
         status = proj.status
     if _phase_is_paused(project_id, "worker"):
         return [t for t in active_workers if t.is_alive()]
+    if path_is_user_stopped(project_id, "fast"):
+        return [t for t in active_workers if t.is_alive()]
     alive = [t for t in active_workers if t.is_alive()]
     if not fast_on or not queue_frozen(project_id) or fast_path_complete(project_id):
         return alive
@@ -3329,27 +4169,51 @@ def _ensure_fast_workers(
     return alive
 
 
+def _on_bypass_queue_expanded(project_id: int, added: int) -> None:
+    """New old-vuln docs joined the frozen roster; keep mining/attack-chain gates open."""
+    from ..tools.phase_attack_chain import clear_attack_chain_done, is_attack_chain_done
+
+    live_log.system(
+        project_id,
+        f"历史漏洞绕过队列新增 {added} 条，将继续开轮",
+        phase="bypass-worker",
+    )
+    if is_attack_chain_done(project_id):
+        clear_attack_chain_done(project_id)
+        live_log.system(
+            project_id,
+            "绕过队列扩大，已撤回攻击链结束标记，新轮结束后将重跑串联",
+            phase="attack_chain",
+        )
+
+
 def _ensure_bypass_prepare(project_id: int) -> None:
-    from .bypass_queue import freeze_bypass_queue
+    from .bypass_queue import freeze_bypass_queue, ingest_old_vulns
 
     with SessionLocal() as db:
         proj = db.get(Project, project_id)
         if not proj or not bool(getattr(proj, "bypass_enabled", False)):
             return
-        if bool(getattr(proj, "bypass_queue_frozen", False)):
-            return
         if proj.status in ("completed", "cancelled", "error"):
             return
+        if mining_path_user_stopped(proj, "bypass"):
+            return
+        frozen = bool(getattr(proj, "bypass_queue_frozen", False))
     if _phase_is_paused(project_id, "worker"):
         return
-    if not recon_old_vulns_ready(project_id):
+    if not frozen:
+        if not recon_old_vulns_ready(project_id):
+            return
+        queued = freeze_bypass_queue(project_id)
+        live_log.system(
+            project_id,
+            f"历史漏洞绕过队列已冻结，待尝试 {queued} 条",
+            phase="bypass-worker",
+        )
         return
-    queued = freeze_bypass_queue(project_id)
-    live_log.system(
-        project_id,
-        f"历史漏洞绕过队列已冻结，待尝试 {queued} 条",
-        phase="bypass-worker",
-    )
+    added = ingest_old_vulns(project_id)
+    if added:
+        _on_bypass_queue_expanded(project_id, added)
 
 
 def _ensure_bypass_workers(
@@ -3367,6 +4231,8 @@ def _ensure_bypass_workers(
         fast_on = bool(getattr(proj, "fast_enabled", False))
         status = proj.status
     if _phase_is_paused(project_id, "worker"):
+        return [t for t in active_workers if t.is_alive()]
+    if path_is_user_stopped(project_id, "bypass"):
         return [t for t in active_workers if t.is_alive()]
     alive = [t for t in active_workers if t.is_alive()]
     if not bypass_on or not queue_frozen(project_id) or bypass_path_complete(project_id):
@@ -3409,7 +4275,7 @@ def _ensure_unconstrained_workers(
             return [t for t in active_workers if t.is_alive()]
         unconstrained_on = bool(getattr(proj, "unconstrained_enabled", False))
         status = proj.status
-    if _phase_is_paused(project_id, "worker"):
+    if _pause_event(project_id).is_set():
         return [t for t in active_workers if t.is_alive()]
     alive = [t for t in active_workers if t.is_alive()]
     if not unconstrained_on:
@@ -3761,7 +4627,8 @@ def _run_recon_old_vulns(project_id: int, cancel: threading.Event) -> bool:
     if recon_old_vulns_ready(project_id):
         _finish_resumable_phase(project_id, "recon-old-vuln-ghsa")
         return True
-    return _run_recon_old_vuln_ghsa(project_id, cancel)
+    ok = _run_recon_old_vuln_ghsa(project_id, cancel)
+    return ok
 
 
 def _run_recon_old_vuln_crawl_pass(project_id: int, cancel: threading.Event) -> bool:
@@ -4230,6 +5097,8 @@ def _run_worker_loop(project_id: int, worker_id: str) -> None:
             return
         if _project_is_terminal(project_id):
             return
+        if path_is_user_stopped(project_id, "heuristic"):
+            return
         if _phase_is_paused(project_id, "worker"):
             if not _wait_if_paused(project_id, cancel, "worker"):
                 return
@@ -4248,7 +5117,9 @@ def _run_worker_loop_inner(
     current_run_id: int | None = None
     try:
         while not cancel.is_set():
-            if not _wait_if_paused(project_id, _loop_cancel(project_id, "worker"), "worker"):
+            if path_is_user_stopped(project_id, "heuristic"):
+                return
+            if not _wait_if_paused(project_id, _mining_path_loop_cancel(project_id, "heuristic"), "worker"):
                 break
             if not _wait_if_code_intel_pending(project_id, cancel):
                 break
@@ -4355,7 +5226,7 @@ def _run_worker_loop_inner(
                 user_prompt=user,
                 phase_run_id=run_id,
                 worker_id=worker_id,
-                cancel_event=_loop_cancel(project_id, "worker"),
+                cancel_event=_mining_path_loop_cancel(project_id, "heuristic"),
                 pause_event=_combined_pause(project_id, "worker"),
                 timeout_sec=settings.timeout_worker_round,
                 context_window=_context_window(),
@@ -4413,6 +5284,13 @@ def _next_unconstrained_round_id(project_id: int) -> int:
 
 
 def _finish_unconstrained_round(project_id: int, worker_id: str, run_id: int, result) -> str:
+    if unconstrained_complete(project_id):
+        _finish_phase_run(
+            run_id,
+            "cancelled" if result.cancelled else ("completed" if result.ok else "failed"),
+            result.error or "用户停止无约束扫描",
+        )
+        return "done"
     if result.stop_reason == "auth_error":
         _pause_for_auth(project_id, result.error or "auth_error")
         return "interrupt"
@@ -4430,13 +5308,15 @@ def _finish_unconstrained_round(project_id: int, worker_id: str, run_id: int, re
 
 
 def _run_unconstrained_worker_loop(project_id: int, worker_id: str) -> None:
-    cancel = _cancel_event(project_id)
+    loop_cancel = _unconstrained_loop_cancel(project_id)
     current_run_id: int | None = None
     try:
-        while not cancel.is_set():
-            if not _wait_if_paused(project_id, _loop_cancel(project_id, "worker"), "worker"):
+        while not loop_cancel.is_set():
+            if unconstrained_complete(project_id):
+                return
+            if not _wait_if_paused(project_id, loop_cancel):
                 break
-            if not _wait_if_code_intel_pending(project_id, cancel):
+            if not _wait_if_code_intel_pending(project_id, loop_cancel):
                 break
             try:
                 with SessionLocal() as db:
@@ -4448,13 +5328,13 @@ def _run_unconstrained_worker_loop(project_id: int, worker_id: str) -> None:
                 path_done = unconstrained_complete(project_id)
             except OperationalError as e:
                 if _is_sqlite_locked(e):
-                    cancel.wait(timeout=_DB_LOCK_RETRY_SECONDS)
+                    loop_cancel.wait(timeout=_DB_LOCK_RETRY_SECONDS)
                     continue
                 raise
             if not unconstrained_on:
                 return
             if not old_ready:
-                cancel.wait(timeout=5.0)
+                loop_cancel.wait(timeout=5.0)
                 continue
 
             cp = _adopt_resumable(project_id, "unconstrained-worker", worker_id=worker_id)
@@ -4464,7 +5344,7 @@ def _run_unconstrained_worker_loop(project_id: int, worker_id: str) -> None:
                     _start_log_session(project_id, "unconstrained-worker", extra="接续")
                     loop = _loop_from_checkpoint(
                         cp,
-                        cancel=cancel,
+                        cancel=loop_cancel,
                         stop_when=lambda st: bool(st.get("round_finished")),
                         timeout_sec=settings.timeout_worker_round,
                     )
@@ -4479,12 +5359,12 @@ def _run_unconstrained_worker_loop(project_id: int, worker_id: str) -> None:
                             "无约束扫描轮数据库忙，保留检查点稍后继续",
                             phase="unconstrained-worker",
                         )
-                        cancel.wait(timeout=_DB_LOCK_RETRY_SECONDS)
+                        loop_cancel.wait(timeout=_DB_LOCK_RETRY_SECONDS)
                         continue
                     action = _finish_unconstrained_round(
                         project_id, worker_id, cp.phase_run_id, result
                     )
-                    if action in ("interrupt", "cancel"):
+                    if action in ("interrupt", "cancel", "done"):
                         return
                     if action == "restart":
                         continue
@@ -4519,8 +5399,8 @@ def _run_unconstrained_worker_loop(project_id: int, worker_id: str) -> None:
                 user_prompt=user,
                 phase_run_id=run_id,
                 worker_id=worker_id,
-                cancel_event=_loop_cancel(project_id, "worker"),
-                pause_event=_combined_pause(project_id, "worker"),
+                cancel_event=loop_cancel,
+                pause_event=_pause_event(project_id),
                 timeout_sec=settings.timeout_worker_round,
                 context_window=_context_window(),
                 stop_when=lambda st: bool(st.get("round_finished")),
@@ -4536,11 +5416,11 @@ def _run_unconstrained_worker_loop(project_id: int, worker_id: str) -> None:
                     "无约束扫描轮数据库忙，保留检查点稍后继续",
                     phase="unconstrained-worker",
                 )
-                cancel.wait(timeout=_DB_LOCK_RETRY_SECONDS)
+                loop_cancel.wait(timeout=_DB_LOCK_RETRY_SECONDS)
                 continue
             action = _finish_unconstrained_round(project_id, worker_id, run_id, result)
             current_run_id = None
-            if action in ("interrupt", "cancel"):
+            if action in ("interrupt", "cancel", "done"):
                 return
             if action == "restart":
                 continue
@@ -4770,7 +5650,9 @@ def _run_fast_worker_loop(project_id: int, worker_id: str) -> None:
     current_run_id: int | None = None
     try:
         while not cancel.is_set():
-            if not _wait_if_paused(project_id, _loop_cancel(project_id, "worker"), "worker"):
+            if path_is_user_stopped(project_id, "fast"):
+                return
+            if not _wait_if_paused(project_id, _mining_path_loop_cancel(project_id, "fast"), "worker"):
                 break
             if not _wait_if_code_intel_pending(project_id, cancel):
                 break
@@ -4851,7 +5733,7 @@ def _run_fast_worker_loop(project_id: int, worker_id: str) -> None:
                 user_prompt=user,
                 phase_run_id=run_id,
                 worker_id=worker_id,
-                cancel_event=_loop_cancel(project_id, "worker"),
+                cancel_event=_mining_path_loop_cancel(project_id, "fast"),
                 pause_event=_combined_pause(project_id, "worker"),
                 timeout_sec=settings.timeout_worker_round,
                 context_window=_context_window(),
@@ -4917,7 +5799,9 @@ def _run_bypass_worker_loop(project_id: int, worker_id: str) -> None:
     current_run_id: int | None = None
     try:
         while not cancel.is_set():
-            if not _wait_if_paused(project_id, _loop_cancel(project_id, "worker"), "worker"):
+            if path_is_user_stopped(project_id, "bypass"):
+                return
+            if not _wait_if_paused(project_id, _mining_path_loop_cancel(project_id, "bypass"), "worker"):
                 break
             if not _wait_if_code_intel_pending(project_id, cancel):
                 break
@@ -4997,7 +5881,7 @@ def _run_bypass_worker_loop(project_id: int, worker_id: str) -> None:
                 user_prompt=user,
                 phase_run_id=run_id,
                 worker_id=worker_id,
-                cancel_event=_loop_cancel(project_id, "worker"),
+                cancel_event=_mining_path_loop_cancel(project_id, "bypass"),
                 pause_event=_combined_pause(project_id, "worker"),
                 timeout_sec=settings.timeout_worker_round,
                 context_window=_context_window(),
@@ -5109,8 +5993,27 @@ def _lab_system_prompt(project_id: int) -> str:
 def _run_reviewer_lab(project_id: int) -> None:
     cancel = _cancel_event(project_id)
     try:
+        from .runtime import docker_lab_build_enabled
+
         if not is_lab_mode(_read_dynamic_verify_mode(project_id)):
             _finish_resumable_phase(project_id, "reviewer-lab")
+            return
+        # Docker Desktop / manual-only: never auto-build the audited app image.
+        if not docker_lab_build_enabled() or bool(_read_manual_lab(project_id)[1]):
+            if not lab_setup_finished(project_id):
+                mark_lab_setup_finished(
+                    project_id,
+                    skipped=True,
+                    notes="跳过自动靶场搭建（人工靶场或 Docker 发行版）",
+                    via="manual-or-docker-runtime",
+                )
+            _finish_resumable_phase(project_id, "reviewer-lab")
+            live_log.system(
+                project_id,
+                "跳过环境搭建轮（人工靶场 / Docker 版不自动搭靶场）",
+                phase="reviewer-lab",
+                role="reviewer_lab",
+            )
             return
         if lab_setup_finished(project_id):
             _finish_resumable_phase(project_id, "reviewer-lab")
@@ -5446,6 +6349,9 @@ def _run_reviewer_once(project_id: int) -> None:
                     "true 且前台确认后该路径结束（当前 Worker 轮仍会跑完）。"
                     "本条始终走赏金闸门，即使项目是全量/自定义模式。"
                     "Worker 若声称前台，须独立核验无认证可达，不要照抄；核完其实要登录则标后台，不要为结束路径硬标 frontend。"
+                    "须管理员先加入攻击者设备/邮箱/Webhook/SNMP/unix-agent 源的不是前台，"
+                    "标 backend+admin，不要标 user，rce_effect=false。"
+                    "不要因「设备侧不用登录」或「普通用户打开页面中招」硬标 frontend。"
                 )
 
         if _give_up_exhausted_review(project_id, vuln_id):
@@ -5573,6 +6479,7 @@ def _run_verifier_once(project_id: int) -> None:
                     phase="verifier",
                 )
                 return
+            _close_verifier_on_timeout(project_id, cp.vuln_id, result)
             _finish_phase_run(cp.phase_run_id, "completed" if result.ok else "failed", result.error)
             live_log.system(
                 project_id,
@@ -5677,6 +6584,7 @@ def _run_verifier_once(project_id: int) -> None:
                 phase="verifier",
             )
             return
+        _close_verifier_on_timeout(project_id, vuln_id, result)
         _finish_phase_run(run_id, "completed" if result.ok else "failed", result.error)
         live_log.system(
             project_id,
@@ -5687,17 +6595,45 @@ def _run_verifier_once(project_id: int) -> None:
         live_log.error(project_id, f"Verifier 异常: {e}", phase="verifier")
 
 
+def _close_verifier_on_timeout(project_id: int, vuln_id: int | None, result) -> None:
+    """Timeout closes the vuln as fail so the scheduler does not start another round."""
+    if vuln_id is None:
+        return
+    timed_out = bool(getattr(result, "timed_out", False)) or getattr(result, "stop_reason", "") == "timeout"
+    if not timed_out or getattr(result, "cancelled", False):
+        return
+    state = result.state if isinstance(getattr(result, "state", None), dict) else {}
+    if state.get("verifier_done") or state.get("awaiting_user"):
+        return
+    from .verifier import apply_verifier_timeout_fail
+
+    out = apply_verifier_timeout_fail(project_id, int(vuln_id), state=state)
+    if not out.get("applied"):
+        return
+    state["verifier_done"] = True
+    state["verifier_verdict"] = "fail"
+    result.state = state
+    live_log.system(
+        project_id,
+        f"Verifier 超时，漏洞 #{int(vuln_id)} 已自动 fail，不再新开轮",
+        phase="verifier",
+    )
+
+
 def _run_attack_chain_once(project_id: int) -> None:
     from ..tools.phase_attack_chain import (
         attack_chain_prereqs,
         confirmed_vuln_count,
         is_attack_chain_done,
+        is_attack_chain_user_stopped,
         mark_attack_chain_done,
     )
 
     cancel = _cancel_event(project_id)
     try:
         if not attack_chain_prereqs(project_id):
+            return
+        if is_attack_chain_user_stopped(project_id):
             return
         cp = _adopt_resumable(project_id, "attack_chain")
         if cp:
@@ -5721,7 +6657,10 @@ def _run_attack_chain_once(project_id: int) -> None:
                 _pause_for_auth(project_id, result.error or "auth_error")
                 return
             _finish_phase_run(cp.phase_run_id, "completed" if result.ok else "failed", result.error)
-            if result.state.get("attack_chain_done") or is_attack_chain_done(project_id):
+            cancelled = result.stop_reason == "cancelled" or is_attack_chain_user_stopped(project_id)
+            if not cancelled and (
+                result.state.get("attack_chain_done") or is_attack_chain_done(project_id)
+            ):
                 if not is_attack_chain_done(project_id):
                     mark_attack_chain_done(project_id, reason="检查点会话结束")
             live_log.system(
@@ -5802,7 +6741,8 @@ def _run_attack_chain_once(project_id: int) -> None:
             _pause_for_auth(project_id, result.error or "auth_error")
             return
         _finish_phase_run(run_id, "completed" if result.ok else "failed", result.error)
-        if not is_attack_chain_done(project_id):
+        cancelled = result.stop_reason == "cancelled" or is_attack_chain_user_stopped(project_id)
+        if not cancelled and not is_attack_chain_done(project_id):
             # Agent exited without FinishAttackChain - still close the gate.
             mark_attack_chain_done(
                 project_id,
@@ -5821,3 +6761,191 @@ def json_dumps(obj: Any) -> str:
     import json
 
     return json.dumps(obj, ensure_ascii=False, default=str)
+
+
+def _vuln_dedup_lock(project_id: int) -> threading.Lock:
+    with _lock:
+        lock = _vuln_dedup_locks.get(project_id)
+        if lock is None:
+            lock = threading.Lock()
+            _vuln_dedup_locks[project_id] = lock
+        return lock
+
+
+def _kick_vuln_dedup_thread(project_id: int) -> None:
+    t = threading.Thread(
+        target=_run_vuln_dedup_thread,
+        args=(project_id,),
+        daemon=True,
+        name=f"vh-vuln-dedup-{project_id}",
+    )
+    with _lock:
+        _vuln_dedup_threads[project_id] = t
+        _threads.setdefault(project_id, []).append(t)
+    t.start()
+
+
+def request_vuln_dedup(
+    project_id: int,
+    vuln_ids: list[int] | None = None,
+    *,
+    user_message: str = "",
+) -> dict[str, Any]:
+    """User-triggered one-shot: compare selected vulns against historical docs and current src/."""
+    from ..tools.phase_vuln_dedup import load_request, resolve_vuln_ids, save_request
+    from .conversation_archive import clear_archived
+
+    with SessionLocal() as db:
+        proj = db.get(Project, project_id)
+        if not proj:
+            raise ValueError("项目不存在")
+        if proj.status in ("cancelled", "ingesting", "error"):
+            raise ValueError("当前项目状态不可去重")
+
+    ids = resolve_vuln_ids(project_id, vuln_ids)
+    prev = load_request(project_id)
+    try:
+        run_id = int(prev.get("run_id") or 0) + 1
+    except (TypeError, ValueError):
+        run_id = 1
+    save_request(
+        project_id,
+        {
+            "run_id": run_id,
+            "vuln_ids": ids,
+            "consumed": False,
+            "user_message": (user_message or "").strip(),
+        },
+    )
+    _force_new_run.add((project_id, "vuln_dedup"))
+    clear_archived(project_id, "vuln_dedup")
+    _abandon_db_phase_runs(project_id, ("vuln_dedup",), reason="用户开始产出漏洞去重")
+    _bump_phase_generation(project_id, "vuln_dedup")
+    _phase_pause_event(project_id, "vuln_dedup").clear()
+    live_log.system(
+        project_id,
+        f"开始产出漏洞去重，共 {len(ids)} 条（对照历史漏洞与最新源码）",
+        phase="vuln_dedup",
+        role="vuln_dedup",
+    )
+    _kick_vuln_dedup_thread(project_id)
+    return {"ok": True, "vuln_ids": ids, "count": len(ids), **get_phase_states(project_id)}
+
+
+def _run_vuln_dedup_thread(project_id: int) -> None:
+    with _vuln_dedup_lock(project_id):
+        try:
+            _run_vuln_dedup_once(project_id)
+        except Exception as e:  # noqa: BLE001
+            live_log.error(project_id, f"产出漏洞去重异常: {e}", phase="vuln_dedup")
+
+
+def _run_vuln_dedup_once(project_id: int) -> None:
+    from ..tools.phase_vuln_dedup import (
+        catalog_for_ids,
+        format_source_note,
+        load_request,
+        path_hints_for_catalog,
+        recent_old_vulns,
+        save_request,
+        write_report,
+    )
+
+    force_new = _consume_force_new(project_id, "vuln_dedup")
+    if not force_new:
+        cp = _adopt_resumable(project_id, "vuln_dedup")
+        if cp:
+            try:
+                loop = _loop_from_checkpoint(
+                    cp,
+                    cancel=_cancel_event(project_id),
+                    stop_when=lambda st: bool(st.get("vuln_dedup_done")),
+                    timeout_sec=settings.timeout_vuln_dedup,
+                )
+                loop.pause_event = _phase_pause_event(project_id, "vuln_dedup")
+                result = loop.run()
+            finally:
+                _release_adopted(project_id, cp.phase_run_id)
+            if result.stop_reason == "auth_error":
+                _pause_for_auth(project_id, result.error or "auth_error")
+                return
+            _finish_phase_run(cp.phase_run_id, "completed" if result.ok else "failed", result.error)
+            live_log.system(
+                project_id,
+                f"产出漏洞去重结束 reason={result.stop_reason}",
+                phase="vuln_dedup",
+            )
+            return
+
+    req = load_request(project_id)
+    if req.get("consumed"):
+        return
+    ids = [int(v) for v in (req.get("vuln_ids") or []) if int(v) > 0]
+    if not ids:
+        live_log.system(project_id, "没有待去重的产出漏洞", phase="vuln_dedup")
+        return
+    req["consumed"] = True
+    save_request(project_id, req)
+
+    attempted_sync = False
+    if _should_sync_source_on_restart(project_id):
+        _maybe_sync_github_on_resume(project_id)
+        attempted_sync = True
+
+    catalog = catalog_for_ids(project_id, ids)
+    recent = recent_old_vulns(project_id)
+    hints = path_hints_for_catalog(project_id, catalog)
+    source_note = format_source_note(project_id, attempted_sync=attempted_sync)
+    if not recent:
+        live_log.system(
+            project_id,
+            "没有历史漏洞文档，本轮仍对照最新源码判断漏洞是否还在",
+            phase="vuln_dedup",
+            role="vuln_dedup",
+        )
+
+    extra = (req.get("user_message") or "").strip()
+    system = _phase_system_prompt(project_id, "vuln_dedup.md")
+    body = _initial_prompt(
+        "vuln_dedup.md",
+        vuln_count=len(catalog),
+        catalog=json_dumps(catalog),
+        recent_old=json_dumps(recent),
+        path_hints=json_dumps(hints),
+        source_note=source_note,
+        **_agent_prompt_vars(project_id),
+    )
+    if extra:
+        body = f"{body.rstrip()}\n\n## 用户说明\n{extra}\n"
+    user = _prompt_with_summary("vuln_dedup", project_id, body)
+    run_id = _new_phase_run(project_id, "vuln_dedup", "vuln_dedup")
+    _start_log_session(project_id, "vuln_dedup", extra=f"{len(catalog)} 条", role="vuln_dedup")
+    loop = AgentLoop(
+        project_id=project_id,
+        role="vuln_dedup",
+        phase="vuln_dedup",
+        system_prompt=system,
+        user_prompt=user,
+        phase_run_id=run_id,
+        cancel_event=_loop_cancel(project_id, "vuln_dedup"),
+        pause_event=_phase_pause_event(project_id, "vuln_dedup"),
+        timeout_sec=settings.timeout_vuln_dedup,
+        context_window=_context_window(),
+        stop_when=lambda st: bool(st.get("vuln_dedup_done")),
+    )
+    result = loop.run()
+    if result.stop_reason == "auth_error":
+        _pause_for_auth(project_id, result.error or "auth_error")
+        return
+    _finish_phase_run(run_id, "completed" if result.ok else "failed", result.error)
+    if not result.state.get("vuln_dedup_done"):
+        write_report(
+            project_id,
+            list(result.state.get("dedup_results") or []),
+            notes=f"会话结束未显式收工（{result.stop_reason}）",
+        )
+    live_log.system(
+        project_id,
+        f"产出漏洞去重结束 reason={result.stop_reason} recorded={len(result.state.get('dedup_results') or [])}",
+        phase="vuln_dedup",
+    )

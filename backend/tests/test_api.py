@@ -23,6 +23,8 @@ def test_health_and_settings(tmp_env):
         assert "fix_concurrency" not in body
         assert "llm_thread_limit" in body
         assert body["llm_thread_limit"] == 6
+        assert all(ep.get("weight") == 1.0 for ep in body["llm_endpoints"])
+        assert body["llm_min_request_interval_sec"] == 0.0
         assert body["http_proxy"] == ""
         assert body["chat_proxy"] == ""
         assert "cli_tools_dir" in body
@@ -54,6 +56,21 @@ def test_health_and_settings(tmp_env):
         cleared = client.put("/api/settings", json={"http_proxy": "", "chat_proxy": ""})
         assert cleared.json()["http_proxy"] == ""
         assert cleared.json()["chat_proxy"] == ""
+
+
+def test_llm_min_request_interval_roundtrip(tmp_env):
+    from app.main import app
+
+    with TestClient(app) as client:
+        upd = client.put("/api/settings", json={"llm_min_request_interval_sec": 2})
+        assert upd.status_code == 200
+        assert upd.json()["llm_min_request_interval_sec"] == 2.0
+        got = client.get("/api/settings")
+        assert got.json()["llm_min_request_interval_sec"] == 2.0
+        off = client.put("/api/settings", json={"llm_min_request_interval_sec": 0})
+        assert off.json()["llm_min_request_interval_sec"] == 0.0
+        capped = client.put("/api/settings", json={"llm_min_request_interval_sec": 99})
+        assert capped.json()["llm_min_request_interval_sec"] == 60.0
 
 
 def test_llm_endpoints_pool_save_and_read(tmp_env):
@@ -104,7 +121,9 @@ def test_llm_endpoints_pool_save_and_read(tmp_env):
         assert body["llm_endpoints"][0]["base_url"] == "https://pool-a.example/v1"
         assert body["llm_endpoints"][0]["api_key_set"] is True
         assert body["llm_endpoints"][0]["max_inflight"] == 2
+        assert body["llm_endpoints"][0]["weight"] == 1.0
         assert body["llm_endpoints"][1]["max_inflight"] == 4
+        assert body["llm_endpoints"][1]["weight"] == 1.0
         assert body["default_base_url"] == "https://pool-a.example/v1"
         assert llm_thread_limiter.current_limit() == 6
 
@@ -189,6 +208,175 @@ def test_llm_endpoints_pool_save_and_read(tmp_env):
         assert keep.json()["llm_thread_limit"] == 5
         assert keep.json()["llm_endpoints"][0]["api_key_set"] is True
         assert keep.json()["llm_endpoints"][1]["max_inflight"] == 3
+
+
+def test_llm_endpoint_wire_api_override_and_inherit(tmp_env):
+    from app.main import app
+    from app.services.llm_settings import (
+        ResolvedLlm,
+        bind_llm_to_endpoint,
+        pool_endpoints_resolved,
+        resolve_probe_target,
+    )
+
+    with TestClient(app) as client:
+        upd = client.put(
+            "/api/settings",
+            json={
+                "default_model": "fallback-model",
+                "llm_endpoints": [
+                    {
+                        "id": "ep-1",
+                        "base_url": "https://pool-a.example/v1",
+                        "api_key": "sk-a",
+                        "max_inflight": 2,
+                    },
+                    {
+                        "id": "ep-2",
+                        "base_url": "https://pool-b.example/v1",
+                        "api_key": "sk-b",
+                        "wire_api": "anthropic",
+                        "max_inflight": 2,
+                    },
+                ],
+                "llm_providers": [
+                    {
+                        "id": "default",
+                        "name": "Default",
+                        "base_url": "https://pool-a.example/v1",
+                        "wire_api": "responses",
+                        "env_key": "OPENAI_API_KEY",
+                        "api_key": "sk-a",
+                    }
+                ],
+            },
+        )
+        assert upd.status_code == 200, upd.text
+        body = upd.json()
+        assert body["llm_providers"][0]["wire_api"] == "responses"
+        assert body["llm_endpoints"][0]["wire_api"] == ""
+        assert body["llm_endpoints"][1]["wire_api"] == "anthropic"
+
+        pool = {ep.id: ep for ep in pool_endpoints_resolved()}
+        assert pool["ep-1"].wire_api == "responses"
+        assert pool["ep-2"].wire_api == "anthropic"
+
+        base = ResolvedLlm(
+            base_url="https://x",
+            wire_api="responses",
+            model="fallback-model",
+            api_key="k",
+            source="provider:default",
+        )
+        assert bind_llm_to_endpoint(base, pool["ep-2"]).wire_api == "anthropic"
+        assert bind_llm_to_endpoint(base, pool["ep-1"]).wire_api == "responses"
+
+        _url, _key, _model, wire = resolve_probe_target(endpoint_id="ep-2")
+        assert wire == "anthropic"
+        _url, _key, _model, wire = resolve_probe_target(endpoint_id="ep-1")
+        assert wire == "responses"
+
+
+def test_llm_endpoint_disabled_skips_pool(tmp_env):
+    from app.main import app
+    from app.services.llm_settings import pool_endpoints_resolved
+    from app.services.llm_thread import llm_thread_limiter
+
+    with TestClient(app) as client:
+        upd = client.put(
+            "/api/settings",
+            json={
+                "default_model": "gpt-pool",
+                "llm_endpoints": [
+                    {
+                        "id": "ep-1",
+                        "base_url": "https://pool-a.example/v1",
+                        "api_key": "sk-a",
+                        "max_inflight": 2,
+                        "disabled": True,
+                    },
+                    {
+                        "id": "ep-2",
+                        "base_url": "https://pool-b.example/v1",
+                        "api_key": "sk-b",
+                        "max_inflight": 3,
+                    },
+                ],
+            },
+        )
+        assert upd.status_code == 200, upd.text
+        body = upd.json()
+        assert body["llm_endpoints"][0]["disabled"] is True
+        assert body["llm_endpoints"][1]["disabled"] is False
+        assert body["llm_thread_limit"] == 3
+        ids = {ep.id for ep in pool_endpoints_resolved()}
+        assert ids == {"ep-2"}
+        assert llm_thread_limiter.current_limit() == 3
+
+        rejected = client.put(
+            "/api/settings",
+            json={
+                "llm_endpoints": [
+                    {
+                        "id": "ep-1",
+                        "base_url": "https://pool-a.example/v1",
+                        "api_key": None,
+                        "max_inflight": 2,
+                        "disabled": True,
+                    },
+                    {
+                        "id": "ep-2",
+                        "base_url": "https://pool-b.example/v1",
+                        "api_key": None,
+                        "max_inflight": 3,
+                        "disabled": True,
+                    },
+                ],
+            },
+        )
+        assert rejected.status_code == 400
+        assert "未禁用" in rejected.json()["detail"]
+
+
+def test_llm_endpoint_weight_roundtrip_and_clamp(tmp_env):
+    from app.main import app
+    from app.services.llm_settings import pool_endpoints_resolved
+
+    with TestClient(app) as client:
+        upd = client.put(
+            "/api/settings",
+            json={
+                "default_model": "gpt-pool",
+                "llm_endpoints": [
+                    {
+                        "id": "ep-1",
+                        "base_url": "https://pool-a.example/v1",
+                        "api_key": "sk-a",
+                        "max_inflight": 2,
+                        "weight": 0.5,
+                    },
+                    {
+                        "id": "ep-2",
+                        "base_url": "https://pool-b.example/v1",
+                        "api_key": "sk-b",
+                        "max_inflight": 2,
+                        "weight": 2,
+                    },
+                    {
+                        "id": "ep-3",
+                        "base_url": "https://pool-c.example/v1",
+                        "api_key": "sk-c",
+                        "max_inflight": 2,
+                        "weight": 0,
+                    },
+                ],
+            },
+        )
+        assert upd.status_code == 200, upd.text
+        weights = {ep["id"]: ep["weight"] for ep in upd.json()["llm_endpoints"]}
+        assert weights == {"ep-1": 0.5, "ep-2": 1.0, "ep-3": 0.01}
+        pool = {ep.id: ep.weight for ep in pool_endpoints_resolved()}
+        assert pool == {"ep-1": 0.5, "ep-2": 1.0, "ep-3": 0.01}
 
 
 def test_llm_thread_usage_api(tmp_env):
@@ -1164,6 +1352,27 @@ def test_project_weight_exts_marks_agent_added(tmp_env, project):
         assert row["weight_exts"] == body["weight_exts"]
 
 
+def test_project_source_sync_notice_in_detail_and_list(tmp_env, project):
+    from app.main import app
+    from app.models import Project, SessionLocal
+
+    notice = "2026-09-10 10:00 已同步上游最新代码 aaaaaaa → bbbbbbb：变更 1 个路径，新索引 0，删除 0，待重审 1"
+    with SessionLocal() as db:
+        p = db.get(Project, project)
+        p.source_sync_notice = notice
+        p.source_sync_error = None
+        db.commit()
+
+    with TestClient(app) as client:
+        body = client.get(f"/api/projects/{project}").json()
+        assert body["source_sync_notice"] == notice
+        assert body["source_sync_error"] is None
+        listed = client.get("/api/projects", params={"limit": 100}).json()
+        row = next(p for p in listed["items"] if p["id"] == project)
+        assert row["source_sync_notice"] == notice
+        assert row.get("source_sync_error") in (None, "")
+
+
 def test_project_token_usage_counts(tmp_env, project):
     from app.main import app
     from app.models import SessionLocal, TokenUsage
@@ -2051,6 +2260,7 @@ def test_completed_project_can_change_mode_but_not_pause(tmp_env, project, monke
     monkeypatch.setattr(pipeline, "start_audit", lambda pid: None)
     with SessionLocal() as db:
         p = db.get(Project, project)
+        p.recon_done = True
         p.status = "completed"
         p.phase = "done"
         db.commit()

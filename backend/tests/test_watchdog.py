@@ -237,7 +237,7 @@ def test_reviewer_lab_no_tool_nudge():
 
 
 def test_fix_and_reviewer_have_no_finish_nudge():
-    for phase in ("fix", "reviewer", "recon-mark", "recon", "verifier"):
+    for phase in ("fix", "reviewer", "recon-mark", "recon", "verifier", "unconstrained-worker"):
         w = AgentWatchdog(phase=phase)
         for _ in range(60):
             assert w.note_turn() is None
@@ -314,6 +314,38 @@ def test_bypass_finish_nudge_and_no_tool():
     assert msg == BYPASS_FINISH_NUDGE.format(n=2)
     assert "FinishBypass" in w.persist_nudge_log()
     assert w.note_turn(["FinishBypass"]) is None
+    assert w.idle_turns == 0
+
+
+def test_unconstrained_watchdog_has_no_persist_nudge():
+    from app.agent.watchdog import UNCONSTRAINED_NO_TOOL_NUDGE
+
+    w = AgentWatchdog(phase="unconstrained-worker")
+    assert w.note_no_tools() == UNCONSTRAINED_NO_TOOL_NUDGE
+    assert "FinishFile" not in UNCONSTRAINED_NO_TOOL_NUDGE
+    assert "压缩满 2 次" in UNCONSTRAINED_NO_TOOL_NUDGE
+    for _ in range(100):
+        assert w.note_turn(["Read"]) is None
+    assert w.idle_turns == 0
+
+
+def test_vuln_dedup_watchdog_nudges():
+    from app.agent.watchdog import VULN_DEDUP_NO_TOOL_NUDGE, VULN_DEDUP_RECORD_NUDGE
+
+    w = AgentWatchdog(phase="vuln_dedup")
+    assert w.note_no_tools() == VULN_DEDUP_NO_TOOL_NUDGE
+    assert "RecordVulnDedup" in VULN_DEDUP_NO_TOOL_NUDGE
+    assert AgentWatchdog(phase="vuln-dedup").note_no_tools() == VULN_DEDUP_NO_TOOL_NUDGE
+    assert w.worker_finish_interval == WORKER_FINISH_INTERVAL == 50
+    for i in range(1, 50):
+        assert w.note_turn(["Read"]) is None
+        assert w.turn_count == i
+    msg = w.note_turn(["Grep"])
+    assert msg == VULN_DEDUP_RECORD_NUDGE.format(n=50)
+    assert "RecordVulnDedup" in msg
+    assert "若有漏洞已经分析完毕" in msg
+    assert "看门狗：产出去重连续 50 轮未 RecordVulnDedup，已提醒先标记已分析完的漏洞" == w.persist_nudge_log()
+    assert w.note_turn(["RecordVulnDedup"]) is None
     assert w.idle_turns == 0
 
 

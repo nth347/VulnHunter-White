@@ -1,5 +1,4 @@
 import type { Vuln } from '../api'
-import i18n from '../i18n'
 import {
   formatAttackSurface,
   formatConfigPremise,
@@ -262,8 +261,7 @@ export function vulnMatchesQuery(
 ): boolean {
   const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
   if (!tokens.length) return true
-  const projectName =
-    v.project_name || projectNameById?.get(v.project_id) || i18n.t('fmt.projectRef', { id: v.project_id })
+  const projectName = v.project_name || projectNameById?.get(v.project_id) || `项目 ${v.project_id}`
   const haystack = [
     v.title,
     v.vuln_type,

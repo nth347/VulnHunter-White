@@ -9,10 +9,11 @@ from ..mining_paths import (
     HEURISTIC_LITE_WEIGHT,
     heuristic_lite_active,
     mining_path_from_role,
+    mining_path_user_stopped,
     normalize_mining_path,
 )
 from ..i18n import project_language
-from ..models import FileWeight, Project, SessionLocal, Sink, Vuln
+from ..models import FileWeight, PhaseRun, Project, SessionLocal, Sink, Vuln
 from ..services.affected_locations import (
     AFFECTED_LOCATIONS_HEADING,
     append_affected_locations,
@@ -20,6 +21,7 @@ from ..services.affected_locations import (
     parse_locations,
 )
 from ..services.duplicate_guard import soft_duplicate_gate
+from ..services.known_public import soft_known_public_gate
 from ..services.paths import vuln_dir
 from ..services.poc_script import (
     POC_CODE_TOOL_DESCRIPTION,
@@ -96,6 +98,24 @@ FINISH_ROUND_NEED_ENTRY = (
     "中途 FinishFile 的是其它文件，请继续分析注入焦点；"
     "仅当该焦点已按角色分析完并 FinishFile 后再 FinishRound。"
 )
+UNCONSTRAINED_FINISH_ROUND_AFTER_COMPRESS = 2
+UNCONSTRAINED_FINISH_ROUND_LOCKED = (
+    f"FinishRound 须等本轮上下文压缩满 {UNCONSTRAINED_FINISH_ROUND_AFTER_COMPRESS} 次后"
+    "才会出现在工具列表中，当前不可用。请继续挖掘前台洞，不要尝试收工。"
+)
+
+
+def unconstrained_finish_round_ready(state: dict[str, Any] | None) -> bool:
+    n = int((state or {}).get("compress_count") or 0)
+    return n >= UNCONSTRAINED_FINISH_ROUND_AFTER_COMPRESS
+
+
+def unconstrained_finish_round_description() -> str:
+    return (
+        "本趟探索收束后结束本轮。须附 report，结构对齐 templates/round-report.md"
+        "（本轮入口、挖掘方向、已尝试、已排除）。不要写建议后续方向。"
+        "不要刚 SubmitVuln 就收工。本路径没有 FinishFile。"
+    )
 
 
 def _norm_audit_path(p: str) -> str:
@@ -144,6 +164,8 @@ def heuristic_complete(project_id: int) -> bool:
             return False
         if not bool(getattr(proj, "heuristic_enabled", True)):
             return True
+        if mining_path_user_stopped(proj, "heuristic"):
+            return True
         return _pending_heuristic_entries(db, project_id, lite=_heuristic_lite(proj)) <= 0
 
 
@@ -153,11 +175,11 @@ def mining_complete(project_id: int) -> bool:
         proj = db.get(Project, project_id)
         if not proj or not proj.recon_done:
             return False
-        if bool(getattr(proj, "heuristic_enabled", True)):
+        if bool(getattr(proj, "heuristic_enabled", True)) and not mining_path_user_stopped(proj, "heuristic"):
             left = _pending_heuristic_entries(db, project_id, lite=_heuristic_lite(proj))
             if left > 0:
                 return False
-        if bool(getattr(proj, "fast_enabled", False)):
+        if bool(getattr(proj, "fast_enabled", False)) and not mining_path_user_stopped(proj, "fast"):
             if not bool(getattr(proj, "fast_queue_frozen", False)):
                 return False
             open_n = (
@@ -167,7 +189,7 @@ def mining_complete(project_id: int) -> bool:
             )
             if open_n > 0:
                 return False
-        if bool(getattr(proj, "bypass_enabled", False)):
+        if bool(getattr(proj, "bypass_enabled", False)) and not mining_path_user_stopped(proj, "bypass"):
             if not bool(getattr(proj, "bypass_queue_frozen", False)):
                 return False
             from ..models import BypassTarget
@@ -191,6 +213,12 @@ def mining_complete(project_id: int) -> bool:
             .count()
         )
         return bounced == 0
+
+
+def path_is_user_stopped(project_id: int, path: str) -> bool:
+    with SessionLocal() as db:
+        proj = db.get(Project, project_id)
+        return bool(proj and mining_path_user_stopped(proj, path))
 
 
 def unconstrained_complete(project_id: int) -> bool:
@@ -217,9 +245,46 @@ def mark_unconstrained_done(project_id: int) -> bool:
         return True
 
 
+def clear_unconstrained_done(project_id: int) -> bool:
+    """Clear unconstrained_done so the path can start new rounds."""
+    with SessionLocal() as db:
+        proj = db.get(Project, project_id)
+        if not proj or not bool(getattr(proj, "unconstrained_enabled", False)):
+            return False
+        if not bool(getattr(proj, "unconstrained_done", False)):
+            return False
+        proj.unconstrained_done = False
+        db.commit()
+        return True
+
+
+_ACTIVE_UNCONSTRAINED_RUN_STATUSES = ("running", "paused", "awaiting_user")
+
+
+def unconstrained_worker_active(project_id: int) -> bool:
+    """True while an unconstrained-worker round is still in flight (incl. RCE tail round)."""
+    with SessionLocal() as db:
+        proj = db.get(Project, project_id)
+        if not proj or not bool(getattr(proj, "unconstrained_enabled", False)):
+            return False
+        active = (
+            db.query(PhaseRun)
+            .filter(
+                PhaseRun.project_id == project_id,
+                PhaseRun.phase == "unconstrained-worker",
+                PhaseRun.status.in_(_ACTIVE_UNCONSTRAINED_RUN_STATUSES),
+            )
+            .limit(1)
+            .first()
+        )
+        return active is not None
+
+
 def project_complete_gates(project_id: int) -> bool:
-    """Mining done + no pending_review/returned/fixing."""
+    """Mining done + no pending_review/returned/fixing + no in-flight unconstrained round."""
     if not mining_complete(project_id):
+        return False
+    if unconstrained_worker_active(project_id):
         return False
     with SessionLocal() as db:
         pending = (
@@ -247,7 +312,9 @@ def project_complete_gates(project_id: int) -> bool:
             if vpending > 0:
                 return False
         if proj and bool(getattr(proj, "attack_chain_enabled", False)):
-            if not bool(getattr(proj, "attack_chain_done", False)):
+            if not bool(getattr(proj, "attack_chain_done", False)) and not bool(
+                getattr(proj, "attack_chain_stopped", False)
+            ):
                 return False
         return True
 
@@ -328,6 +395,20 @@ def _submit_vuln(ctx, args: dict[str, Any]) -> dict[str, Any]:
             blocked = bounty_submit_block_reason(vtype, file_path=file_path)
             if blocked:
                 return {"ok": False, "error": blocked}
+
+    known_public = soft_known_public_gate(
+        ctx,
+        args,
+        tool="SubmitVuln",
+        title=str(args.get("title") or ""),
+        source_sink=str(args.get("source_sink") or ""),
+        http_request=str(args.get("http_request") or ""),
+        file_path=file_path,
+        vuln_type=vtype,
+        mining_path=mining_path,
+    )
+    if known_public:
+        return known_public
 
     soft = soft_duplicate_gate(
         ctx,
@@ -492,12 +573,16 @@ def _default_report(
         if bypass
         else ""
     )
-    desc_second = (
-        f"第二段：该漏洞位于 `{args.get('file_path')}:{args.get('line_no')}`，"
-        f"数据流为 {args.get('source_sink')}；说明与历史漏洞文档的关系（原 CVE/补丁与当前变体或仍可利用点）。"
-        if bypass
-        else f"第二段：该漏洞位于 `{args.get('file_path')}:{args.get('line_no')}`，数据流为 {args.get('source_sink')}。"
-    )
+    if bypass:
+        cause = (
+            f"成因概要（{vtype}，一两句）：位于 `{args.get('file_path')}:{args.get('line_no')}`，"
+            f"数据流为 {args.get('source_sink')}。可一句带过与历史漏洞文档的关系，不要展开原理。"
+        )
+    else:
+        cause = (
+            f"成因概要（{vtype}，一两句）：位于 `{args.get('file_path')}:{args.get('line_no')}`，"
+            f"数据流为 {args.get('source_sink')}。不要展开原理。"
+        )
     return f"""---
 title: {args.get('title')}
 summary: {args.get('source_sink', '')[:200]}
@@ -505,17 +590,10 @@ summary: {args.get('source_sink', '')[:200]}
 
 # {args.get('title')}
 
-## 摘要
-- 漏洞技术类型：{vtype}
-- 严重度：待 Reviewer 填写 CVSS 3.1 向量（分数由系统计算，不按类型映射）
-- CWE：{args.get('cwe')}
-- 位置：{args.get('file_path')}:{args.get('line_no')}
-- 配置前提：{config_premise_label(args.get('config_premise')) or args.get('config_premise')}
-
 ## 漏洞描述
-第一段：待根据厂商与产品资料补全系统介绍。
+待补全产品功能定位（一句话）。
 
-{desc_second}
+{cause}
 
 ## 漏洞危害
 - 已证明危害：{args.get('expected_evidence')}
@@ -616,13 +694,9 @@ def _finish_file(ctx, args: dict[str, Any]) -> dict[str, Any]:
     if not paths:
         return {"ok": False, "error": "缺少 path/paths"}
     done = []
-    unconstrained = (ctx.role or "").strip().lower() == "unconstrained_worker"
     with SessionLocal() as db:
         for p in paths:
             p = _norm_audit_path(p)
-            if unconstrained:
-                done.append(p)
-                continue
             fw = (
                 db.query(FileWeight)
                 .filter(FileWeight.project_id == ctx.project_id, FileWeight.path == p)
@@ -637,15 +711,6 @@ def _finish_file(ctx, args: dict[str, Any]) -> dict[str, Any]:
         db.commit()
     ctx.state.setdefault("finished_files_this_round", [])
     ctx.state["finished_files_this_round"].extend(done)
-    if unconstrained:
-        return {
-            "ok": True,
-            "finished": done,
-            "count": len(done),
-            "message": (
-                "已记下本路径看过的文件（不改启发式定权队列）。FinishFile 不等于结束本轮，请继续挖前台洞。"
-            ),
-        }
     return {
         "ok": True,
         "finished": done,
@@ -655,7 +720,12 @@ def _finish_file(ctx, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _finish_round(ctx, args: dict[str, Any]) -> dict[str, Any]:
-    unconstrained = (ctx.role or "").strip().lower() == "unconstrained_worker"
+    unconstrained = (ctx.role or "").strip().lower() in (
+        "unconstrained_worker",
+        "unconstrained-worker",
+    )
+    if unconstrained and not unconstrained_finish_round_ready(ctx.state):
+        return {"ok": False, "error": UNCONSTRAINED_FINISH_ROUND_LOCKED}
     finished = ctx.state.get("finished_files_this_round") or []
     if not unconstrained and not finished:
         return {"ok": False, "error": FINISH_ROUND_NEED_FILE}
@@ -780,17 +850,23 @@ def register_worker_tools() -> None:
                 "（HTTP / WebSocket / RPC / MQ / 回调等）就能打出可观察有害冲击时才提交；"
                 "source→sink 可达但默认环境无冲击、需要额外写文件/独立漏洞/非默认目录布局、"
                 "无害/受限文件操作（只能读特定后缀或公开目录非敏感内容、只能上传无害文件）、"
-                "不可获取且不可预测的 UUID、"
+                "不可获取且不可预测的对象键（UUID/文件名等；他人分享链接/邮件/预览 URL 不算可获取）、"
                 "或只是配置/文档/compose/.env 里用户可改的默认密码弱口令的不要提交。"
+                "须管理员先把攻击者控制的设备/邮箱/Webhook/SNMP/unix-agent 源加进系统才有注入面时，"
+                "可以提交，但 auth_premise 必须写清该前提，禁止写成无需登录/前台/未授权。"
                 "有服务端机密危害的源码硬编码密钥（JWT/HMAC 签名密钥、接口签名 secret、"
                 "私钥、第三方 API Key 等）可以提交；"
+                "但密钥若只用于给已知对象键伪造下载 token、且该键不可独立获取"
+                "（他人分享链接/邮件/预览 URL 不算可获取），不要提交；"
                 "前端传输混淆 AES/公开下发密钥不要提交。"
                 "同一根因同一危害只交一份：先 Grep 同类其余方法写入报告「同根因受影响点」；"
                 "已有 pending 同根因条目请用 AppendAffectedLocations，不要再 SubmitVuln。"
                 "应填写 root_cause_key（类型:稳定锚点）。"
                 "若与已有洞同 file_path+vuln_type 或同 root_cause_key，首次调用会提醒复查；"
                 "确认仍要单独交时，再次调用并传 confirm_not_duplicate=true（仅本会话提醒过一次后才接受）。"
-                "不要按漏洞类型填写严重度；入库严重度为 pending，由 Reviewer 填写 CVSS 3.1 向量，分数由系统计算。"
+                "若与侦察历史漏洞（kind=old）同一入口/sink，首次调用会提醒这是已公开同类洞，不要当新 CVE；"
+                "确认公开文未覆盖的新链时，再次调用并传 confirm_not_known_public=true（仅本会话提醒过一次后才接受）。"
+                "不要按漏洞类型填写严重度；入库严重度为 pending，由 Reviewer 填写 CVSS 3.1 与 CVSS 4.0 向量，分数由系统计算。"
                 "必填 config_premise=default|specific（默认配置/特定配置）。"
                 "特定配置指须改应用自身配置才成立，且该配置不是官方已明确警示会导致安全风险的选项；"
                 "仅在官方已警示的不安全开关下才成立的不要提交。"
@@ -857,6 +933,13 @@ def register_worker_tools() -> None:
                             "仅本会话已因同一指纹被提醒过一次后才接受；首次带上会被拒绝。"
                         ),
                     },
+                    "confirm_not_known_public": {
+                        "type": "boolean",
+                        "description": (
+                            "疑似已公开同类洞提醒后，确认是公开公告未覆盖的新链时传 true。"
+                            "仅本会话已因同一入口/sink 被提醒过一次后才接受；首次带上会被拒绝。"
+                        ),
+                    },
                     "fofa_fingerprint": {"type": "string"},
                     "x_fingerprint": {"type": "string"},
                     "fingerprint_basis": {"type": "string"},
@@ -864,6 +947,7 @@ def register_worker_tools() -> None:
                         "type": "string",
                         "description": (
                             "中文报告。标题须为中文（YAML title 与一级标题）。"
+                            "## 漏洞描述：产品一句话 + 一两句成因概要，不要展开原理。"
                             "历史漏洞绕过须对齐 templates/vuln-report-bypass.md"
                             "（同 vuln-report.md 且 ## 漏洞技术细节 下第一节为 ### 补丁绕过简析）；"
                             "启发式/快速扫描对齐 templates/vuln-report.md。"
@@ -874,7 +958,7 @@ def register_worker_tools() -> None:
                         "description": (
                             "英文 GitHub Advisory 填表稿，结构对齐 templates/vuln-advisory.md。"
                             "含 Title、Description（Summary/Details/Vulnerable code/PoC/Impact）、"
-                            "Affected products、Severity/CWE（含 CVSS 3.1 向量；分数由系统计算）。"
+                            "Affected products、Severity/CWE（含 CVSS 3.1 与 CVSS 4.0 向量；分数由系统计算）。"
                             "Vulnerable code 须含完整相对路径与源码原文。不要写中文报告。"
                         ),
                     },

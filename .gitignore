@@ -18,5 +18,3 @@ tools/mcp/**/dist/
 *.log
 .idea/
 .vscode/
-
-frontend/*.tsbuildinfo

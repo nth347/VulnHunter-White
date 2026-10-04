@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import i18n from '../i18n'
-import { translateBackendText } from '../i18n/backendText'
 import { api, formatApiError, setAccessToken, type LlmEndpointUsage, type Settings } from '../api'
 import { CustomAuditModesCard } from '../components/CustomAuditModesCard'
+import { AppUpdateCard } from '../components/AppUpdatePanel'
 import { endpointCooldownReason, endpointSkipLabel } from '../components/LlmThreadUsageBar'
+import { useI18n } from '@/i18n'
 import { startVisibilityPoll } from '../lib/visibilityPoll'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -19,34 +18,244 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
-type EndpointHint = { name: string; endpoint: string; models: string; note: string }
+type EndpointHint = {
+  name: string
+  nameKey?: string
+  endpoint: string
+  models: string
+  noteKey: string
+}
 
-function endpointHintList(kind: 'domestic' | 'anthropic'): EndpointHint[] {
-  const out = i18n.t(`settings.hints.${kind}`, { returnObjects: true })
-  return Array.isArray(out) ? (out as EndpointHint[]) : []
+const domesticEndpointHints: EndpointHint[] = [
+  {
+    name: '智谱 BigModel',
+    endpoint: 'https://open.bigmodel.cn/api/paas/v4',
+    models: 'glm-5.3, glm-4-plus, glm-4-air',
+    noteKey: 'settings.note.zhipu',
+  },
+  {
+    name: 'DeepSeek',
+    endpoint: 'https://api.deepseek.com',
+    models: 'deepseek-chat, deepseek-reasoner',
+    noteKey: 'settings.note.deepseek',
+  },
+  {
+    name: '阿里云百炼 DashScope',
+    endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    models: 'qwen-plus, qwen-max, qwen-turbo',
+    noteKey: 'settings.note.dashscope',
+  },
+  {
+    name: '月之暗面 Kimi',
+    endpoint: 'https://api.moonshot.cn/v1',
+    models: 'kimi-k3, kimi-k2.5, moonshot-v1-32k',
+    noteKey: 'settings.note.kimi',
+  },
+  {
+    name: '火山方舟 Doubao',
+    endpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+    models: 'doubao-seed-1-6, doubao-1-5-pro-32k',
+    noteKey: 'settings.note.doubao',
+  },
+  {
+    name: '腾讯混元',
+    endpoint: 'https://api.hunyuan.cloud.tencent.com/v1',
+    models: 'hunyuan-turbos-latest, hunyuan-lite',
+    noteKey: 'settings.note.openaiCompat',
+  },
+  {
+    name: 'MiniMax',
+    endpoint: 'https://api.minimax.chat/v1',
+    models: 'abab6.5s-chat, MiniMax-Text-01',
+    noteKey: 'settings.note.openaiCompat',
+  },
+  {
+    name: '百川智能',
+    endpoint: 'https://api.baichuan-ai.com/v1',
+    models: 'Baichuan4, Baichuan3-Turbo',
+    noteKey: 'settings.note.openaiCompat',
+  },
+  {
+    name: '零一万物',
+    endpoint: 'https://api.lingyiwanwu.com/v1',
+    models: 'yi-lightning, yi-large',
+    noteKey: 'settings.note.openaiCompat',
+  },
+  {
+    name: '阶跃星辰 StepFun',
+    endpoint: 'https://api.stepfun.com/v1',
+    models: 'step-2-16k, step-1-8k',
+    noteKey: 'settings.note.openaiCompat',
+  },
+  {
+    name: '讯飞星火',
+    endpoint: 'https://spark-api-open.xf-yun.com/v1',
+    models: 'generalv3.5, 4.0Ultra',
+    noteKey: 'settings.note.spark',
+  },
+  {
+    name: '硅基流动 SiliconFlow',
+    endpoint: 'https://api.siliconflow.cn/v1',
+    models: 'Qwen/Qwen2.5-72B-Instruct, deepseek-ai/DeepSeek-V3',
+    noteKey: 'settings.note.siliconflow',
+  },
+  {
+    name: '魔搭 ModelScope',
+    endpoint: 'https://api-inference.modelscope.cn/v1',
+    models: 'Qwen/Qwen2.5-72B-Instruct',
+    noteKey: 'settings.note.modelscope',
+  },
+]
+
+const anthropicEndpointHints: EndpointHint[] = [
+  {
+    name: 'Anthropic 官方 Claude',
+    nameKey: 'settings.vendor.anthropicOfficial',
+    endpoint: 'https://api.anthropic.com/v1',
+    models: 'claude-sonnet-4-5, claude-opus-4-1',
+    noteKey: 'settings.note.anthropicOfficial',
+  },
+  {
+    name: '智谱 BigModel Anthropic',
+    endpoint: 'https://open.bigmodel.cn/api/anthropic/v1',
+    models: 'glm-5.1, glm-4.5, glm-4.5-air',
+    noteKey: 'settings.note.zhipuAnthropic',
+  },
+  {
+    name: 'Kimi Anthropic',
+    endpoint: 'https://api.moonshot.cn/anthropic/v1',
+    models: 'kimi-k3, kimi-k2-0711-preview, kimi-latest',
+    noteKey: 'settings.note.kimiAnthropic',
+  },
+  {
+    name: 'Kimi Coding Plan',
+    endpoint: 'https://api.kimi.com/coding/v1',
+    models: 'kimi-k3, kimi-k2.5, kimi-k2-0711-preview',
+    noteKey: 'settings.note.kimiCoding',
+  },
+  {
+    name: '阿里云百炼 DashScope',
+    endpoint: 'https://dashscope.aliyuncs.com/apps/anthropic/v1',
+    models: 'qwen-max, qwen-plus, qwen-coder-plus',
+    noteKey: 'settings.note.dashscopeAnthropic',
+  },
+  {
+    name: 'OpenModel 聚合',
+    nameKey: 'settings.vendor.openmodel',
+    endpoint: 'https://api.openmodel.ai/v1',
+    models: 'kimi-k2.5, qwen3-max, deepseek-v4-flash, MiniMax-M2.5',
+    noteKey: 'settings.note.openmodel',
+  },
+]
+
+const responsesEndpointHints: EndpointHint[] = [
+  {
+    name: 'OpenAI 官方',
+    nameKey: 'settings.vendor.openaiOfficial',
+    endpoint: 'https://api.openai.com/v1',
+    models: 'gpt-5, gpt-4.1, o4-mini',
+    noteKey: 'settings.note.openaiOfficial',
+  },
+  {
+    name: 'OpenRouter',
+    endpoint: 'https://openrouter.ai/api/v1',
+    models: 'openai/gpt-5, openai/gpt-4.1',
+    noteKey: 'settings.note.openrouter',
+  },
+]
+
+type WireApi = 'chat' | 'responses' | 'anthropic'
+type EndpointWire = '' | WireApi
+
+type EndpointDraft = {
+  id: string
+  base_url: string
+  api_key: string
+  api_key_set: boolean
+  model: string
+  wire_api: EndpointWire
+  max_inflight: number
+  weight: number
+  disabled: boolean
+}
+
+function parseWireApi(value: string | undefined | null): WireApi {
+  if (value === 'anthropic' || value === 'responses') return value
+  return 'chat'
+}
+
+function parseEndpointWire(value: string | undefined | null): EndpointWire {
+  if (value === 'anthropic' || value === 'responses' || value === 'chat') return value
+  return ''
+}
+
+function wireApiLabel(wire: WireApi): string {
+  if (wire === 'anthropic') return 'Anthropic Messages'
+  if (wire === 'responses') return 'OpenAI Responses'
+  return 'OpenAI Chat Completions'
+}
+
+function clampWeight(value: number | undefined | null): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 1
+  if (n <= 0) return 0.01
+  return Math.min(1, Math.round(n * 100) / 100)
+}
+
+function emptyEndpoint(id: string, model = ''): EndpointDraft {
+  return {
+    id,
+    base_url: '',
+    api_key: '',
+    api_key_set: false,
+    model,
+    wire_api: '',
+    max_inflight: 6,
+    weight: 1,
+    disabled: false,
+  }
+}
+
+function draftFromApi(
+  ep: {
+    id?: string
+    base_url?: string
+    api_key_set?: boolean
+    model?: string
+    wire_api?: string
+    max_inflight?: number
+    weight?: number
+    disabled?: boolean
+  },
+  index: number,
+): EndpointDraft {
+  return {
+    id: ep.id || `ep-${index + 1}`,
+    base_url: ep.base_url || '',
+    api_key: '',
+    api_key_set: !!ep.api_key_set,
+    model: ep.model || '',
+    wire_api: parseEndpointWire(ep.wire_api),
+    max_inflight: Math.max(1, ep.max_inflight || 6),
+    weight: clampWeight(ep.weight),
+    disabled: !!ep.disabled,
+  }
 }
 
 export default function SettingsPage() {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const [s, setS] = useState<Settings | null>(null)
   const [defaultModel, setDefaultModel] = useState('')
-  const [endpoints, setEndpoints] = useState<
-    Array<{
-      id: string
-      base_url: string
-      api_key: string
-      api_key_set: boolean
-      model: string
-      max_inflight: number
-    }>
-  >([{ id: 'ep-1', base_url: '', api_key: '', api_key_set: false, model: '', max_inflight: 6 }])
-  const [wireApi, setWireApi] = useState<'chat' | 'anthropic'>('chat')
+  const [endpoints, setEndpoints] = useState<EndpointDraft[]>([emptyEndpoint('ep-1')])
+  const [wireApi, setWireApi] = useState<WireApi>('chat')
   const [githubPat, setGithubPat] = useState('')
   const [fofaKey, setFofaKey] = useState('')
   const [fofaBaseUrl, setFofaBaseUrl] = useState('https://fofa.info')
   const [contextWindow, setContextWindow] = useState(128000)
+  const [minRequestInterval, setMinRequestInterval] = useState(2)
   const [httpProxy, setHttpProxy] = useState('')
   const [chatProxy, setChatProxy] = useState('')
   const [cliToolsDir, setCliToolsDir] = useState('tools/cli')
@@ -58,6 +267,10 @@ export default function SettingsPage() {
   const [codegraphTesting, setCodegraphTesting] = useState(false)
   const [codegraphOk, setCodegraphOk] = useState<boolean | null>(null)
   const [codegraphMsg, setCodegraphMsg] = useState('')
+  const [jarAnalyzerPath, setJarAnalyzerPath] = useState('')
+  const [jarAnalyzerTesting, setJarAnalyzerTesting] = useState(false)
+  const [jarAnalyzerOk, setJarAnalyzerOk] = useState<boolean | null>(null)
+  const [jarAnalyzerMsg, setJarAnalyzerMsg] = useState('')
   const [msg, setMsg] = useState('')
   const [models, setModels] = useState<string[]>([])
   const [modelFilter, setModelFilter] = useState('')
@@ -108,7 +321,7 @@ export default function SettingsPage() {
       setS(x)
       setDefaultModel(x.default_model || '')
       const provider = x.llm_providers?.find((p) => p.id === 'default') || x.llm_providers?.[0]
-      setWireApi(provider?.wire_api === 'anthropic' ? 'anthropic' : 'chat')
+      setWireApi(parseWireApi(provider?.wire_api))
       const eps =
         x.llm_endpoints?.length > 0
           ? x.llm_endpoints
@@ -119,28 +332,24 @@ export default function SettingsPage() {
                 api_key_set: x.default_api_key_set,
                 model: x.default_model || '',
                 max_inflight: x.llm_thread_limit || 6,
+                disabled: false,
               },
             ]
-      setEndpoints(
-        eps.map((ep, i) => ({
-          id: ep.id || `ep-${i + 1}`,
-          base_url: ep.base_url || '',
-          api_key: '',
-          api_key_set: !!ep.api_key_set,
-          model: ep.model || '',
-          max_inflight: Math.max(1, ep.max_inflight || 6),
-        })),
-      )
+      setEndpoints(eps.map((ep, i) => draftFromApi(ep, i)))
       if (!x.default_model && eps[0]?.model) {
         setDefaultModel(eps[0].model)
       }
       setContextWindow(x.context_window || 128000)
+      setMinRequestInterval(
+        Number.isFinite(x.llm_min_request_interval_sec) ? x.llm_min_request_interval_sec : 2,
+      )
       setFofaBaseUrl(x.fofa_base_url || 'https://fofa.info')
       setHttpProxy(x.http_proxy || '')
       setChatProxy(x.chat_proxy || '')
       setCliToolsDir(x.cli_tools_dir || 'tools/cli')
       setJadxPath(x.jadx_path || '')
       setCodegraphPath(x.codegraph_path || '')
+      setJarAnalyzerPath(x.jar_analyzer_path || '')
     })
   }, [])
 
@@ -151,7 +360,15 @@ export default function SettingsPage() {
   }, [models, modelFilter])
 
   const totalThreadLimit = useMemo(
-    () => endpoints.reduce((sum, ep) => sum + Math.max(1, ep.max_inflight || 1), 0),
+    () =>
+      endpoints.reduce(
+        (sum, ep) => (ep.disabled ? sum : sum + Math.max(1, ep.max_inflight || 1)),
+        0,
+      ),
+    [endpoints],
+  )
+  const enabledCount = useMemo(
+    () => endpoints.filter((ep) => !ep.disabled).length,
     [endpoints],
   )
 
@@ -165,7 +382,7 @@ export default function SettingsPage() {
       model?: string
       wire_api?: string
     } = {
-      wire_api: wireApi,
+      wire_api: ep?.wire_api || wireApi,
     }
     if (ep?.id) body.endpoint_id = ep.id
     if (ep?.base_url.trim()) body.base_url = ep.base_url.trim()
@@ -177,7 +394,15 @@ export default function SettingsPage() {
 
   function updateEndpoint(
     id: string,
-    patch: Partial<{ base_url: string; api_key: string; model: string; max_inflight: number }>,
+    patch: Partial<{
+      base_url: string
+      api_key: string
+      model: string
+      wire_api: EndpointWire
+      max_inflight: number
+      weight: number
+      disabled: boolean
+    }>,
   ) {
     setEndpoints((prev) => prev.map((ep) => (ep.id === id ? { ...ep, ...patch } : ep)))
   }
@@ -189,20 +414,20 @@ export default function SettingsPage() {
       while (used.has(`ep-${n}`)) n += 1
       return [
         ...prev,
-        {
-          id: `ep-${n}`,
-          base_url: '',
-          api_key: '',
-          api_key_set: false,
-          model: defaultModel.trim(),
-          max_inflight: 6,
-        },
+        emptyEndpoint(`ep-${n}`, defaultModel.trim()),
       ]
     })
   }
 
   function removeEndpoint(id: string) {
-    setEndpoints((prev) => (prev.length <= 1 ? prev : prev.filter((ep) => ep.id !== id)))
+    setEndpoints((prev) => {
+      if (prev.length <= 1) return prev
+      const target = prev.find((ep) => ep.id === id)
+      if (!target) return prev
+      const enabledLeft = prev.filter((ep) => ep.id !== id && !ep.disabled).length
+      if (!target.disabled && enabledLeft < 1) return prev
+      return prev.filter((ep) => ep.id !== id)
+    })
   }
 
   async function fetchModels(endpointId?: string) {
@@ -215,7 +440,7 @@ export default function SettingsPage() {
       if (!out.ok) {
         setModels([])
         setProbeOk(false)
-        setProbeMsg(translateBackendText(out.error || t('settings.fetchFailed')))
+        setProbeMsg(out.error || t('settings.fetch.fail'))
         return
       }
       setModels(out.models)
@@ -229,11 +454,11 @@ export default function SettingsPage() {
       }
       const latency = out.latency_ms != null ? ` · ${out.latency_ms}ms` : ''
       setProbeOk(true)
-      setProbeMsg(t('settings.fetchedModels', { count: out.count, latency }))
+      setProbeMsg(t('settings.fetch.ok', { count: out.count, latency }))
     } catch (e) {
       setModels([])
       setProbeOk(false)
-      setProbeMsg(formatApiError(e, t('projectModel.fetchTimeout')))
+      setProbeMsg(formatApiError(e, t('settings.fetch.timeout')))
     } finally {
       setListing(false)
     }
@@ -248,16 +473,18 @@ export default function SettingsPage() {
       const out = await api.testLlm(probeBody(endpointId))
       if (!out.ok) {
         setProbeOk(false)
-        setProbeMsg(translateBackendText(out.error || t('settings.connFailed')))
+        setProbeMsg(out.error || t('settings.conn.fail'))
         return
       }
-      const latency = out.latency_ms != null ? `${out.latency_ms}ms` : ''
-      const reply = out.reply ? ` · ${t('settings.reply', { text: out.reply })}` : ''
+      const extraParts: string[] = []
+      if (out.latency_ms != null) extraParts.push(`${out.latency_ms}ms`)
+      if (out.reply) extraParts.push(t('settings.conn.reply', { reply: out.reply }))
+      const extra = extraParts.length ? ` · ${extraParts.join(' · ')}` : ''
       setProbeOk(true)
-      setProbeMsg(`${t('settings.connOk')} · ${out.model}${latency ? ` · ${latency}` : ''}${reply}`)
+      setProbeMsg(t('settings.conn.ok', { model: out.model, extra }))
     } catch (e) {
       setProbeOk(false)
-      setProbeMsg(formatApiError(e, t('settings.connTimeout')))
+      setProbeMsg(formatApiError(e, t('settings.conn.timeout')))
     } finally {
       setTesting(false)
     }
@@ -274,19 +501,19 @@ export default function SettingsPage() {
       const out = await api.testFofa(body)
       if (!out.ok) {
         setFofaOk(false)
-        setFofaMsg(translateBackendText(out.error || t('settings.connFailed')))
+        setFofaMsg(out.error || t('settings.conn.fail'))
         return
       }
-      const parts = [t('settings.connOk')]
-      if (out.username) parts.push(t('settings.account', { name: out.username }))
-      if (out.fcoin != null) parts.push(t('settings.fcoin', { n: out.fcoin }))
+      const parts = [t('settings.status.ok')]
+      if (out.username) parts.push(t('settings.status.account', { name: out.username }))
+      if (out.fcoin != null) parts.push(t('settings.status.fcoin', { n: out.fcoin }))
       if (out.isvip) parts.push('VIP')
       if (out.latency_ms != null) parts.push(`${out.latency_ms}ms`)
       setFofaOk(true)
       setFofaMsg(parts.join(' · '))
     } catch (e) {
       setFofaOk(false)
-      setFofaMsg(formatApiError(e, t('settings.fofaConnTimeout')))
+      setFofaMsg(formatApiError(e, t('settings.fofa.timeout')))
     } finally {
       setFofaTesting(false)
     }
@@ -304,21 +531,21 @@ export default function SettingsPage() {
       const out = await api.testGithub(body)
       if (!out.ok) {
         setGithubOk(false)
-        setGithubMsg(translateBackendText(out.error || t('settings.connFailed')))
+        setGithubMsg(out.error || t('settings.conn.fail'))
         return
       }
-      const parts = [t('settings.connOk')]
-      if (out.authenticated && out.login) parts.push(t('settings.account', { name: out.login }))
-      else parts.push(t('settings.anonymous'))
+      const parts = [t('settings.status.ok')]
+      if (out.authenticated && out.login) parts.push(t('settings.status.account', { name: out.login }))
+      else parts.push(t('settings.status.anonymous'))
       if (out.rate_remaining != null && out.rate_limit != null) {
-        parts.push(t('settings.rateLimit', { remaining: out.rate_remaining, limit: out.rate_limit }))
+        parts.push(t('settings.status.rate', { remaining: out.rate_remaining, limit: out.rate_limit }))
       }
       if (out.latency_ms != null) parts.push(`${out.latency_ms}ms`)
       setGithubOk(true)
       setGithubMsg(parts.join(' · '))
     } catch (e) {
       setGithubOk(false)
-      setGithubMsg(formatApiError(e, t('settings.githubConnTimeout')))
+      setGithubMsg(formatApiError(e, t('settings.github.timeout')))
     } finally {
       setGithubTesting(false)
     }
@@ -334,17 +561,17 @@ export default function SettingsPage() {
       const out = await api.testJadx(body)
       if (!out.ok) {
         setJadxOk(false)
-        setJadxMsg(translateBackendText(out.error || t('settings.detectFailed')))
+        setJadxMsg(out.error || t('settings.jadx.fail'))
         return
       }
-      const parts = [out.version || t('settings.available')]
+      const parts = [out.version || t('settings.jadx.available')]
       if (out.path) parts.push(out.path)
       if (out.latency_ms != null) parts.push(`${out.latency_ms}ms`)
       setJadxOk(true)
       setJadxMsg(parts.join(' · '))
     } catch (e) {
       setJadxOk(false)
-      setJadxMsg(formatApiError(e, t('settings.jadxDetectTimeout')))
+      setJadxMsg(formatApiError(e, t('settings.jadx.timeout')))
     } finally {
       setJadxTesting(false)
     }
@@ -360,7 +587,7 @@ export default function SettingsPage() {
       const out = await api.testCodegraph(body)
       if (!out.ok) {
         setCodegraphOk(false)
-        setCodegraphMsg(translateBackendText(out.error || t('settings.codegraphNotFound')))
+        setCodegraphMsg(out.error || t('settings.codegraph.missing'))
         return
       }
       setCodegraphOk(true)
@@ -369,32 +596,67 @@ export default function SettingsPage() {
         .join(' · '))
     } catch (e) {
       setCodegraphOk(false)
-      setCodegraphMsg(formatApiError(e, t('settings.codegraphDetectTimeout')))
+      setCodegraphMsg(formatApiError(e, t('settings.codegraph.timeout')))
     } finally {
       setCodegraphTesting(false)
+    }
+  }
+
+  async function testJarAnalyzer() {
+    setJarAnalyzerTesting(true)
+    setJarAnalyzerOk(null)
+    setJarAnalyzerMsg('')
+    try {
+      const body: { jar_analyzer_path?: string } = {}
+      if (jarAnalyzerPath.trim()) body.jar_analyzer_path = jarAnalyzerPath.trim()
+      const out = await api.testJarAnalyzer(body)
+      if (!out.ok) {
+        setJarAnalyzerOk(false)
+        setJarAnalyzerMsg(out.error || t('settings.jarAnalyzer.missing'))
+        return
+      }
+      setJarAnalyzerOk(true)
+      setJarAnalyzerMsg(
+        [out.path, out.version, out.java, out.latency_ms != null ? `${out.latency_ms}ms` : '']
+          .filter(Boolean)
+          .join(' · '),
+      )
+    } catch (e) {
+      setJarAnalyzerOk(false)
+      setJarAnalyzerMsg(formatApiError(e, t('settings.jarAnalyzer.timeout')))
+    } finally {
+      setJarAnalyzerTesting(false)
     }
   }
 
   async function save() {
     setMsg('')
     try {
-      const first = endpoints[0]
+      const first = endpoints.find((ep) => !ep.disabled) || endpoints[0]
       const body: Record<string, unknown> = {
         default_model: defaultModel,
         default_base_url: first?.base_url?.trim() || '',
         llm_thread_limit: totalThreadLimit,
+        llm_min_request_interval_sec: Math.max(
+          0,
+          Math.min(60, Number(minRequestInterval) || 0),
+        ),
         context_window: contextWindow,
         http_proxy: httpProxy.trim(),
         chat_proxy: chatProxy.trim(),
         cli_tools_dir: cliToolsDir.trim() || 'tools/cli',
         jadx_path: jadxPath.trim(),
         codegraph_path: codegraphPath.trim(),
+        jar_analyzer_path: jarAnalyzerPath.trim(),
         llm_endpoints: endpoints.map((ep) => ({
           id: ep.id,
           base_url: ep.base_url.trim(),
           api_key: ep.api_key.trim() ? ep.api_key.trim() : null,
           model: ep.model.trim(),
+          wire_api: ep.wire_api,
           max_inflight: Math.max(1, ep.max_inflight || 1),
+          weight: clampWeight(ep.weight),
+          disabled: !!ep.disabled,
         })),
       }
       if (githubPat.trim()) body.github_pat = githubPat.trim()
@@ -413,7 +675,10 @@ export default function SettingsPage() {
             base_url: ep.base_url.trim(),
             api_key: ep.api_key.trim() ? ep.api_key.trim() : null,
             model: ep.model.trim(),
+            wire_api: ep.wire_api,
             max_inflight: Math.max(1, ep.max_inflight || 1),
+            weight: clampWeight(ep.weight),
+            disabled: !!ep.disabled,
           })),
         },
       ]
@@ -436,22 +701,19 @@ export default function SettingsPage() {
                 api_key_set: next.default_api_key_set,
                 model: next.default_model || '',
                 max_inflight: next.llm_thread_limit || 6,
+                disabled: false,
               },
             ]
-      setEndpoints(
-        nextEps.map((ep, i) => ({
-          id: ep.id || `ep-${i + 1}`,
-          base_url: ep.base_url || '',
-          api_key: '',
-          api_key_set: !!ep.api_key_set,
-          model: ep.model || '',
-          max_inflight: Math.max(1, ep.max_inflight || 6),
-        })),
-      )
+      setEndpoints(nextEps.map((ep, i) => draftFromApi(ep, i)))
+      const nextProvider = next.llm_providers?.find((p) => p.id === 'default') || next.llm_providers?.[0]
+      if (nextProvider?.wire_api) setWireApi(parseWireApi(nextProvider.wire_api))
       if (next.default_model) setDefaultModel(next.default_model)
+      if (Number.isFinite(next.llm_min_request_interval_sec)) {
+        setMinRequestInterval(next.llm_min_request_interval_sec)
+      }
       setGithubPat('')
       setFofaKey('')
-      setMsg(t('settings.saved'))
+      setMsg(t('common.saved'))
     } catch (e) {
       setMsg(formatApiError(e))
     }
@@ -464,12 +726,12 @@ export default function SettingsPage() {
     setTokenOk(null)
     if (newToken.trim() && newToken.trim() !== confirmToken.trim()) {
       setTokenOk(false)
-      setTokenMsg(t('settings.tokenMismatch'))
+      setTokenMsg(t('settings.token.mismatch'))
       return
     }
     if (s?.access_token_set && !currentToken.trim()) {
       setTokenOk(false)
-      setTokenMsg(t('settings.tokenNeedCurrent'))
+      setTokenMsg(t('settings.token.needCurrent'))
       return
     }
     setTokenSaving(true)
@@ -487,7 +749,7 @@ export default function SettingsPage() {
       setNewToken('')
       setConfirmToken('')
       setTokenOk(true)
-      setTokenMsg(next.access_token_set ? t('settings.tokenUpdated') : t('settings.tokenCleared'))
+      setTokenMsg(next.access_token_set ? t('settings.token.updated') : t('settings.token.cleared'))
     } catch (e) {
       setTokenOk(false)
       setTokenMsg(formatApiError(e))
@@ -505,17 +767,23 @@ export default function SettingsPage() {
       setLogOk(true)
       if (out.files === 0) {
         setLogMsg(
-          logDaysSafe === 0 ? t('settings.logNoneAll') : t('settings.logNoneOlder', { days: logDaysSafe }),
+          logDaysSafe === 0
+            ? t('settings.log.emptyAll')
+            : t('settings.log.emptyDays', { days: logDaysSafe }),
         )
       } else {
         setLogMsg(
-          t('settings.logDeleted', { files: out.files, projects: out.projects, size: formatBytes(out.bytes) }),
+          t('settings.log.deleted', {
+            files: out.files,
+            projects: out.projects,
+            size: formatBytes(out.bytes),
+          }),
         )
       }
       setLogConfirmOpen(false)
     } catch (e) {
       setLogOk(false)
-      setLogMsg(formatApiError(e, t('settings.logPurgeTimeout')))
+      setLogMsg(formatApiError(e, t('settings.log.timeout')))
     } finally {
       setLogPurging(false)
     }
@@ -523,62 +791,74 @@ export default function SettingsPage() {
 
   if (!s) return <div className="text-slate-400">{t('common.loading')}</div>
 
-  const endpointHints = endpointHintList(wireApi === 'anthropic' ? 'anthropic' : 'domestic')
+  const endpointHints =
+    wireApi === 'anthropic'
+      ? anthropicEndpointHints
+      : wireApi === 'responses'
+        ? responsesEndpointHints
+        : domesticEndpointHints
   const endpointHelpTitle =
-    wireApi === 'anthropic' ? t('settings.hintTitleAnthropic') : t('settings.hintTitleDomestic')
+    wireApi === 'anthropic'
+      ? t('settings.help.title.anthropic')
+      : wireApi === 'responses'
+        ? t('settings.help.title.responses')
+        : t('settings.help.title.chat')
   const endpointHelpDescription =
-    wireApi === 'anthropic' ? t('settings.hintDescAnthropic') : t('settings.hintDescDomestic')
+    wireApi === 'anthropic'
+      ? t('settings.help.desc.anthropic')
+      : wireApi === 'responses'
+        ? t('settings.help.desc.responses')
+        : t('settings.help.desc.chat')
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <h1 className="text-2xl font-semibold">{t('nav.settings')}</h1>
+      <h1 className="text-2xl font-semibold">{t('settings.title')}</h1>
+      <AppUpdateCard />
       <Card>
         <CardContent className="space-y-3 p-4">
           <div className="space-y-1.5">
             <Label>
-              {t('settings.accessToken')} {s.access_token_set ? t('settings.configured') : t('settings.notConfigured')}
+              {s.access_token_set ? t('settings.token.configured') : t('settings.token.unset')}
             </Label>
-            <div className="text-xs text-slate-500">
-              {t('settings.accessTokenHint')}
-            </div>
+            <div className="text-xs text-slate-500">{t('settings.token.hint')}</div>
             {s.access_token_set ? (
               <div className="space-y-1.5">
-                <Label htmlFor="current-access-token">{t('settings.currentToken')}</Label>
+                <Label htmlFor="current-access-token">{t('settings.token.current')}</Label>
                 <Input
                   id="current-access-token"
                   type="password"
                   autoComplete="current-password"
                   value={currentToken}
                   onChange={(e) => setCurrentToken(e.target.value)}
-                  placeholder={t('settings.oldTokenPlaceholder')}
+                  placeholder={t('settings.token.currentPlaceholder')}
                 />
               </div>
             ) : null}
             <div className="space-y-1.5">
-              <Label htmlFor="new-access-token">{t('settings.newToken')}</Label>
+              <Label htmlFor="new-access-token">{t('settings.token.new')}</Label>
               <Input
                 id="new-access-token"
                 type="password"
                 autoComplete="new-password"
                 value={newToken}
                 onChange={(e) => setNewToken(e.target.value)}
-                placeholder={s.access_token_set ? t('settings.newTokenPlaceholderSet') : t('settings.newTokenPlaceholder')}
+                placeholder={s.access_token_set ? t('settings.token.placeholderClear') : t('settings.token.placeholderMin')}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="confirm-access-token">{t('settings.confirmToken')}</Label>
+              <Label htmlFor="confirm-access-token">{t('settings.token.confirm')}</Label>
               <Input
                 id="confirm-access-token"
                 type="password"
                 autoComplete="new-password"
                 value={confirmToken}
                 onChange={(e) => setConfirmToken(e.target.value)}
-                placeholder={t('settings.confirmTokenPlaceholder')}
+                placeholder={t('settings.token.confirmPlaceholder')}
               />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button type="button" disabled={tokenSaving} onClick={() => void saveAccessToken()}>
-                {tokenSaving ? t('common.saving') : t('settings.updateToken')}
+                {tokenSaving ? t('settings.token.saving') : t('settings.token.update')}
               </Button>
               {tokenMsg ? (
                 <span className={tokenOk === false ? 'text-sm text-red-300' : 'text-sm text-slate-300'}>
@@ -592,87 +872,184 @@ export default function SettingsPage() {
       <Card>
         <CardContent className="space-y-3 p-4">
         <div className="space-y-1.5">
-          <Label>{t('settings.wireApi')}</Label>
+          <Label>{t('settings.wire.label')}</Label>
           <Select
             value={wireApi}
             onValueChange={(value) => {
-              if (value === 'anthropic' || value === 'chat') setWireApi(value)
+              if (value === 'anthropic' || value === 'chat' || value === 'responses') {
+                setWireApi(value)
+              }
             }}
           >
             <SelectTrigger className="w-full">
-              <SelectValue>
-                {wireApi === 'anthropic' ? 'Anthropic Messages' : 'OpenAI Chat Completions'}
-              </SelectValue>
+              <SelectValue>{wireApiLabel(wireApi)}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="chat">OpenAI Chat Completions</SelectItem>
+              <SelectItem value="responses">OpenAI Responses</SelectItem>
               <SelectItem value="anthropic">Anthropic Messages</SelectItem>
             </SelectContent>
           </Select>
           <div className="text-xs text-slate-500">
-            {wireApi === 'anthropic' ? t('settings.wireApiHintAnthropic') : t('settings.wireApiHintChat')}
+            {wireApi === 'anthropic'
+              ? t('settings.wire.hint.anthropic')
+              : wireApi === 'responses'
+                ? t('settings.wire.hint.responses')
+                : t('settings.wire.hint.chat')}
           </div>
         </div>
         <div className="space-y-1.5">
           <div className="flex items-center justify-between gap-2">
-            <Label>{t('settings.providerPool')}</Label>
+            <Label>{t('settings.pool.label')}</Label>
             <Button type="button" variant="ghost" size="sm" onClick={() => setEndpointHelpOpen(true)}>
-              {wireApi === 'anthropic' ? t('settings.anthropicEndpoints') : t('settings.domesticEndpoints')}
+              {wireApi === 'anthropic'
+                ? t('settings.pool.btn.anthropic')
+                : wireApi === 'responses'
+                  ? t('settings.pool.btn.responses')
+                  : t('settings.pool.btn.chat')}
             </Button>
           </div>
           <div className="text-xs text-slate-500">
-            {t('settings.providerPoolHint', { total: totalThreadLimit })}
+            {t('settings.pool.hint', { limit: totalThreadLimit })}
+          </div>
+          <div className="flex max-w-xs items-center gap-2">
+            <Label className="shrink-0 whitespace-nowrap">{t('settings.pool.interval')}</Label>
+            <Input
+              type="number"
+              min={0}
+              max={60}
+              step={0.5}
+              value={minRequestInterval}
+              onChange={(e) => {
+                const n = Number(e.target.value)
+                setMinRequestInterval(Number.isFinite(n) ? n : 0)
+              }}
+              title={t('settings.pool.intervalTitle')}
+            />
           </div>
           <div className="space-y-3">
             {endpoints.map((ep, index) => (
               <div
                 key={ep.id}
-                className="space-y-2 rounded-lg border border-foreground/10 bg-muted/20 p-3"
+                className={`space-y-2 rounded-lg border border-foreground/10 bg-muted/20 p-3${ep.disabled ? ' opacity-60' : ''}`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-medium text-muted-foreground">
-                    {t('settings.endpointN', { n: index + 1 })}
+                    {t('settings.pool.endpoint', { n: index + 1 })}
                     <span className="ml-1.5 tabular-nums opacity-70">{ep.id}</span>
+                    {ep.disabled ? <span className="ml-1.5 text-red-300">{t('llm.disabled')}</span> : null}
                   </span>
-                  {endpoints.length > 1 ? (
-                    <Button type="button" variant="ghost" size="sm" onClick={() => removeEndpoint(ep.id)}>
-                      {t('common.delete')}
-                    </Button>
-                  ) : null}
+                  <div className="flex items-center gap-2">
+                    <Label className="flex items-center gap-1.5 text-xs font-normal text-muted-foreground">
+                      <Checkbox
+                        checked={ep.disabled}
+                        disabled={!ep.disabled && enabledCount <= 1}
+                        title={
+                          !ep.disabled && enabledCount <= 1
+                            ? t('settings.pool.disableKeepOne')
+                            : t('settings.pool.disableHint')
+                        }
+                        onCheckedChange={(checked) =>
+                          updateEndpoint(ep.id, { disabled: checked === true })
+                        }
+                      />
+                      {t('settings.pool.disable')}
+                    </Label>
+                    {endpoints.length > 1 ? (
+                      <Button type="button" variant="ghost" size="sm" onClick={() => removeEndpoint(ep.id)}>
+                        {t('common.delete')}
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
                 <EndpointHealthLine health={usageById.get(ep.id)} />
+                <div className="space-y-1">
+                  <Label className="text-xs font-normal text-muted-foreground">{t('settings.pool.wire')}</Label>
+                  <Select
+                    value={ep.wire_api || '__inherit__'}
+                    onValueChange={(value) => {
+                      if (value === '__inherit__' || value == null) {
+                        updateEndpoint(ep.id, { wire_api: '' })
+                        return
+                      }
+                      if (value === 'chat' || value === 'responses' || value === 'anthropic') {
+                        updateEndpoint(ep.id, { wire_api: value })
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue>
+                        {ep.wire_api
+                          ? wireApiLabel(ep.wire_api)
+                          : t('settings.wire.inherit', { label: wireApiLabel(wireApi) })}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__inherit__">{t('settings.wire.inherit', { label: wireApiLabel(wireApi) })}</SelectItem>
+                      <SelectItem value="chat">OpenAI Chat Completions</SelectItem>
+                      <SelectItem value="responses">OpenAI Responses</SelectItem>
+                      <SelectItem value="anthropic">Anthropic Messages</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <Input
                   value={ep.base_url}
                   onChange={(e) => updateEndpoint(ep.id, { base_url: e.target.value })}
                   placeholder={
-                    wireApi === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1'
+                    (ep.wire_api || wireApi) === 'anthropic'
+                      ? 'https://api.anthropic.com/v1'
+                      : 'https://api.openai.com/v1'
                   }
                 />
-                <div className="grid gap-2 sm:grid-cols-[1fr_minmax(8rem,1fr)_7rem]">
+                <div className="grid gap-2 sm:grid-cols-[1fr_minmax(8rem,1fr)_6.5rem_5.5rem]">
                   <Input
                     type="password"
+                    className="self-end"
                     value={ep.api_key}
                     onChange={(e) => updateEndpoint(ep.id, { api_key: e.target.value })}
-                    placeholder={ep.api_key_set ? t('settings.keySetPlaceholder') : 'sk-...'}
+                    placeholder={ep.api_key_set ? t('settings.pool.keySet') : 'sk-...'}
                   />
                   <Input
+                    className="self-end"
                     value={ep.model}
                     onChange={(e) => updateEndpoint(ep.id, { model: e.target.value })}
-                    placeholder={defaultModel.trim() || t('settings.modelName')}
-                    title={t('settings.endpointModelTitle')}
+                    placeholder={defaultModel.trim() || t('settings.pool.modelName')}
+                    title={t('settings.pool.modelTitle')}
                   />
-                  <Input
-                    type="number"
-                    min={1}
-                    value={ep.max_inflight}
-                    onChange={(e) =>
-                      updateEndpoint(ep.id, {
-                        max_inflight: Math.max(1, Number(e.target.value) || 1),
-                      })
-                    }
-                    title={t('settings.maxInflightTitle')}
-                    placeholder={t('settings.concurrency')}
-                  />
+                  <div className="space-y-1">
+                    <Label className="text-xs font-normal text-muted-foreground">
+                      {t('settings.pool.inflightPlaceholder')}
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={ep.max_inflight}
+                      onChange={(e) =>
+                        updateEndpoint(ep.id, {
+                          max_inflight: Math.max(1, Number(e.target.value) || 1),
+                        })
+                      }
+                      title={t('settings.pool.inflightTitle')}
+                      placeholder={t('settings.pool.inflightPlaceholder')}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-normal text-muted-foreground">
+                      {t('settings.pool.weightPlaceholder')}
+                    </Label>
+                    <Input
+                      type="number"
+                      min={0.01}
+                      max={1}
+                      step={0.1}
+                      value={ep.weight}
+                      onChange={(e) =>
+                        updateEndpoint(ep.id, { weight: clampWeight(Number(e.target.value)) })
+                      }
+                      title={t('settings.pool.weightTitle')}
+                      placeholder={t('settings.pool.weightPlaceholder')}
+                    />
+                  </div>
                 </div>
                 {models.length > 0 && probeEndpointId === ep.id ? (
                   <>
@@ -680,7 +1057,7 @@ export default function SettingsPage() {
                       <Input
                         value={modelFilter}
                         onChange={(e) => setModelFilter(e.target.value)}
-                        placeholder={t('projectModel.filterPlaceholder', { count: models.length })}
+                        placeholder={t('settings.pool.filterModels', { n: models.length })}
                       />
                     ) : null}
                     <Select
@@ -694,12 +1071,18 @@ export default function SettingsPage() {
                         <SelectValue>
                           {models.includes(ep.model)
                             ? ep.model
-                            : t('projectModel.pickFromList', { shown: filteredModels.length, total: models.length })}
+                            : t('settings.pool.selectFromList', {
+                                filtered: filteredModels.length,
+                                total: models.length,
+                              })}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent alignItemWithTrigger={false} align="start" className="max-h-72 w-(--anchor-width)">
                         <SelectItem value="__none__">
-                          {t('projectModel.pickFromList', { shown: filteredModels.length, total: models.length })}
+                          {t('settings.pool.selectFromList', {
+                            filtered: filteredModels.length,
+                            total: models.length,
+                          })}
                         </SelectItem>
                         {filteredModels.map((m) => (
                           <SelectItem key={m} value={m}>
@@ -718,7 +1101,7 @@ export default function SettingsPage() {
                     disabled={listing || testing}
                     onClick={() => void fetchModels(ep.id)}
                   >
-                    {listing && probeEndpointId === ep.id ? t('projectModel.fetching') : t('settings.fetchModels')}
+                    {listing && probeEndpointId === ep.id ? t('settings.pool.listing') : t('settings.pool.fetchModels')}
                   </Button>
                   <Button
                     type="button"
@@ -727,10 +1110,14 @@ export default function SettingsPage() {
                     disabled={listing || testing}
                     onClick={() => void testConn(ep.id)}
                   >
-                    {testing && probeEndpointId === ep.id ? t('settings.testing') : t('settings.connTest')}
+                    {testing && probeEndpointId === ep.id ? t('settings.pool.testing') : t('settings.pool.testConn')}
                   </Button>
                   <span className="text-xs text-slate-500">
-                    {ep.model.trim() || defaultModel.trim() || t('settings.noModelSpecified')} · {t('settings.concurrencyN', { n: ep.max_inflight })}
+                    {ep.model.trim() || defaultModel.trim() || t('settings.pool.noModel')} ·{' '}
+                    {t('settings.pool.concurrency', { n: ep.max_inflight })}
+                    {' · '}
+                    {t('settings.pool.weightValue', { n: ep.weight })}
+                    {ep.disabled ? t('settings.pool.notAllocated') : ''}
                   </span>
                 </div>
               </div>
@@ -738,14 +1125,12 @@ export default function SettingsPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="outline" onClick={addEndpoint}>
-              {t('settings.addBaseUrl')}
+              {t('settings.pool.addUrl')}
             </Button>
-            <span className="text-xs text-slate-400">{t('settings.totalThreadLimit', { total: totalThreadLimit })}</span>
+            <span className="text-xs text-slate-400">{t('settings.pool.totalLimit', { n: totalThreadLimit })}</span>
           </div>
           {wireApi === 'chat' ? (
-            <div className="text-xs text-slate-500">
-              {t('settings.zhipuHint')}
-            </div>
+            <div className="text-xs text-slate-500">{t('settings.pool.zhipuHint')}</div>
           ) : null}
         </div>
         <div className="space-y-1.5">
@@ -756,12 +1141,14 @@ export default function SettingsPage() {
               onChange={(e) => setDefaultModel(e.target.value)}
               placeholder="gpt-4o"
             />
-            <div className="text-xs text-slate-500">
-              {t('settings.fallbackModelHint')}
-            </div>
+            <div className="text-xs text-slate-500">{t('settings.fallbackHint')}</div>
             {probeMsg ? (
               <div className="flex items-start gap-2 text-sm">
-                {probeOk != null ? <Badge variant={probeOk ? 'success' : 'destructive'}>{probeOk ? t('customModes.success') : t('customModes.failure')}</Badge> : null}
+                {probeOk != null ? (
+                  <Badge variant={probeOk ? 'success' : 'destructive'}>
+                    {probeOk ? t('common.success') : t('common.fail')}
+                  </Badge>
+                ) : null}
                 <span className={probeOk === false ? 'text-red-300' : 'text-slate-300'}>
                   {probeEndpointId ? `[${probeEndpointId}] ` : ''}
                   {probeMsg}
@@ -769,7 +1156,11 @@ export default function SettingsPage() {
               </div>
             ) : (
               <div className="text-xs text-slate-500">
-                {wireApi === 'anthropic' ? t('settings.probeHintAnthropic') : t('settings.probeHintChat')}
+                {wireApi === 'anthropic'
+                  ? t('settings.probe.hint.anthropic')
+                  : wireApi === 'responses'
+                    ? t('settings.probe.hint.responses')
+                    : t('settings.probe.hint.chat')}
               </div>
             )}
           </div>
@@ -784,7 +1175,7 @@ export default function SettingsPage() {
         </div>
         <div className="space-y-1.5">
           <Label>
-            GitHub PAT {s.github_pat_set ? t('settings.setLeaveBlank') : t('settings.privateRepos')}
+            {s.github_pat_set ? t('settings.github.configured') : t('settings.github.private')}
           </Label>
           <Input
             type="password"
@@ -794,18 +1185,20 @@ export default function SettingsPage() {
           />
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="outline" disabled={githubTesting} onClick={testGithub}>
-              {githubTesting ? t('settings.testing') : t('settings.connTest')}
+              {githubTesting ? t('settings.pool.testing') : t('settings.pool.testConn')}
             </Button>
           </div>
           {githubMsg ? (
             <div className="flex items-start gap-2 text-sm">
-              {githubOk != null ? <Badge variant={githubOk ? 'success' : 'destructive'}>{githubOk ? t('customModes.success') : t('customModes.failure')}</Badge> : null}
+              {githubOk != null ? (
+                <Badge variant={githubOk ? 'success' : 'destructive'}>
+                  {githubOk ? t('common.success') : t('common.fail')}
+                </Badge>
+              ) : null}
               <span className={githubOk === false ? 'text-red-300' : 'text-slate-300'}>{githubMsg}</span>
             </div>
           ) : (
-            <div className="text-xs text-slate-500">
-              {t('settings.githubTestHint')}
-            </div>
+            <div className="text-xs text-slate-500">{t('settings.github.hint')}</div>
           )}
         </div>
         <div className="space-y-1.5">
@@ -818,7 +1211,7 @@ export default function SettingsPage() {
         </div>
         <div className="space-y-1.5">
           <Label>
-            FOFA Key {s.fofa_key_set ? t('settings.setLeaveBlank') : t('settings.fofaForVerifier')}
+            {s.fofa_key_set ? t('settings.fofa.configured') : t('settings.fofa.verifier')}
           </Label>
           <Input
             type="password"
@@ -828,100 +1221,123 @@ export default function SettingsPage() {
           />
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="outline" disabled={fofaTesting} onClick={testFofa}>
-              {fofaTesting ? t('settings.testing') : t('settings.connTest')}
+              {fofaTesting ? t('settings.pool.testing') : t('settings.pool.testConn')}
             </Button>
           </div>
           {fofaMsg ? (
             <div className="flex items-start gap-2 text-sm">
-              {fofaOk != null ? <Badge variant={fofaOk ? 'success' : 'destructive'}>{fofaOk ? t('customModes.success') : t('customModes.failure')}</Badge> : null}
+              {fofaOk != null ? (
+                <Badge variant={fofaOk ? 'success' : 'destructive'}>
+                  {fofaOk ? t('common.success') : t('common.fail')}
+                </Badge>
+              ) : null}
               <span className={fofaOk === false ? 'text-red-300' : 'text-slate-300'}>{fofaMsg}</span>
             </div>
           ) : (
-            <div className="text-xs text-slate-500">
-              {t('settings.fofaTestHint')}
-            </div>
+            <div className="text-xs text-slate-500">{t('settings.fofa.hint')}</div>
           )}
         </div>
         <div className="space-y-1.5">
-          <Label>{t('settings.outboundProxy')}</Label>
+          <Label>{t('settings.httpProxy')}</Label>
           <Input
             value={httpProxy}
             onChange={(e) => setHttpProxy(e.target.value)}
-            placeholder={t('settings.proxyPlaceholder')}
+            placeholder={t('settings.httpProxy.placeholder')}
           />
-          <div className="text-xs text-slate-500">
-            {t('settings.outboundProxyHint')}
-          </div>
+          <div className="text-xs text-slate-500">{t('settings.httpProxy.hint')}</div>
         </div>
         <div className="space-y-1.5">
           <Label>{t('settings.chatProxy')}</Label>
           <Input
             value={chatProxy}
             onChange={(e) => setChatProxy(e.target.value)}
-            placeholder={t('settings.chatProxyPlaceholder')}
+            placeholder={t('settings.chatProxy.placeholder')}
           />
-          <div className="text-xs text-slate-500">{t('settings.chatProxyHint')}</div>
+          <div className="text-xs text-slate-500">{t('settings.chatProxy.hint')}</div>
         </div>
         <div className="space-y-1.5">
-          <Label>{t('settings.cliToolsDir')}</Label>
+          <Label>{t('settings.cliDir')}</Label>
           <Input
             value={cliToolsDir}
             onChange={(e) => setCliToolsDir(e.target.value)}
             placeholder="tools/cli"
           />
-          <div className="text-xs text-slate-500">
-            {t('settings.cliToolsDirHint')}
-          </div>
+          <div className="text-xs text-slate-500">{t('settings.cliDir.hint')}</div>
         </div>
         <div className="space-y-1.5">
-          <Label>{t('settings.jadxPath')}</Label>
+          <Label>{t('settings.jadx')}</Label>
           <div className="flex flex-wrap gap-2">
             <Input
               className="min-w-[16rem] flex-1"
               value={jadxPath}
               onChange={(e) => setJadxPath(e.target.value)}
-              placeholder={t('settings.jadxPlaceholder')}
+              placeholder={t('settings.jadx.placeholder')}
             />
             <Button type="button" variant="outline" disabled={jadxTesting} onClick={testJadx}>
-              {jadxTesting ? t('settings.detecting') : t('settings.detect')}
+              {jadxTesting ? t('settings.jadx.detecting') : t('settings.jadx.detect')}
             </Button>
           </div>
           {jadxMsg ? (
             <div className="flex flex-wrap items-center gap-2 text-sm">
               {jadxOk != null ? (
-                <Badge variant={jadxOk ? 'success' : 'destructive'}>{jadxOk ? t('customModes.success') : t('customModes.failure')}</Badge>
+                <Badge variant={jadxOk ? 'success' : 'destructive'}>
+                  {jadxOk ? t('common.success') : t('common.fail')}
+                </Badge>
               ) : null}
               <span className={jadxOk === false ? 'text-red-300' : 'text-slate-300'}>{jadxMsg}</span>
             </div>
           ) : null}
-          <div className="text-xs text-slate-500">
-            {t('settings.jadxHint')}
-          </div>
+          <div className="text-xs text-slate-500">{t('settings.jadx.hint')}</div>
         </div>
         <div className="space-y-1.5">
-          <Label>{t('settings.codegraphPath')}</Label>
+          <Label>{t('settings.codegraph')}</Label>
           <div className="flex flex-wrap gap-2">
             <Input
               className="min-w-[16rem] flex-1"
               value={codegraphPath}
               onChange={(e) => setCodegraphPath(e.target.value)}
-              placeholder={t('settings.codegraphPlaceholder')}
+              placeholder={t('settings.codegraph.placeholder')}
             />
             <Button type="button" variant="outline" disabled={codegraphTesting} onClick={testCodegraph}>
-              {codegraphTesting ? t('settings.detecting') : t('settings.detect')}
+              {codegraphTesting ? t('settings.jadx.detecting') : t('settings.jadx.detect')}
             </Button>
           </div>
           {codegraphMsg ? (
             <div className="flex flex-wrap items-center gap-2 text-sm">
               {codegraphOk != null ? (
-                <Badge variant={codegraphOk ? 'success' : 'destructive'}>{codegraphOk ? t('customModes.success') : t('customModes.failure')}</Badge>
+                <Badge variant={codegraphOk ? 'success' : 'destructive'}>
+                  {codegraphOk ? t('common.success') : t('common.fail')}
+                </Badge>
               ) : null}
               <span className={codegraphOk === false ? 'text-red-300' : 'text-slate-300'}>{codegraphMsg}</span>
             </div>
           ) : null}
-          <div className="text-xs text-slate-500">
-            {t('settings.codegraphHint')}
+          <div className="text-xs text-slate-500">{t('settings.codegraph.hint')}</div>
+        </div>
+        <div className="space-y-1.5">
+          <Label>{t('settings.jarAnalyzer')}</Label>
+          <div className="flex flex-wrap gap-2">
+            <Input
+              className="min-w-[16rem] flex-1"
+              value={jarAnalyzerPath}
+              onChange={(e) => setJarAnalyzerPath(e.target.value)}
+              placeholder={t('settings.jarAnalyzer.placeholder')}
+            />
+            <Button type="button" variant="outline" disabled={jarAnalyzerTesting} onClick={testJarAnalyzer}>
+              {jarAnalyzerTesting ? t('settings.jadx.detecting') : t('settings.jadx.detect')}
+            </Button>
           </div>
+          {jarAnalyzerMsg ? (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              {jarAnalyzerOk != null ? (
+                <Badge variant={jarAnalyzerOk ? 'success' : 'destructive'}>
+                  {jarAnalyzerOk ? t('common.success') : t('common.fail')}
+                </Badge>
+              ) : null}
+              <span className={jarAnalyzerOk === false ? 'text-red-300' : 'text-slate-300'}>{jarAnalyzerMsg}</span>
+            </div>
+          ) : null}
+          <div className="text-xs text-slate-500">{t('settings.jarAnalyzer.hint')}</div>
         </div>
         <div className="flex items-center gap-3">
           <Button onClick={save}>{t('common.save')}</Button>
@@ -933,13 +1349,11 @@ export default function SettingsPage() {
       <Card>
         <CardContent className="space-y-3 p-4">
           <div className="space-y-1.5">
-            <Label>{t('settings.logPurge')}</Label>
-            <div className="text-xs text-slate-500">
-              {t('settings.logPurgeHint')}
-            </div>
+            <Label>{t('settings.log.title')}</Label>
+            <div className="text-xs text-slate-500">{t('settings.log.hint')}</div>
             <div className="flex flex-wrap items-end gap-2">
               <div className="space-y-1.5">
-                <Label htmlFor="log-days">{t('settings.logPurgeDays')}</Label>
+                <Label htmlFor="log-days">{t('settings.log.days')}</Label>
                 <Input
                   id="log-days"
                   type="number"
@@ -957,13 +1371,15 @@ export default function SettingsPage() {
                   setLogConfirmOpen(true)
                 }}
               >
-                {t('settings.logPurgeBtn')}
+                {t('settings.log.purge')}
               </Button>
             </div>
             {logMsg ? (
               <div className="flex items-start gap-2 text-sm">
                 {logOk != null ? (
-                  <Badge variant={logOk ? 'success' : 'destructive'}>{logOk ? t('settings.done') : t('customModes.failure')}</Badge>
+                  <Badge variant={logOk ? 'success' : 'destructive'}>
+                    {logOk ? t('common.done') : t('common.fail')}
+                  </Badge>
                 ) : null}
                 <span className={logOk === false ? 'text-red-300' : 'text-slate-300'}>{logMsg}</span>
               </div>
@@ -980,9 +1396,11 @@ export default function SettingsPage() {
       >
         <DialogContent showCloseButton={!logPurging}>
           <DialogHeader>
-            <DialogTitle>{t('settings.logPurgeTitle')}</DialogTitle>
+            <DialogTitle>{t('settings.log.confirmTitle')}</DialogTitle>
             <DialogDescription>
-              {logDaysSafe === 0 ? t('settings.logPurgeDialogAll') : t('settings.logPurgeDialogOlder', { days: logDaysSafe })}
+              {logDaysSafe === 0
+                ? t('settings.log.confirmAll')
+                : t('settings.log.confirmDays', { days: logDaysSafe })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -990,7 +1408,7 @@ export default function SettingsPage() {
               {t('common.cancel')}
             </Button>
             <Button variant="destructive" disabled={logPurging} onClick={() => void confirmPurgeLogs()}>
-              {logPurging ? t('settings.purging') : t('settings.purgeConfirm')}
+              {logPurging ? t('settings.log.purging') : t('settings.log.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1006,7 +1424,9 @@ export default function SettingsPage() {
               <div key={item.name} className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
-                    <div className="font-medium text-slate-100">{item.name}</div>
+                    <div className="font-medium text-slate-100">
+                      {item.nameKey ? t(item.nameKey) : item.name}
+                    </div>
                     <div className="mt-1 break-all font-mono text-xs text-sky-300">{item.endpoint}</div>
                   </div>
                   <Button
@@ -1016,16 +1436,7 @@ export default function SettingsPage() {
                     onClick={() => {
                       setEndpoints((prev) => {
                         if (!prev.length) {
-                          return [
-                            {
-                              id: 'ep-1',
-                              base_url: item.endpoint,
-                              api_key: '',
-                              api_key_set: false,
-                              model: defaultModel.trim(),
-                              max_inflight: 6,
-                            },
-                          ]
+                          return [{ ...emptyEndpoint('ep-1', defaultModel.trim()), base_url: item.endpoint }]
                         }
                         const emptyIdx = prev.findIndex((ep) => !ep.base_url.trim())
                         const idx = emptyIdx >= 0 ? emptyIdx : 0
@@ -1036,11 +1447,11 @@ export default function SettingsPage() {
                       setEndpointHelpOpen(false)
                     }}
                   >
-                    {t('settings.fill')}
+                    {t('settings.help.fill')}
                   </Button>
                 </div>
-                <div className="mt-2 text-xs text-slate-400">{t('settings.modelExamples', { models: item.models })}</div>
-                <div className="mt-1 text-xs text-slate-500">{item.note}</div>
+                <div className="mt-2 text-xs text-slate-400">{t('settings.help.models', { models: item.models })}</div>
+                <div className="mt-1 text-xs text-slate-500">{t(item.noteKey)}</div>
               </div>
             ))}
           </div>
@@ -1053,13 +1464,11 @@ export default function SettingsPage() {
 function EndpointHealthLine({ health }: { health: LlmEndpointUsage | undefined }) {
   if (!health) return null
   const skip = endpointSkipLabel(health)
-  const reason = endpointCooldownReason(health)
-  if (!skip && !reason) return null
+  const reason = skip ? endpointCooldownReason(health) : ''
+  if (!skip) return null
   return (
     <div className="text-xs break-all">
-      {skip ? (
-        <span className={health.disabled ? 'text-red-300' : 'text-amber-200'}>{skip}</span>
-      ) : null}
+      <span className={health.disabled ? 'text-red-300' : 'text-amber-200'}>{skip}</span>
       {reason ? <span className="mt-0.5 block whitespace-pre-wrap text-slate-400">{reason}</span> : null}
     </div>
   )

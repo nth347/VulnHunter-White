@@ -31,6 +31,7 @@ PARALLEL_SAFE = frozenset(
         "ListBytecode",
         "DecompileJava",
         "MarkBusinessJar",
+        "MarkCodeIntel",
         "FindSymbol",
         "FindCallers",
         "FindCallees",
@@ -88,6 +89,7 @@ ROLE_ACL: dict[str, frozenset[str]] = {
             "ListBytecode",
             "DecompileJava",
             "MarkBusinessJar",
+            "MarkCodeIntel",
         }
     ),
     "recon_source_ext": frozenset(
@@ -198,7 +200,6 @@ ROLE_ACL: dict[str, frozenset[str]] = {
             "ReadCveRecord",
             "SetCveRecordField",
             "AppendAffectedLocations",
-            "FinishFile",
             "FinishRound",
             "ListBytecode",
             "DecompileJava",
@@ -296,6 +297,17 @@ ROLE_ACL: dict[str, frozenset[str]] = {
             "SubmitAttackChain",
             "IndexAttackChain",
             "FinishAttackChain",
+        }
+    ),
+    "vuln_dedup": frozenset(
+        {
+            "Read",
+            "Grep",
+            "Glob",
+            "TodoWrite",
+            "SearchOldVuln",
+            "RecordVulnDedup",
+            "FinishVulnDedup",
         }
     ),
     "cli_indexer": frozenset(
@@ -406,10 +418,18 @@ class ToolRegistry:
         *,
         project_id: int | None = None,
         vuln_id: int | None = None,
+        compress_count: int | None = None,
     ) -> list[dict[str, Any]]:
+        from .phase_worker import (
+            UNCONSTRAINED_FINISH_ROUND_AFTER_COMPRESS,
+            unconstrained_finish_round_description,
+        )
+
         allowed = tools_allowed_for_role(role)
         hide_run_code = role == "reviewer"
         hide_dynamic_tools = False
+        unconstrained = role in ("unconstrained_worker", "unconstrained-worker")
+        hide_finish_round = unconstrained and int(compress_count or 0) < UNCONSTRAINED_FINISH_ROUND_AFTER_COMPRESS
         if role == "reviewer" and project_id is not None:
             from ..dynamic_verify import project_is_harness, vuln_forces_static_review
 
@@ -423,15 +443,20 @@ class ToolRegistry:
                 continue
             if hide_dynamic_tools and name in _STATIC_FORCED_BLOCKED_TOOLS:
                 continue
+            if hide_finish_round and name == "FinishRound":
+                continue
             spec = self._tools.get(name)
             if not spec:
                 continue
+            description = spec.description
+            if unconstrained and name == "FinishRound":
+                description = unconstrained_finish_round_description()
             out.append(
                 {
                     "type": "function",
                     "function": {
                         "name": spec.name,
-                        "description": spec.description,
+                        "description": description,
                         "parameters": spec.parameters,
                     },
                 }
@@ -626,6 +651,7 @@ def register_all_tools() -> None:
     from . import phase_cli_index  # noqa: F401
     from . import phase_verifier  # noqa: F401
     from . import phase_attack_chain  # noqa: F401
+    from . import phase_vuln_dedup  # noqa: F401
     from . import run_code  # noqa: F401
     from . import phase_cve_record  # noqa: F401
     from . import phase_decompile  # noqa: F401
