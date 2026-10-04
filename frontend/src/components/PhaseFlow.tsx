@@ -34,6 +34,15 @@ function branchHints(t: Translate): Record<string, string> {
   }
 }
 
+// Recon sub-phase labels come from the backend (Chinese); translate by id so
+// they follow the UI language instead of displaying the raw backend label.
+const RECON_SUB_LABEL_KEYS: Record<string, string> = {
+  map: 'flow.preview.map',
+  source_ext: 'flow.preview.ext',
+  old_vulns: 'flow.preview.oldVulns',
+  mark: 'flow.preview.mark',
+}
+
 type Tone = 'neutral' | 'success' | 'info'
 
 function badgeVariant(tone: Tone): 'outline' | 'success' | 'info' {
@@ -378,7 +387,7 @@ export default function PhaseFlow({
         node: (
           <FlowTip hint={BRANCH_HINTS[item.id] || t('flow.branch.subphase', { label: item.label })} side="right">
             <Badge variant={badgeVariant(subphaseTone(item, subs, state))}>
-              {item.label}
+              {RECON_SUB_LABEL_KEYS[item.id] ? t(RECON_SUB_LABEL_KEYS[item.id]) : item.label}
               {item.done ? ' ✓' : ''}
             </Badge>
           </FlowTip>

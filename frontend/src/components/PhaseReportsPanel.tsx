@@ -60,6 +60,31 @@ function reportSubTabs(t: Translate): Record<string, readonly [string, string][]
   }
 }
 
+// Backend returns *_label fields in Chinese; translate by id so the reports
+// panel follows the UI language instead of showing the raw backend labels.
+function reportPhaseLabels(t: Translate): Record<string, string> {
+  return Object.fromEntries(reportPhases(t)) as Record<string, string>
+}
+
+function reportSubLabels(t: Translate): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const groups of Object.values(reportSubTabs(t))) {
+    for (const [id, label] of groups) {
+      if (id !== 'all') map[id] = label
+    }
+  }
+  return map
+}
+
+function reportKindLabels(t: Translate): Record<string, string> {
+  return {
+    doc: t('flow.reports.kind.doc'),
+    round: t('flow.reports.kind.round'),
+    summary: t('flow.reports.kind.summary'),
+    rescue: t('flow.reports.kind.rescue'),
+  }
+}
+
 const KIND_VARIANT: Record<string, 'info' | 'success' | 'warning' | 'outline'> = {
   doc: 'info',
   round: 'success',
@@ -98,6 +123,9 @@ export default function PhaseReportsPanel({
   const { t } = useI18n()
   const PHASES = reportPhases(t)
   const SUB_TABS = reportSubTabs(t)
+  const PHASE_LABELS = reportPhaseLabels(t)
+  const SUB_LABELS = reportSubLabels(t)
+  const KIND_LABELS = reportKindLabels(t)
   const [phase, setPhase] = useState(
     initialPhase === 'reviewer'
       ? 'reviewer'
@@ -231,10 +259,10 @@ export default function PhaseReportsPanel({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
                   <div className="truncate font-medium">{r.title}</div>
-                  <Badge variant={KIND_VARIANT[r.kind] || 'outline'}>{r.kind_label}</Badge>
+                  <Badge variant={KIND_VARIANT[r.kind] || 'outline'}>{KIND_LABELS[r.kind] || r.kind_label}</Badge>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {r.subphase_label}
+                  {SUB_LABELS[r.subphase] || r.subphase_label}
                   {roundHint(r, t)}
                   {` · ${formatDateTime(r.mtime)}`}
                 </div>
@@ -270,7 +298,9 @@ export default function PhaseReportsPanel({
               <div>
                 <h2 className="text-lg font-semibold">{detail.title}</h2>
                 <div className="mt-1 text-xs text-slate-400">
-                  {detail.phase_label} · {detail.subphase_label} · {detail.kind_label}
+                  {PHASE_LABELS[detail.phase] || detail.phase_label} ·{' '}
+                  {SUB_LABELS[detail.subphase] || detail.subphase_label} ·{' '}
+                  {KIND_LABELS[detail.kind] || detail.kind_label}
                   {roundHint(detail, t)}
                   {` · ${formatDateTime(detail.mtime)}`}
                 </div>

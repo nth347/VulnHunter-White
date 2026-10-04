@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsList, TabsTab, TabsPanel } from '@/components/ui/tabs'
 
 type EndpointHint = {
   name: string
@@ -298,6 +299,7 @@ export default function SettingsPage() {
   const [tokenOk, setTokenOk] = useState<boolean | null>(null)
   const [tokenSaving, setTokenSaving] = useState(false)
   const [epUsage, setEpUsage] = useState<LlmEndpointUsage[]>([])
+  const [activeTab, setActiveTab] = useState('llm')
 
   useEffect(
     () =>
@@ -811,9 +813,19 @@ export default function SettingsPage() {
         : t('settings.help.desc.chat')
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
+    <div className="space-y-4">
       <h1 className="text-2xl font-semibold">{t('settings.title')}</h1>
-      <AppUpdateCard />
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(String(v))}>
+        <TabsList>
+          <TabsTab value="llm">{t('settings.tab.llm')}</TabsTab>
+          <TabsTab value="integrations">{t('settings.tab.integrations')}</TabsTab>
+          <TabsTab value="tools">{t('settings.tab.tools')}</TabsTab>
+          <TabsTab value="audit">{t('settings.tab.audit')}</TabsTab>
+          <TabsTab value="security">{t('settings.tab.security')}</TabsTab>
+          <TabsTab value="maintenance">{t('settings.tab.maintenance')}</TabsTab>
+        </TabsList>
+
+        <TabsPanel value="security">
       <Card>
         <CardContent className="space-y-3 p-4">
           <div className="space-y-1.5">
@@ -869,6 +881,9 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+        </TabsPanel>
+
+        <TabsPanel value="llm">
       <Card>
         <CardContent className="space-y-3 p-4">
         <div className="space-y-1.5">
@@ -1173,6 +1188,14 @@ export default function SettingsPage() {
             onChange={(e) => setContextWindow(Number(e.target.value) || 128000)}
           />
         </div>
+        <SettingsSaveBar onSave={save} msg={msg} label={t('common.save')} />
+        </CardContent>
+      </Card>
+        </TabsPanel>
+
+        <TabsPanel value="integrations">
+      <Card>
+        <CardContent className="space-y-3 p-4">
         <div className="space-y-1.5">
           <Label>
             {s.github_pat_set ? t('settings.github.configured') : t('settings.github.private')}
@@ -1237,6 +1260,14 @@ export default function SettingsPage() {
             <div className="text-xs text-slate-500">{t('settings.fofa.hint')}</div>
           )}
         </div>
+        <SettingsSaveBar onSave={save} msg={msg} label={t('common.save')} />
+        </CardContent>
+      </Card>
+        </TabsPanel>
+
+        <TabsPanel value="tools">
+      <Card>
+        <CardContent className="space-y-3 p-4">
         <div className="space-y-1.5">
           <Label>{t('settings.httpProxy')}</Label>
           <Input
@@ -1339,13 +1370,18 @@ export default function SettingsPage() {
           ) : null}
           <div className="text-xs text-slate-500">{t('settings.jarAnalyzer.hint')}</div>
         </div>
-        <div className="flex items-center gap-3">
-          <Button onClick={save}>{t('common.save')}</Button>
-          {msg ? <span className="text-sm text-slate-300">{msg}</span> : null}
-        </div>
+        <SettingsSaveBar onSave={save} msg={msg} label={t('common.save')} />
         </CardContent>
       </Card>
+        </TabsPanel>
+
+        <TabsPanel value="audit">
       <CustomAuditModesCard />
+        </TabsPanel>
+
+        <TabsPanel value="maintenance">
+      <div className="space-y-4">
+      <AppUpdateCard />
       <Card>
         <CardContent className="space-y-3 p-4">
           <div className="space-y-1.5">
@@ -1387,6 +1423,9 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+      </div>
+        </TabsPanel>
+      </Tabs>
       <Dialog
         open={logConfirmOpen}
         onOpenChange={(next) => {
@@ -1457,6 +1496,23 @@ export default function SettingsPage() {
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+function SettingsSaveBar({
+  onSave,
+  msg,
+  label,
+}: {
+  onSave: () => void
+  msg: string
+  label: string
+}) {
+  return (
+    <div className="flex items-center gap-3 border-t border-border pt-3">
+      <Button onClick={onSave}>{label}</Button>
+      {msg ? <span className="text-sm text-slate-300">{msg}</span> : null}
     </div>
   )
 }

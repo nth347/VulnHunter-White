@@ -15,6 +15,12 @@ export const settingsPack = {
     'llm.reasonWithDetail': '{kind}：{detail}',
 
     'settings.title': '设置',
+    'settings.tab.llm': '模型',
+    'settings.tab.integrations': '集成',
+    'settings.tab.tools': '工具与代理',
+    'settings.tab.audit': '审计模式',
+    'settings.tab.security': '访问令牌',
+    'settings.tab.maintenance': '维护',
     'settings.token.configured': '访问令牌（已配置）',
     'settings.token.unset': '访问令牌（未配置）',
     'settings.token.hint':
@@ -271,6 +277,12 @@ export const settingsPack = {
     'llm.reasonWithDetail': '{kind}: {detail}',
 
     'settings.title': 'Settings',
+    'settings.tab.llm': 'Models',
+    'settings.tab.integrations': 'Integrations',
+    'settings.tab.tools': 'Tools & Proxy',
+    'settings.tab.audit': 'Audit Modes',
+    'settings.tab.security': 'Access Token',
+    'settings.tab.maintenance': 'Maintenance',
     'settings.token.configured': 'Access token (configured)',
     'settings.token.unset': 'Access token (not set)',
     'settings.token.hint':
