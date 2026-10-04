@@ -21,7 +21,7 @@ type PreviewProps = {
   dynamicVerifyEnabled: boolean
   dynamicVerifyMode?: 'off' | 'lab' | 'harness'
   manualLab: boolean
-  /** False on Docker Desktop — lab means manual target only. */
+  /** False on Docker Desktop - lab means manual target only. */
   dockerLabBuildEnabled?: boolean
   verifierEnabled: boolean
   attackChainEnabled?: boolean

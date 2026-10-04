@@ -7,33 +7,59 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from ..report_sections import (
+    any_heading_re,
+    heading,
+    heading_alternation,
+    heading_re,
+    label_alternation,
+    label_text,
+)
+
 _CST = timezone(timedelta(hours=8))
-_PRODUCED_LINE_RE = re.compile(r"(?m)^\*\*产出时间\*\*[：:].+$")
+_PRODUCED_LINE_RE = re.compile(
+    rf"(?m)^\*\*(?:{label_alternation('produced_at')})\*\*[：:].+$"
+)
 _H1_RE = re.compile(r"(?m)^(# .+)\n")
-ASSET_PROOF_HEADING = "## 互联网资产证明"
-SEARCH_FINGERPRINT_HEADING = ASSET_PROOF_HEADING
-_ASSET_PROOF_HEADING_RE = re.compile(r"(?m)^##\s+(互联网资产证明|应用搜索指纹)\s*$")
-_NEXT_H2_RE = re.compile(r"(?m)^##\s+")
+# Matches the heading in either language, including the legacy
+# "application search fingerprints" wording.
+_ASSET_PROOF_HEADING_RE = heading_re("asset_proof", level=2)
+_NEXT_H2_RE = any_heading_re(2)
+
+
+def asset_proof_heading(language: str | None = None) -> str:
+    return heading("asset_proof", 2, language)
 _FOFA_BLOCK_RE = re.compile(
     r"####\s*FOFA\s*\n+```(?:text|fofa)?\n(.*?)```",
     re.IGNORECASE | re.DOTALL,
 )
 _X_BLOCK_RE = re.compile(
-    r"####\s*X\s*情报社区\s*\n+```(?:text)?\n(.*?)```",
+    rf"####\s*(?:{heading_alternation('x_intel')})\s*\n+```(?:text)?\n(.*?)```",
     re.IGNORECASE | re.DOTALL,
 )
 _PLACEHOLDER_QUERY_RE = re.compile(
-    r"(待根据|待运行|待确认|待补采|待补全|TODO|TBD)",
+    r"(待根据|待运行|待确认|待补采|待补全|TODO|TBD|"
+    r"to be (?:determined|confirmed|filled|collected)|pending|placeholder)",
     re.IGNORECASE,
 )
-_ASSET_PROOF_INSERT_MARKERS = (
-    "\n## 漏洞技术细节\n",
-    "\n## 复现证明\n",
-    "\n## 修复方案\n",
-    "\n## 备注\n",
-    "\n## PoC\n",
-    "\n## 环境\n",
-    "\n## 结论\n",
+_ASSET_PROOF_INSERT_MARKER_KEYS = (
+    "technical_details",
+    "reproduction",
+    "remediation",
+    "notes",
+    "poc",
+    "environment",
+    "conclusion",
+)
+# The section is inserted before whichever of these comes first, so the
+# markers have to cover both languages - a zh report keeps working after the
+# template is translated and vice versa.
+_ASSET_PROOF_INSERT_MARKERS = tuple(
+    dict.fromkeys(
+        f"\n{heading(key, 2, lang)}\n"
+        for key in _ASSET_PROOF_INSERT_MARKER_KEYS
+        for lang in ("zh", "en")
+    )
 )
 
 
@@ -42,27 +68,59 @@ def _fingerprint_value(raw: object, fallback: str) -> str:
     return value or fallback
 
 
+_FINGERPRINT_TEXT = {
+    "zh": {
+        "fofa_placeholder": "待根据应用标题、稳定 body/header 特征、favicon hash 等确认",
+        "x_placeholder": "待根据 app/title/body/cert/icon_hash 等资产测绘字段确认",
+        "note": (
+            "用于在公开资产测绘平台定位同类应用资产；优先使用应用自身稳定特征，"
+            "不把漏洞路径、PoC 参数或一次性业务数据当作唯一指纹。"
+            "测绘语句不允许出现「或」关系。"
+        ),
+    },
+    "en": {
+        "fofa_placeholder": (
+            "to be confirmed from the application title, stable body/header "
+            "features, favicon hash, etc."
+        ),
+        "x_placeholder": (
+            "to be confirmed from asset-mapping fields such as "
+            "app/title/body/cert/icon_hash"
+        ),
+        "note": (
+            "Used to locate comparable application assets on public asset-mapping "
+            "platforms. Prefer stable features of the application itself; do not "
+            "use the vulnerable path, PoC parameters or one-off business data as "
+            "the only fingerprint. The query must not contain an OR relation."
+        ),
+    },
+}
+
+
 def search_fingerprint_section(
     *,
     fofa: object = None,
     x: object = None,
     basis: object = None,
+    language: str | None = None,
 ) -> str:
     """Build the required internet-asset proof section (FOFA + X queries)."""
     del basis  # kept for call-site compatibility; no longer rendered
-    fofa_query = _fingerprint_value(fofa, "待根据应用标题、稳定 body/header 特征、favicon hash 等确认")
-    x_query = _fingerprint_value(x, "待根据 app/title/body/cert/icon_hash 等资产测绘字段确认")
-    return f"""{ASSET_PROOF_HEADING}
-> 用于在公开资产测绘平台定位同类应用资产；优先使用应用自身稳定特征，不把漏洞路径、PoC 参数或一次性业务数据当作唯一指纹。测绘语句不允许出现「或」关系。
+    lang = (language or "en").strip().lower()
+    text = _FINGERPRINT_TEXT.get(lang, _FINGERPRINT_TEXT["en"])
+    fofa_query = _fingerprint_value(fofa, text["fofa_placeholder"])
+    x_query = _fingerprint_value(x, text["x_placeholder"])
+    return f"""{heading("asset_proof", 2, lang)}
+> {text["note"]}
 
-### 精准测绘语法
+{heading("mapping_queries", 3, lang)}
 
-#### FOFA
+{heading("fofa", 4, lang)}
 ```text
 {fofa_query}
 ```
 
-#### X 情报社区
+{heading("x_intel", 4, lang)}
 ```text
 {x_query}
 ```
@@ -85,18 +143,22 @@ def extract_asset_queries(text: str) -> tuple[str, str]:
 
 
 _HINT_SKIP_RE = re.compile(
-    r"(暂未明确|待补|待根据|待确认|待运行|第一段|第二段|TODO|TBD)",
+    r"(暂未明确|待补|待根据|待确认|待运行|第一段|第二段|TODO|TBD|"
+    r"to be (?:determined|confirmed|filled)|not yet (?:determined|specified)|"
+    r"first paragraph|second paragraph|pending|placeholder)",
     re.IGNORECASE,
 )
 _VULN_TITLE_RE = re.compile(
-    r"(注入|未授权|漏洞|XSS|SQLi|RCE|SSRF|上传|遍历|绕过)",
+    r"(注入|未授权|漏洞|XSS|SQLi|RCE|SSRF|上传|遍历|绕过|"
+    r"injection|unauthoriz|vulnerab|upload|traversal|bypass|disclosure)",
     re.IGNORECASE,
 )
 _VENDOR_SECTION_RE = re.compile(
-    r"(?ms)^##\s+漏洞厂商全称\s*\n+(.+?)(?=\n##\s|\Z)"
+    rf"(?ms)^##\s+(?:{heading_alternation('vendor')})\s*\n+(.+?)(?=\n##\s|\Z)"
 )
 _PRODUCT_SECTION_RE = re.compile(
-    r"(?ms)^##\s+已知受影响产品及版本\s*\n+(.+?)(?=\n##\s|\Z)"
+    rf"(?ms)^##\s+(?:{heading_alternation('affected_products')})\s*\n+(.+?)"
+    r"(?=\n##\s|\Z)"
 )
 
 
@@ -162,13 +224,18 @@ def replace_search_fingerprint_section(
     fofa: object = None,
     x: object = None,
     basis: object = None,
+    language: str | None = None,
 ) -> str:
     """Insert or replace the internet-asset proof section in place."""
     body = text or ""
-    section = search_fingerprint_section(fofa=fofa, x=x, basis=basis).strip()
+    section = search_fingerprint_section(
+        fofa=fofa, x=x, basis=basis, language=language
+    ).strip()
     match = _ASSET_PROOF_HEADING_RE.search(body)
     if not match:
-        return ensure_search_fingerprint_section(body, fofa=fofa, x=x, basis=basis)
+        return ensure_search_fingerprint_section(
+            body, fofa=fofa, x=x, basis=basis, language=language
+        )
     rest = body[match.end() :]
     nxt = _NEXT_H2_RE.search(rest)
     end = match.end() + nxt.start() if nxt else len(body)
@@ -189,10 +256,13 @@ def write_search_fingerprint_section(
     fofa: object = None,
     x: object = None,
     basis: object = None,
+    language: str | None = None,
 ) -> str:
     """Rewrite the asset-proof section on disk; keep the rest of the report."""
     text = path.read_text(encoding="utf-8", errors="ignore") if path.exists() else ""
-    updated = replace_search_fingerprint_section(text, fofa=fofa, x=x, basis=basis)
+    updated = replace_search_fingerprint_section(
+        text, fofa=fofa, x=x, basis=basis, language=language
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(updated, encoding="utf-8")
     return updated
@@ -204,12 +274,15 @@ def ensure_search_fingerprint_section(
     fofa: object = None,
     x: object = None,
     basis: object = None,
+    language: str | None = None,
 ) -> str:
     """Ensure vulnerability reports carry FOFA and X asset search fingerprints."""
     body = text or ""
     if _ASSET_PROOF_HEADING_RE.search(body):
         return body
-    section = search_fingerprint_section(fofa=fofa, x=x, basis=basis).strip()
+    section = search_fingerprint_section(
+        fofa=fofa, x=x, basis=basis, language=language
+    ).strip()
     for marker in _ASSET_PROOF_INSERT_MARKERS:
         idx = body.find(marker)
         if idx != -1:
@@ -227,13 +300,19 @@ def format_produced_at(dt: datetime | None = None) -> str:
     return dt.astimezone(_CST).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def produced_at_line(dt: datetime | None = None) -> str:
-    return f"**产出时间**：{format_produced_at(dt)}"
+def produced_at_line(dt: datetime | None = None, language: str | None = None) -> str:
+    lang = (language or "en").strip().lower()
+    sep = "：" if lang == "zh" else ": "
+    return f"**{label_text('produced_at', lang)}**{sep}{format_produced_at(dt)}"
 
 
-def stamp_produced_at(text: str, dt: datetime | None = None) -> str:
-    """Ensure report markdown has a single 产出时间 line near the top."""
-    line = produced_at_line(dt)
+def stamp_produced_at(
+    text: str,
+    dt: datetime | None = None,
+    language: str | None = None,
+) -> str:
+    """Ensure report markdown has a single produced-at line near the top."""
+    line = produced_at_line(dt, language)
     body = text or ""
     existing = _PRODUCED_LINE_RE.search(body)
     if existing:
@@ -256,9 +335,14 @@ def stamp_produced_at(text: str, dt: datetime | None = None) -> str:
     return line + "\n\n" + body.lstrip()
 
 
-def write_report_md(path: Path, text: str, produced_at: datetime | None = None) -> None:
+def write_report_md(
+    path: Path,
+    text: str,
+    produced_at: datetime | None = None,
+    language: str | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(stamp_produced_at(text, produced_at), encoding="utf-8")
+    path.write_text(stamp_produced_at(text, produced_at, language), encoding="utf-8")
 
 
 def write_advisory_md(path: Path, text: str) -> None:
@@ -353,7 +437,7 @@ Do not run this against systems you do not own or have authorization to test.
 
 ## Severity / CWE
 
-- **Severity:** (Reviewer — ConfirmVuln computes from cvss_vector)
+- **Severity:** (Reviewer - ConfirmVuln computes from cvss_vector)
 - **CVSS 3.1:** (Reviewer supplies vector; score is computed)
 - **CVSS 4.0:** (Reviewer supplies cvss4_vector; score is computed)
 - **CWE:** {cwe}
@@ -361,44 +445,67 @@ Do not run this against systems you do not own or have authorization to test.
 """
 
 
-REPORT_REQUIRED_H2: tuple[str, ...] = (
-    "## 漏洞描述",
-    "## 漏洞危害",
-    "## 漏洞厂商全称",
-    "## 已知受影响产品及版本",
-    "## 互联网资产证明",
-    "## 漏洞技术细节",
-    "## 同根因受影响点",
-    "## 复现证明",
-    "## 修复方案",
-    "## 备注",
+REPORT_REQUIRED_H2_KEYS: tuple[str, ...] = (
+    "description",
+    "impact",
+    "vendor",
+    "affected_products",
+    "asset_proof",
+    "technical_details",
+    "same_root_cause",
+    "reproduction",
+    "remediation",
+    "notes",
 )
 
-BYPASS_PATCH_BYPASS_HEADING = "### 补丁绕过简析"
-VULN_CODE_HEADING = "### 漏洞代码"
-ASSET_PROOF_HEADING_ALIASES = (ASSET_PROOF_HEADING, "## 应用搜索指纹")
-_VULN_CODE_HEADING_RE = re.compile(r"(?m)^###\s+漏洞代码\s*$")
-_NEXT_H23_RE = re.compile(r"(?m)^#{2,3}\s+")
+
+def required_report_h2(language: str | None = None) -> tuple[str, ...]:
+    """Required H2 headings, worded for the report's language."""
+    return tuple(heading(key, 2, language) for key in REPORT_REQUIRED_H2_KEYS)
+
+
+def bypass_patch_heading(language: str | None = None) -> str:
+    return heading("patch_bypass", 3, language)
+
+
+def vuln_code_heading(language: str | None = None) -> str:
+    return heading("vuln_code", 3, language)
+
+
+_REQUIRED_H2_RES = {key: heading_re(key, level=2) for key in REPORT_REQUIRED_H2_KEYS}
+_PATCH_BYPASS_RE = heading_re("patch_bypass", level=3)
+_VULN_CODE_HEADING_RE = heading_re("vuln_code", level=3)
+_NEXT_H23_RE = any_heading_re("{2,3}")
 _CODE_FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 _BACKTICK_PATH_RE = re.compile(r"`([^`\n]+)`")
 _BARE_PATH_RE = re.compile(
-    r"(?m)(?:完整路径|文件路径|路径|文件)\s*[：:]\s*`?([^\s`\n]+)`?"
+    r"(?m)(?:完整路径|文件路径|路径|文件|full path|file path|path|file)"
+    r"\s*[：:]\s*`?([^\s`\n]+)`?",
+    re.IGNORECASE,
 )
 _MIN_HARNESS_CODE_CHARS = 8
 
 
-def _has_report_heading(text: str, heading: str) -> bool:
-    if heading == ASSET_PROOF_HEADING:
-        return any(alias in text for alias in ASSET_PROOF_HEADING_ALIASES)
-    return heading in text
+def missing_report_headings(
+    text: str,
+    *,
+    bypass: bool = False,
+    language: str | None = None,
+) -> list[str]:
+    """Required markdown headings missing from a report body.
 
-
-def missing_report_headings(text: str, *, bypass: bool = False) -> list[str]:
-    """Return required markdown headings missing from a Chinese report body."""
+    Presence is checked in every supported language so a report stays valid
+    whichever language it was written in; the names returned are worded for
+    `language`, because they are shown back to the agent as what to add.
+    """
     body = text or ""
-    missing = [h for h in REPORT_REQUIRED_H2 if not _has_report_heading(body, h)]
-    if bypass and BYPASS_PATCH_BYPASS_HEADING not in body:
-        missing.append(BYPASS_PATCH_BYPASS_HEADING)
+    missing = [
+        heading(key, 2, language)
+        for key in REPORT_REQUIRED_H2_KEYS
+        if not _REQUIRED_H2_RES[key].search(body)
+    ]
+    if bypass and not _PATCH_BYPASS_RE.search(body):
+        missing.append(bypass_patch_heading(language))
     return missing
 
 
@@ -407,6 +514,11 @@ _REPORT_H1_RE = re.compile(r"(?m)^#\s+(.+)$")
 CHINESE_TITLE_ERROR = (
     "中文报告标题须为中文（可保留产品名、类名、CVE 编号原文），不要只用英文"
 )
+ENGLISH_TITLE_ERROR = (
+    "The report title must be in English (product names, class names and CVE ids "
+    "may stay verbatim); do not write a Chinese-only title"
+)
+_LATIN_WORD_RE = re.compile(r"[A-Za-z]{2,}")
 
 
 def has_cjk(text: str) -> bool:
@@ -434,21 +546,42 @@ def extract_report_titles(report_md: str) -> list[str]:
     return found
 
 
-def chinese_title_block_reason(
+def title_language_block_reason(
     title: str | None = None,
     *,
     report_md: str | None = None,
+    language: str | None = None,
 ) -> str | None:
-    """Reject English-only titles on the Chinese report / vuln list field."""
+    """Reject a report title that is not in the project's language.
+
+    A zh project needs CJK in the title; an en project needs Latin words. Without
+    the language split an English project could never submit a finding, because
+    every English title failed the CJK check.
+    """
+    lang = (language or "en").strip().lower()
     texts: list[str] = []
     stripped = str(title or "").strip()
     if stripped:
         texts.append(stripped)
     texts.extend(extract_report_titles(str(report_md or "")))
     for text in texts:
-        if text and not has_cjk(text):
-            return CHINESE_TITLE_ERROR
+        if not text:
+            continue
+        if lang == "zh":
+            if not has_cjk(text):
+                return CHINESE_TITLE_ERROR
+        elif not _LATIN_WORD_RE.search(text):
+            return ENGLISH_TITLE_ERROR
     return None
+
+
+def chinese_title_block_reason(
+    title: str | None = None,
+    *,
+    report_md: str | None = None,
+) -> str | None:
+    """Back-compat wrapper pinned to the Chinese rule."""
+    return title_language_block_reason(title, report_md=report_md, language="zh")
 
 
 def _extract_vuln_code_section(text: str) -> str | None:
@@ -534,7 +667,7 @@ def harness_vuln_code_gap(report_text: str, *, file_path: str | None = None) -> 
     return None
 
 
-_HARNESS_LOCAL_SECTION_RE = re.compile(r"(?m)^###\s+局部验证")
+_HARNESS_LOCAL_SECTION_RE = heading_re("local_verification", level=3, exact=False)
 
 
 def harness_local_section_gap(report_text: str) -> str | None:

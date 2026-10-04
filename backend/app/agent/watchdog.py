@@ -2,7 +2,7 @@
 
 Phase timeout is the wall-clock bound. Recon / worker / reviewer all share
 AgentLoop, so this applies to every phase. A text-only turn with no tool_calls yields no new code or environment
-info — nudge the model to call tools instead of killing the run after N
+info - nudge the model to call tools instead of killing the run after N
 rounds. A tool call that returned an error still counts as a tool call;
 the follow-up reminder must not say the model called nothing.
 
@@ -116,7 +116,7 @@ RECON_PERSIST_PHASES = frozenset({"recon-old-vuln", "recon-old-vuln-ghsa", "reco
 
 RECON_OLD_VULN_PERSIST_NUDGE = (
     "看门狗提醒：侦察（历史漏洞）已连续 {n} 轮未调用 WriteOldVuln。"
-    "请立刻核验 workspace/ghsa_new.json 中的 GHSA 与未关闭 GitHub Issues 候选并落盘——"
+    "请立刻核验 workspace/ghsa_new.json 中的 GHSA 与未关闭 GitHub Issues 候选并落盘--"
     "每确认一条立刻 WriteOldVuln（落盘不会结束本会话）；"
     "若无符合口径的候选立刻 WriteOldVuln(no_findings=true)；"
     "本轮完成后 WriteOldVuln(done=true)。"
@@ -126,7 +126,7 @@ RECON_OLD_VULN_PERSIST_NUDGE = (
 
 RECON_OLD_VULN_GHSA_PERSIST_NUDGE = (
     "看门狗提醒：侦察（历史漏洞/搜索补漏）已连续 {n} 轮未调用 WriteOldVuln。"
-    "请立刻用 WebSearch 按产品短名补漏公开 CVE/公告并落盘——"
+    "请立刻用 WebSearch 按产品短名补漏公开 CVE/公告并落盘--"
     "每确认一条立刻 WriteOldVuln（落盘不会结束本会话）；"
     "不要读源码；公开公告标 patched，不要搜未修复洞；"
     "第一轮爬虫落盘不要删除。全部补漏完再 WriteOldVuln(done=true)；无符合口径则 no_findings=true。"
@@ -135,7 +135,7 @@ RECON_OLD_VULN_GHSA_PERSIST_NUDGE = (
 
 RECON_SOURCE_EXT_PERSIST_NUDGE = (
     "看门狗提醒：侦察（扩展名）已连续 {n} 轮未调用 AddSourceExt。"
-    "请根据 docs/code-map.md 立刻追加模板/映射扩展名，不要空转——"
+    "请根据 docs/code-map.md 立刻追加模板/映射扩展名，不要空转--"
     "有执行面文件立刻 AddSourceExt(exts=[...])（落盘不会结束本会话）；"
     "无需追加立刻 AddSourceExt(none=true)；"
     "全部确认后再 AddSourceExt(done=true)。"
@@ -144,7 +144,7 @@ RECON_SOURCE_EXT_PERSIST_NUDGE = (
 
 RECON_BUSINESS_JAR_PERSIST_NUDGE = (
     "看门狗提醒：侦察（地图）已连续 {n} 轮未调用 MarkBusinessJar。"
-    "请根据 docs/code-map.md 与 ListBytecode 立刻点名业务 jar——"
+    "请根据 docs/code-map.md 与 ListBytecode 立刻点名业务 jar--"
     "每确认一批立刻 MarkBusinessJar(paths=[...])（每个 jar 反编译完成后立刻进入定权，不会结束本会话）；"
     "仅临时阅读用 DecompileJava，不要指望它入库；"
     "第三方/spring/ant 等不要点；无业务 jar 覆盖时 MarkBusinessJar(none=true)；"
@@ -153,7 +153,7 @@ RECON_BUSINESS_JAR_PERSIST_NUDGE = (
 
 RECON_CODE_INTEL_PERSIST_NUDGE = (
     "看门狗提醒：侦察（地图）已连续 {n} 轮未调用 MarkCodeIntel。"
-    "本项目已开启代码库：请立刻 MarkCodeIntel 点名后端——"
+    "本项目已开启代码库：请立刻 MarkCodeIntel 点名后端--"
     "有可索引源码则 codegraph=true；有业务 jar 需要字节码调用图则 jar_analyzer=true；可两者都 true。"
     "至少一个为 true。不要自己查图；挖掘侧会用 FindSymbol/FindCallers。"
 )
@@ -162,7 +162,7 @@ WORKER_FINISH_INTERVAL = 50
 
 WORKER_FINISH_NUDGE = (
     "看门狗提醒：挖掘已连续 {n} 轮未调用 FinishFile。沿调用链已确认无漏洞的其它文件请立刻 "
-    "FinishFile(paths=[...])，不要只标一开始注入的焦点文件，也不要等收工再攒着——"
+    "FinishFile(paths=[...])，不要只标一开始注入的焦点文件，也不要等收工再攒着--"
     "不要因为文件不能当入口就标记。FinishFile 其它文件之后继续分析本轮焦点，禁止立刻 FinishRound。"
     "仅当一开始注入的焦点文件已按角色分析完后，才 FinishFile 它并 FinishRound；report 对齐 templates/round-report.md。"
     "仍有未查清的焦点链路可继续，但不要重复已读代码或无限扩读。上下文会被压缩，拖延标记会丢失进展。"
@@ -211,7 +211,7 @@ VULN_DEDUP_NO_TOOL_NUDGE = (
 
 VULN_DEDUP_RECORD_NUDGE = (
     "看门狗提醒：产出去重已连续 {n} 轮未调用 RecordVulnDedup。"
-    "若有漏洞已经分析完毕，先调用 RecordVulnDedup 标记，不要继续扩读或攒到收工——"
+    "若有漏洞已经分析完毕，先调用 RecordVulnDedup 标记，不要继续扩读或攒到收工--"
     "标记不会结束本会话。待查过多须分组（约 5 条一组），一组结论齐了就先记。"
     "全部记录后再 FinishVulnDedup。上下文会被压缩，延迟标记会丢失进展。"
 )

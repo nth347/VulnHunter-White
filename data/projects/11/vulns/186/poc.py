@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PoC: MemoBoard IDOR — read any user's private note without authorization.
+"""PoC: MemoBoard IDOR - read any user's private note without authorization.
 
 GET /api/notes/<id> reads X-User header but never checks ownership.
 Any user can read any note by id, including bob's private salary note.
@@ -23,9 +23,9 @@ MSGS = {
     "response": ("Response:", "响应:"),
     "author": ("Note author:", "备忘录作者:"),
     "body": ("Note body:", "备忘录正文:"),
-    "ok": ("SUCCESS: IDOR confirmed — accessed another user's note.", "成功：确认 IDOR — 读取了他人备忘录。"),
+    "ok": ("SUCCESS: IDOR confirmed - accessed another user's note.", "成功：确认 IDOR - 读取了他人备忘录。"),
     "sensitive": ("Sensitive data exposed:", "敏感数据已暴露:"),
-    "own_note": ("Note belongs to the claimed user — not an IDOR.", "备忘录属于所声称用户 — 不是 IDOR。"),
+    "own_note": ("Note belongs to the claimed user - not an IDOR.", "备忘录属于所声称用户 - 不是 IDOR。"),
     "not_json": ("Response is not valid JSON.", "响应不是合法 JSON。"),
     "fail": ("Request failed with status", "请求失败，状态码"),
     "error": ("Error:", "错误:"),

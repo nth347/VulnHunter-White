@@ -187,7 +187,11 @@ def project(tmp_env):
     models = tmp_env["models"]
     Session = tmp_env["Session"]
     with Session() as db:
-        p = models.Project(name="demo", source_type="zip", status="recon", phase="recon")
+        # English is the product default; the existing suite asserts the
+        # Chinese prompts/reports/messages, so it runs on the zh path.
+        p = models.Project(
+            name="demo", source_type="zip", status="recon", phase="recon", language="zh"
+        )
         db.add(p)
         db.commit()
         db.refresh(p)

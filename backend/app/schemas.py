@@ -451,6 +451,7 @@ class ProjectUpdate(BaseModel):
     worker_hint: str | None = Field(default=None, max_length=WORKER_HINT_MAX)
     recon_hint: str | None = Field(default=None, max_length=RECON_HINT_MAX)
     max_token_usage: int | None = Field(default=None, ge=0, le=1_000_000_000_000)
+    language: Literal["en", "zh"] | None = None
 
 
 class WeightExtOut(BaseModel):
@@ -505,6 +506,7 @@ class ProjectOut(BaseModel):
     source_sync_error: str | None = None
     source_sync_notice: str | None = None
     error: str | None = None
+    language: str = "en"
     worker_concurrency: int | None = None
     created_at: datetime
     updated_at: datetime
@@ -667,7 +669,7 @@ class VulnOut(BaseModel):
     merged_into_id: int | None = None
     review_rounds: int = 0
     return_reason: str | None = None
-    # timeout — closed after review timeouts; empty/null — reviewer-judged FP
+    # timeout - closed after review timeouts; empty/null - reviewer-judged FP
     fp_kind: str | None = None
     intended_behavior: bool = False
     # default | specific

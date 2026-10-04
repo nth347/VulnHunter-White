@@ -259,9 +259,9 @@ def write_report(project_id: int, results: list[dict[str, Any]], *, notes: str =
         reason = str(row.get("reason") or "").replace("|", "\\|").replace("\n", " ")
         old = str(row.get("old_title") or "").replace("|", "\\|")
         fp = "是" if row.get("marked_false_positive") else "否"
-        src = SOURCE_STATUS_LABEL.get(str(row.get("source_status") or ""), "—")
+        src = SOURCE_STATUS_LABEL.get(str(row.get("source_status") or ""), "-")
         lines.append(
-            f"| #{row.get('vuln_id')} | {row.get('verdict')} | {src} | {old or '—'} | {fp} | {reason or '—'} |"
+            f"| #{row.get('vuln_id')} | {row.get('verdict')} | {src} | {old or '-'} | {fp} | {reason or '-'} |"
         )
     lines.append("")
     path = report_path(project_id)

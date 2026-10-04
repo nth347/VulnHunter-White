@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from ..models import AppSettings, CustomAuditMode, SessionLocal
 from ..schemas import (
@@ -190,8 +190,9 @@ def get_llm_threads() -> LlmThreadUsageOut:
 
 
 @router.get("/builtin-audit-modes", response_model=list[BuiltinAuditModeOut])
-def list_builtin_audit_modes() -> list[BuiltinAuditModeOut]:
-    return [BuiltinAuditModeOut(**row) for row in cam.builtin_prompts()]
+def list_builtin_audit_modes(request: Request) -> list[BuiltinAuditModeOut]:
+    lang = (request.headers.get("accept-language") or "").split(",")[0].strip() or None
+    return [BuiltinAuditModeOut(**row) for row in cam.builtin_prompts(lang)]
 
 
 @router.get("/custom-audit-modes", response_model=list[CustomAuditModeOut])

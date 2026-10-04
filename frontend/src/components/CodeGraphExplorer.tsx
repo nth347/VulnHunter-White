@@ -40,7 +40,7 @@ function SymbolList({
           >
             <span className="font-mono text-xs text-foreground">{item.name}</span>
             <span className="text-[11px] text-muted-foreground">
-              {loc(item) || item.kind || '—'}
+              {loc(item) || item.kind || '-'}
             </span>
           </button>
         </li>

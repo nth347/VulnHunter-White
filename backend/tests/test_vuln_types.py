@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 from app.cvss31 import parse_cvss31
+import functools
+
 from app.vuln_types import (
     PENDING_SEVERITY,
     infer_vuln_type_from_text,
     normalize_config_premise,
-    normalize_submission_decision,
     normalize_vuln_type,
     resolve_vuln_type,
     suggest_submission_tier,
 )
+from app.vuln_types import normalize_submission_decision as _nsd
+
+# Chinese-reason cases; English is the product default (test_i18n_english).
+normalize_submission_decision = functools.partial(_nsd, language="zh")
 
 
 def test_normalize_aliases():

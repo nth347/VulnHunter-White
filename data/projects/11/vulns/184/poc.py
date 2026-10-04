@@ -20,8 +20,8 @@ MSGS = {
         "[!] 警告：HTTPS 目标默认跳过 TLS 证书校验（常见于 IP 访问或自签证书）；传入 --strict-ssl 可恢复严格校验",
     ),
     "sqli_start": (
-        "No password provided — dumping admin credentials via SQLi...",
-        "未提供密码 — 先通过 SQL 注入拖取管理员凭据...",
+        "No password provided - dumping admin credentials via SQLi...",
+        "未提供密码 - 先通过 SQL 注入拖取管理员凭据...",
     ),
     "sqli_fail": ("SQLi request failed:", "SQL 注入请求失败:"),
     "sqli_ok": ("Admin password dumped via SQLi:", "已通过 SQL 注入拖取管理员密码:"),

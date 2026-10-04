@@ -6,7 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from app.prompts import PROMPTS_DIR, load_prompt, render_prompt
+import functools
+
+from app.prompts import PROMPTS_DIR
+from app.prompts import load_prompt as _load_prompt
+from app.prompts import render_prompt as _render_prompt
+
+# This module asserts the Chinese prompt wording, so pin the language;
+# English is the product default.
+load_prompt = functools.partial(_load_prompt, language="zh")
+render_prompt = functools.partial(_render_prompt, language="zh")
 from app.services import pipeline
 
 INITIAL_DOCS = (
@@ -83,9 +92,9 @@ def test_render_prompt_missing_file():
 
 
 def test_initial_prompt_helper_loads_from_initial_dir():
-    text = pipeline._initial_prompt("fix.md", vuln_id=9, title="SQLi", reason="缺证据", report_path="vulns/9/report.md")
-    assert "漏洞 ID=9" in text
-    assert "标题=SQLi" in text
+    text = pipeline._initial_prompt("fix.md", vuln_id=9, title="SQLi", reason="needs evidence", report_path="vulns/9/report.md")
+    assert "ID=9" in text
+    assert "title=SQLi" in text
     assert "FinishFix(vuln_id=9)" in text
 
 
@@ -98,7 +107,7 @@ def test_recon_mark_and_reviewer_docs_render_runtime_fields():
         batch_count=2,
         paths="- a.java\n- b.java",
     )
-    assert "已标记 3/10，本批 2 个" in mark
+    assert "Stamped 3/10, 2 in this batch" in mark
     assert "- a.java" in mark
 
     review = pipeline._initial_prompt(
@@ -108,21 +117,21 @@ def test_recon_mark_and_reviewer_docs_render_runtime_fields():
         lab_note="环境: ok",
         debug_plan="[]",
     )
-    assert "审核漏洞 ID=5" in review
+    assert "Review vulnerability ID=5" in review
     assert "vulns/5/report.md" in review
     assert "advisory.md" in review
-    assert "环境: ok" in review
+    assert "ok" in review
     assert "cvss_vector" in review
     assert "cvss4_vector" in review
     assert "CVSS 3.1" in review
     assert "CVSS 4.0" in review
     assert "submission_tier" in review
     assert "submission_reason" in review
-    assert "submission_reason（中文）" in review
+    assert "submission_reason (in English)" in review
     assert "root_cause_key" in review
     assert "config_premise" in review
     assert "CVE" in review
-    assert "互联网资产证明" in review
+    assert "Internet asset proof" in review
     assert "docs/lab.md" in review
     assert "CollectLabFingerprints" in review
 

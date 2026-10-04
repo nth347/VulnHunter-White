@@ -81,8 +81,8 @@ WHERE 变为恒真，响应 JSON 含全部用户的 `password` 字段。
 
 ## 同根因受影响点
 
-- `src/board/engine.py:71` `run_user_lookup` — 字符串拼接 SQL（代表点）
-- `src/app.py:63` `api_users` — 无鉴权调用并将含 password 的结果返回
+- `src/board/engine.py:71` `run_user_lookup` - 字符串拼接 SQL（代表点）
+- `src/app.py:63` `api_users` - 无鉴权调用并将含 password 的结果返回
 
 ## 复现证明
 

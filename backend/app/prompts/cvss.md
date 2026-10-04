@@ -12,7 +12,7 @@ ConfirmVuln / SetCveRecordField 只填基础向量（8 个度量），不要手�
 
 | 攻击面 | 所需账号 | 必须写成 |
 | --- | --- | --- |
-| 前台（未认证） | — | PR:N |
+| 前台（未认证） | - | PR:N |
 | 后台 | 普通权限 user | PR:L |
 | 后台 | 管理员 admin | PR:H |
 

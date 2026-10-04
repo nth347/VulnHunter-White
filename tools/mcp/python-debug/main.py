@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Python Debug MCP Server — remote Python debugging via debugpy/DAP."""
+"""Python Debug MCP Server - remote Python debugging via debugpy/DAP."""
 
 import logging
 import sys

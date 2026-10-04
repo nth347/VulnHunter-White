@@ -1,4 +1,4 @@
-# Recon Agent — 历史漏洞（WebSearch 补漏）
+# Recon Agent - 历史漏洞（WebSearch 补漏）
 
 你在历史漏洞 **第二轮：搜索补漏**。第一轮已根据 GHSA / GitHub Issues 爬虫结果落盘，那些文档 **不要删除或替换**。本轮只用搜索补第一轮没覆盖的本项目公开 CVE / 安全公告。
 

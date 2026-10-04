@@ -77,7 +77,7 @@ def test_stamp_advisory_replaces_old_cvss_lines():
     src = (
         "## Severity / CWE\n\n"
         "- **Severity:** Low\n"
-        "- **CVSS 3.0:** 7.5 High — `CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N`\n"
+        "- **CVSS 3.0:** 7.5 High - `CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N`\n"
         "- **CVSS 4.0:** pending\n"
         "- **CWE:** CWE-89\n"
     )
@@ -103,8 +103,8 @@ def test_stamp_advisory_drops_duplicate_agent_cvss_lines():
     src = (
         "## Severity / CWE\n\n"
         "- **Severity:** Low\n"
-        "- **CVSS 3.1:** 9.8 Critical — `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H`\n"
-        "- **CVSS 4.0:** 9.3 Critical — `CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N`\n"
+        "- **CVSS 3.1:** 9.8 Critical - `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H`\n"
+        "- **CVSS 4.0:** 9.3 Critical - `CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N`\n"
         "- **CWE:** CWE-94\n"
         "- **CVSS 3.1**: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H\n"
         "- **CVSS 4.0**: CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N\n"

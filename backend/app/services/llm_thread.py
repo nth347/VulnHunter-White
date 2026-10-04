@@ -513,7 +513,7 @@ class LlmThreadLimiter:
                     )
                     return new_handle
                 if pick == current:
-                    # Same endpoint still best (e.g. only one) — keep sticky
+                    # Same endpoint still best (e.g. only one) - keep sticky
                     return handle
                 # No healthy endpoint with capacity
                 if not wait:

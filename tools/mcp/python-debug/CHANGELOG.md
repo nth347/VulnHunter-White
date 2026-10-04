@@ -5,7 +5,7 @@ MCP 工具变更日志。
 ## 2026-05-31
 
 ### Added
-- `debug_attach_tcp` — 新增直接 TCP 连接工具，用于 Docker 容器等 adapter 反向连接不可达的场景。底层调用 `DebugSessionManager.attach_tcp()`，通过 `DAPClient.connect_tcp()` 直连 debugpy 服务器的 DAP 端口，绕过 subprocess adapter 的随机端口回连机制。
+- `debug_attach_tcp` - 新增直接 TCP 连接工具，用于 Docker 容器等 adapter 反向连接不可达的场景。底层调用 `DebugSessionManager.attach_tcp()`，通过 `DAPClient.connect_tcp()` 直连 debugpy 服务器的 DAP 端口，绕过 subprocess adapter 的随机端口回连机制。
 
 ## 2026-05-30
 

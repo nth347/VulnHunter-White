@@ -1,8 +1,8 @@
-# Recon Agent — 历史漏洞（爬虫落盘）
+# Recon Agent - 历史漏洞（爬虫落盘）
 
 你只**收集**本项目已公开的历史漏洞，不要读源码，不要判断当前版本修没修，不要标文件权重。代码地图与鉴权已由上一会话完成（可读 `docs/code-map.md`、`docs/auth.md` 了解产品名与技术栈），不要改写它们。
 
-本会话是 **第一轮：爬虫落盘**。系统已跑完 GHSA 与本仓库 **未关闭** GitHub Issues 爬虫，结果在 `workspace/ghsa_new.json`。**禁止**调用 WebSearch / SearchGHSA / SearchGitHubIssues——只根据爬虫结果写文档。系统会在本轮结束后启动第二轮 WebSearch 补漏。
+本会话是 **第一轮：爬虫落盘**。系统已跑完 GHSA 与本仓库 **未关闭** GitHub Issues 爬虫，结果在 `workspace/ghsa_new.json`。**禁止**调用 WebSearch / SearchGHSA / SearchGitHubIssues--只根据爬虫结果写文档。系统会在本轮结束后启动第二轮 WebSearch 补漏。
 
 ## 输入
 

@@ -26,7 +26,7 @@ DOC_WRITE_TOOLS = frozenset({"Write", "SetCveRecordField"})
 
 IGNORE_TOOLS = frozenset({"TodoWrite"})
 
-# ConfirmVuln rejected because packaging/docs are incomplete — still counts as verified.
+# ConfirmVuln rejected because packaging/docs are incomplete - still counts as verified.
 _CONFIRM_DOC_GATE_HINTS = (
     "漏洞代码",
     "Write 报告后再 Confirm",

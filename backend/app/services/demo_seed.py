@@ -135,7 +135,7 @@ def _bump_sqlite_sequence(db: Session, table: str, at_least: int) -> None:
         text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'")
     ).scalar()
     if not has_seq:
-        # Without AUTOINCREMENT, SQLite uses MAX(id)+1 — explicit showcase ids are enough.
+        # Without AUTOINCREMENT, SQLite uses MAX(id)+1 - explicit showcase ids are enough.
         return
     cur = db.execute(
         text("SELECT seq FROM sqlite_sequence WHERE name = :n"),

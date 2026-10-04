@@ -84,9 +84,9 @@ Connection: close
 
 ## 同根因受影响点
 
-- `src/templates/notes.html:18` `{{ n.body | safe }}` — 跳过转义（代表点）
-- `src/app.py:87` `api_create_note` — 无鉴权写入
-- `src/app.py:37` `notes_page` — 渲染未转义 body
+- `src/templates/notes.html:18` `{{ n.body | safe }}` - 跳过转义（代表点）
+- `src/app.py:87` `api_create_note` - 无鉴权写入
+- `src/app.py:37` `notes_page` - 渲染未转义 body
 
 ## 复现证明
 

@@ -1,0 +1,6 @@
+Project ID=${project_id}. Audit target: ${target_kind_label}. ${target_kind_hint}
+Source is in src/. Begin the code-map and authorization-document session.
+Write docs/code-map.md and docs/auth.md; MarkSource immediately on a user-controllable entry point (HTTP / WebSocket / RPC / MQ / callback, and a component's public API / parsing entry; do not mark HTTP only).
+If there is bytecode: after ListBytecode, name the business jars (MarkBusinessJar), judging by path / artifactId / package name (such as com.landgrey); do not name spring/commons. For loose classes, a directory with business classes can take one batch of paths. When all are named, done=true; if no business is covered, none=true. DecompileJava is for pre-reading only and does not enter weighting.
+If the project has code intelligence enabled: call MarkCodeIntel(codegraph=..., jar_analyzer=...) with at least one selected (codegraph when there is source; jar_analyzer when a business jar needs a bytecode call graph; both are allowed). Do not call it when it is disabled.
+Do not AddSourceExt, do not search historical vulnerabilities, and do not scan the whole repo stamping weights. The system ends the session once both documents are complete and the business-jar / code-intelligence latch is satisfied.

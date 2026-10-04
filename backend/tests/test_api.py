@@ -993,7 +993,7 @@ def test_patch_audit_mode_only_when_paused_or_completed(tmp_env, project):
     with TestClient(app) as client:
         denied = client.patch(f"/api/projects/{project}", json={"audit_mode": "full"})
         assert denied.status_code == 400
-        assert "暂停或完成" in denied.json()["detail"]
+        assert "paused or finished" in denied.json()["detail"]
         with SessionLocal() as db:
             p = db.get(Project, project)
             p.status = "paused"
@@ -1538,7 +1538,7 @@ def test_download_single_vuln_report_missing_file(tmp_env, project):
     with TestClient(app) as client:
         missing = client.get(f"/api/vulns/{vid}/download?kind=report")
         assert missing.status_code == 404
-        assert "报告不存在" in missing.text
+        assert "Report not found" in missing.text
         bundle = client.get(f"/api/vulns/{vid}/download")
         assert bundle.status_code == 200
         assert bundle.headers["content-type"].startswith("application/zip")
@@ -1887,7 +1887,7 @@ def test_dynamic_verify_continues_archived_reviewer_round(tmp_env, project, monk
         assert off.json()["can_dynamic_verify"] is False
         blocked = client.post(f"/api/vulns/{vid}/dynamic-verify")
         assert blocked.status_code == 400
-        assert "靶场动态或局部验证" in blocked.json()["detail"]
+        assert "lab dynamic or local verification" in blocked.json()["detail"]
 
         with SessionLocal() as db:
             proj = db.get(Project, project)
@@ -2271,7 +2271,7 @@ def test_completed_project_can_change_mode_but_not_pause(tmp_env, project, monke
         assert mode.json()["status"] == "completed"
         paused = client.post(f"/api/projects/{project}/pause")
         assert paused.status_code == 400
-        assert "不可暂停" in paused.json()["detail"]
+        assert "cannot be paused" in paused.json()["detail"]
         shown = client.get(f"/api/projects/{project}").json()
         assert shown["status"] == "completed"
         assert shown["project_paused"] is False
@@ -2314,7 +2314,7 @@ def test_reset_progress_endpoint(tmp_env, project, monkeypatch):
         assert missing.status_code == 404
         denied = client.post(f"/api/projects/{project}/reset-progress")
         assert denied.status_code == 400
-        assert "暂停" in denied.json()["detail"]
+        assert "Pause the whole project" in denied.json()["detail"]
         with SessionLocal() as db:
             p = db.get(Project, project)
             p.status = "paused"

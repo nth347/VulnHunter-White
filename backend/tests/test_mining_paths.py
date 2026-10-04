@@ -160,7 +160,7 @@ def test_patch_mining_paths_only_when_paused_or_completed(tmp_env, project):
     with TestClient(app) as client:
         denied = client.patch(f"/api/projects/{project}", json={"fast_enabled": True})
         assert denied.status_code == 400
-        assert "暂停或完成" in denied.json()["detail"]
+        assert "paused or finished" in denied.json()["detail"]
         with SessionLocal() as db:
             p = db.get(Project, project)
             p.status = "paused"

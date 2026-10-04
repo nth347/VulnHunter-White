@@ -355,10 +355,10 @@ def _rewrite_advisory_severity_section(section: str, sev_line: str, cvss_block: 
 def stamp_advisory_cvss31(text: str, result: Cvss31Result, cvss40: Any | None = None) -> str:
     """Replace CVSS 3.x/4.x lines in advisory.md with a single computed 3.1 / 4.0 pair."""
     body = (text or "").replace("\r\n", "\n")
-    cvss_lines = [f"- **CVSS 3.1:** {result.score:.1f} {result.severity_en} — `{result.vector}`"]
+    cvss_lines = [f"- **CVSS 3.1:** {result.score:.1f} {result.severity_en} - `{result.vector}`"]
     if cvss40 is not None:
         cvss_lines.append(
-            f"- **CVSS 4.0:** {cvss40.score:.1f} {cvss40.severity_en} — `{cvss40.vector}`"
+            f"- **CVSS 4.0:** {cvss40.score:.1f} {cvss40.severity_en} - `{cvss40.vector}`"
         )
     cvss_block = "\n".join(cvss_lines)
     sev_line = f"- **Severity:** {result.severity_en}"

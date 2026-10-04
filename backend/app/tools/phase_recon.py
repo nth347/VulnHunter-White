@@ -107,12 +107,12 @@ def recon_old_vuln_llm_ready(project_id: int) -> bool:
 
 
 def recon_old_vulns_ready(project_id: int) -> bool:
-    """True only after crawler-write + WebSearch supplement both declare complete — not after the first WriteOldVuln."""
+    """True only after crawler-write + WebSearch supplement both declare complete - not after the first WriteOldVuln."""
     return _old_vuln_search_complete(_old_vuln_index_path(project_id))
 
 
 def recon_source_ext_ready(project_id: int) -> bool:
-    """True only after AddSourceExt(done/none) — not after the first extra-ext ingest."""
+    """True only after AddSourceExt(done/none) - not after the first extra-ext ingest."""
     path = _source_exts_path(project_id)
     if not _doc_nonempty(path):
         return False
@@ -254,7 +254,7 @@ def recon_subphases(project_id: int, unmarked: int | None = None) -> list[dict[s
 
 
 def recon_subphases_for_list(project_id: int, unmarked: int) -> list[dict[str, Any]]:
-    """List-card gates: nonempty docs only — no frontmatter parse, no src walk."""
+    """List-card gates: nonempty docs only - no frontmatter parse, no src walk."""
     docs = docs_dir(project_id)
     from ..services.decompile_java import business_jar_map_ready
 
@@ -272,7 +272,7 @@ def recon_subphases_for_list(project_id: int, unmarked: int) -> list[dict[str, A
 
 
 def normalize_weight_path(path: str) -> str:
-    """Slash-normalize a file-index path. Do not strip src/ — Maven paths start with src/main.
+    """Slash-normalize a file-index path. Do not strip src/ - Maven paths start with src/main.
 
     Only drop ``./`` prefixes and leading slashes. ``str.lstrip("./")`` would also
     strip a leading dot from hidden names like ``.flattened-pom.xml``.

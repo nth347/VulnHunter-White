@@ -1,7 +1,19 @@
 export type Locale = 'zh' | 'en'
 
-export const DEFAULT_LOCALE: Locale = 'zh'
+export const DEFAULT_LOCALE: Locale = 'en'
 export const LOCALE_STORAGE_KEY = 'vulnhunter-ui-locale'
+const LOCALE_MIGRATED_KEY = 'vulnhunter-ui-locale-migrated'
+
+// English is the default; clear a locale cached by an older build once so those
+// browsers fall through to English. An explicit toggle made afterwards persists.
+try {
+  if (localStorage.getItem(LOCALE_MIGRATED_KEY) !== '1') {
+    localStorage.removeItem(LOCALE_STORAGE_KEY)
+    localStorage.setItem(LOCALE_MIGRATED_KEY, '1')
+  }
+} catch {
+  /* ignore */
+}
 
 const listeners = new Set<() => void>()
 

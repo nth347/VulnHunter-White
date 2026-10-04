@@ -1,4 +1,4 @@
-# 代码地图 — MemoBoard（项目 ID=11）
+# 代码地图 - MemoBoard（项目 ID=11）
 
 ## 概述
 
@@ -40,7 +40,7 @@ src/
 
 ## 模块划分
 
-### app.py — 路由层（HTTP 入口）
+### app.py - 路由层（HTTP 入口）
 
 所有 HTTP 路由均定义在此文件。Flask 应用对象 `app`，`secret_key = os.urandom(32)`（每次启动轮换）。启动时调用 `_boot()` 初始化数据库并 seed。
 
@@ -56,7 +56,7 @@ src/
 | POST | `/api/notes` | `api_create_note` | 无 | 创建备忘录，body 存入 DB（**存储型 XSS 写入点**） |
 | GET | `/api/tools/ping` | `api_ping` | 需 admin 会话 | 运维 ping，`host` 传入 `ping_host`（**RCE sink**） |
 
-### board/engine.py — 数据访问与危险 helper
+### board/engine.py - 数据访问与危险 helper
 
 - `DATA_DIR` / `DB_PATH`：数据目录与数据库路径
 - `_connect()`：创建 SQLite 连接，`row_factory = sqlite3.Row`
@@ -65,7 +65,7 @@ src/
 - `run_user_lookup(name)`：**字符串拼接 SQL**，`name` 直接插入 `WHERE name = '{name}'`（SQLi）
 - `ping_host(host)`：**命令注入**，`subprocess.getoutput(f"echo MEMO-PING {host}")`（RCE）
 
-### board/store.py — SQLite 辅助函数
+### board/store.py - SQLite 辅助函数
 
 - `find_user(username, password)`：参数化查询，登录验证
 - `list_users()`：列出所有用户（不含 password）
@@ -73,7 +73,7 @@ src/
 - `get_note(note_id)`：按 id 获取备忘录（参数化）
 - `create_note(author, title, body)`：插入备忘录（参数化）
 
-### scripts/smoke.py — 冒烟测试
+### scripts/smoke.py - 冒烟测试
 
 验证 4 个 sink 及 SQLi→admin ping 攻击链。使用 Flask test_client。
 
@@ -90,10 +90,10 @@ src/
 
 - **模板引擎**：Jinja2（Flask 内置）
   - `templates/index.html`：`{% for n in notes %}` 循环渲染备忘录列表
-  - `templates/notes.html`：`{{ n.body | safe }}` — `safe` 过滤器跳过转义，是存储型 XSS 的渲染 sink
+  - `templates/notes.html`：`{{ n.body | safe }}` - `safe` 过滤器跳过转义，是存储型 XSS 的渲染 sink
 - **ORM**：无 ORM，直接使用 `sqlite3` 原生 SQL
   - 参数化查询（安全）：`find_user`、`list_users`、`list_notes`、`get_note`、`create_note`
-  - 字符串拼接（不安全）：`run_user_lookup` — `f"SELECT ... WHERE name = '{name}'"`
+  - 字符串拼接（不安全）：`run_user_lookup` - `f"SELECT ... WHERE name = '{name}'"`
 
 ## 非 HTTP 入口
 

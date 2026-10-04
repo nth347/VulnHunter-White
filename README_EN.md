@@ -134,7 +134,7 @@ Findings calendar on the findings page:
 
 ## Requirements
 
-**Opening the UI and doing static review only** needs the “required” set. Lab dynamic, local verify, fast scan, Code Intelligence, Verifier, and similar extras are installed per feature — you do not need everything at once. Details after the start sections: [Optional by feature](#optional-by-feature).
+**Opening the UI and doing static review only** needs the “required” set. Lab dynamic, local verify, fast scan, Code Intelligence, Verifier, and similar extras are installed per feature - you do not need everything at once. Details after the start sections: [Optional by feature](#optional-by-feature).
 
 ### Required (frontend + backend)
 
@@ -160,7 +160,7 @@ On Linux / macOS use `python3 --version` for the first line. On Windows, `python
 
 ## Build steps before first start
 
-`start.cmd` / `start.sh` **only** create the backend venv, run `pip install`, and `npm install` the frontend on first run. The items below are **not** automatic — do them ahead of time for the features you will use.
+`start.cmd` / `start.sh` **only** create the backend venv, run `pip install`, and `npm install` the frontend on first run. The items below are **not** automatic - do them ahead of time for the features you will use.
 
 ### 1. Get the source
 
@@ -380,7 +380,7 @@ start.cmd
 sh start.sh
 ```
 
-If you `chmod +x start.sh`, `./start.sh` also works. The script is POSIX `sh`; macOS `/bin/sh` is enough — no bash required.
+If you `chmod +x start.sh`, `./start.sh` also works. The script is POSIX `sh`; macOS `/bin/sh` is enough - no bash required.
 
 - Starts backend `http://127.0.0.1:16780` and frontend `http://127.0.0.1:15173` (avoids common 8000 / Vite 5173); binds localhost by default
 - LAN: `start.cmd --lan` or `start.cmd --host 0.0.0.0` (Unix: `sh start.sh --lan`), or `VULNHUNTER_HOST=0.0.0.0`
@@ -388,7 +388,7 @@ If you `chmod +x start.sh`, `./start.sh` also works. The script is POSIX `sh`; m
 - First run creates `backend/.venv`, installs Python deps, and `npm install` in `frontend`
 - No hot reload by default; use `start.cmd --reload` or `sh start.sh --reload` when editing the backend
 - Stops the previous instance from this repo first. If the target port is still held by **another program**, the script errors out and does not pick a new port
-- Checks that chosen ports are listening within about 45s; timeout tells you to read logs — not always a hard failure
+- Checks that chosen ports are listening within about 45s; timeout tells you to read logs - not always a hard failure
 - Unix writes PIDs to `data/run/backend.pid` and `data/run/frontend.pid`; this run’s ports go to `data/run/ports.env` for `stop`
 
 Stop:
@@ -490,7 +490,7 @@ Build steps: [Build steps before first start](#build-steps-before-first-start) (
 | `creating backend venv` fails | Confirm `python -m venv --help` / `python3 -m venv --help`; antivirus should not lock `backend/.venv` |
 | `npm` fails or is extremely slow | Switch to Node 20 LTS; use npmmirror; delete a half-installed `frontend/node_modules` and retry |
 | `error: backend/frontend port … is still in use` | Another program holds the port. Change ports: `start.cmd --backend-port N --frontend-port N` |
-| `warn: ports not ready` | Read `data/logs/`; often a stale process — run `stop.cmd` / `sh stop.sh` first |
+| `warn: ports not ready` | Read `data/logs/`; often a stale process - run `stop.cmd` / `sh stop.sh` first |
 | UI loads but every API fails | Backend is down, or frontend port vs Vite proxy `VULNHUNTER_PORT` mismatch |
 | GitHub import fails | `git` on PATH; PAT for private repos; HTTP proxy on Settings for corporate nets. On `Filename too long`, update and retry (`core.longpaths` is already set on clone) |
 | Lab / containers page says docker unavailable | Start Docker Desktop or the docker service, wait until the engine is ready, then `docker ps` |
@@ -536,7 +536,7 @@ Phase details, tool ACL, fault tolerance, and scoring: [`docs/DESIGN.md`](docs/D
 | Project and mining config | At create time pick bounty (default) / full / custom. Enable mining paths: heuristic (on by default; lite mode only weight-100 files), fast scan (off), historical-vuln bypass (off), unconstrained (off); at least one. Each project can pick a model or inherit Settings; optional token cap; optional pasted/uploaded Worker hint. Discover-repos can take a user prompt and search GitHub by that intent first, or fall back to public GHSA, skipping demos/learning projects; candidates can be removed one-by-one or all at once. Search waits 600s by default, plus 60s for each repo beyond 5. GitHub projects sync upstream on resume from pause (list/detail show the fetched commit on success; on failure the current snapshot is kept); zip projects are unchanged |
 | Mining paths | Wait for **Recon done**; if Code Intelligence is enabled, also wait for its first build (failure degrades and continues). **Heuristic**: mine by file weight; weight 100 is a user-controlled entry (HTTP, WebSocket / RPC / MQ / callbacks, etc.); lower weights backtrace, control-plane, or thin-scan by role. **Fast scan**: Semgrep → code filter → agent triage → sink backtrace; SAST sinks, while auth / IDOR / business logic still rely on heuristic. **Historical-vuln bypass**: each round tries to bypass a patch or confirm an unpatched issue still works. **Unconstrained**: one Worker, only code map + auth injected; always bounty gates; path ends after Reviewer marks a frontend finding with RCE effect. The project is `completed` only when every enabled path has finished |
 | Code Intelligence | Optional at create, off by default. When on, parallel with Recon. Map Agent names backends before build: CodeGraph indexes `src/`; Jar Analyzer graphs only MarkBusinessJar business jars. Failure degrades to Read/Grep. Source changes mark stale; the user rebuilds. Turning it off deletes that project’s indexes. Worker / Reviewer share the same short call-graph tools (platform routes) |
-| Audit modes | Bounty keeps exploitable high-impact types (stored XSS, 1-click CSRF, hardcoded secrets with server-side impact, etc.; ordinary CSRF / frontend AES obfuscation / publicly shipped keys are dropped). Full keeps lower-impact items (CORS, reflected XSS, missing rate limits, etc.). Custom has no bounty hard gates — prompts only. Harmless/restricted file ops (read-only specific extensions or public non-sensitive dirs, harmless uploads) and unguessable object keys (UUIDs / filenames; share links, email, preview URLs do not count as obtainable) are dropped in mining and review. Settings manage named custom prompts; selecting one snapshots the text onto the project |
+| Audit modes | Bounty keeps exploitable high-impact types (stored XSS, 1-click CSRF, hardcoded secrets with server-side impact, etc.; ordinary CSRF / frontend AES obfuscation / publicly shipped keys are dropped). Full keeps lower-impact items (CORS, reflected XSS, missing rate limits, etc.). Custom has no bounty hard gates - prompts only. Harmless/restricted file ops (read-only specific extensions or public non-sensitive dirs, harmless uploads) and unguessable object keys (UUIDs / filenames; share links, email, preview URLs do not count as obtainable) are dropped in mining and review. Settings manage named custom prompts; selecting one snapshots the text onto the project |
 | Dynamic verify | Off by default at create (static review only). **Lab dynamic**: Reviewer builds a Docker lab and runs HTTP PoC (`poc.py -u`). **Local verify**: L1/L2 harness sandbox (`evidence_level=harness`; Python/PHP/JS/Ruby/Go/Java/Bash/C; Rust/C++ stay static) and L3 integration (loopback + `poc.py`, then `evidence_level=dynamic`). When a lab is available, `ConfirmVuln` re-runs the on-disk `poc.py`; non-zero exit rejects confirm. PoCs are owned by Reviewer; debug MCP only if missing/failing and rewrite is needed. HTTP-facing `poc.py` must support `-u/--url`, `--proxy` (empty = direct), and RCE `-c/--cmd`. `harness.py` and `poc.py` have separate jobs; stdout is English by default, `--zh` for Chinese |
 | Internet verify | Optional Verifier, off by default, toggle in project settings. After a frontend confirm, FOFA searches same-fingerprint targets; understand the exploit from the report and PoC, prefer original `poc.py`; if there is no portable HTTP PoC, build a payload from the report (do not auto-skip); if the original fails, adapt on the same chain (default 10 per batch, stop after 3 successes, max 5 rounds / 50 hosts). Wall-clock timeout marks that item fail with no new round. Fingerprints are collected once per project. Destructive ops need human confirm |
 | Attack chains | Optional, off by default; after mining is done and the review queue is empty, try multi-step exploits from confirmed findings |
@@ -548,17 +548,17 @@ Phase details, tool ACL, fault tolerance, and scoring: [`docs/DESIGN.md`](docs/D
 
 ## Repository layout
 
-- `backend/app` — FastAPI, agent loop, tools, scheduler
-- `frontend` — React + Tailwind UI
-- `templates` — document templates
-- `tools/mcp` — Java / Node / Python debug MCP
-- `tools/cli` — user-placed CLI tools (one directory per tool; Reviewer SearchTools)
-- `docker/sandbox` — local-verify harness sandbox image (L1/L2)
-- `docker/integration-sandbox` — L3 integration sandbox image
-- `docker/desktop` — Docker-distribution one-click start (compose / Dockerfile / Windows `start.cmd` / Linux `start.sh`)
-- `scripts` — start/stop, tests, sandbox builds, Semgrep image pull
-- `data/projects/{id}` — per-project workspace (runtime; do not commit)
-- `docs/DESIGN.md` — architecture and design (Chinese)
+- `backend/app` - FastAPI, agent loop, tools, scheduler
+- `frontend` - React + Tailwind UI
+- `templates` - document templates
+- `tools/mcp` - Java / Node / Python debug MCP
+- `tools/cli` - user-placed CLI tools (one directory per tool; Reviewer SearchTools)
+- `docker/sandbox` - local-verify harness sandbox image (L1/L2)
+- `docker/integration-sandbox` - L3 integration sandbox image
+- `docker/desktop` - Docker-distribution one-click start (compose / Dockerfile / Windows `start.cmd` / Linux `start.sh`)
+- `scripts` - start/stop, tests, sandbox builds, Semgrep image pull
+- `data/projects/{id}` - per-project workspace (runtime; do not commit)
+- `docs/DESIGN.md` - architecture and design (Chinese)
 
 ## Design document
 

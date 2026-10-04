@@ -1,4 +1,4 @@
-# VulnHunter-White — Docker edition app image (multi-stage).
+# VulnHunter-White - Docker edition app image (multi-stage).
 # Build context = repository root. Windows Desktop / Linux Engine.
 
 # ---- frontend ----

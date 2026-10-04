@@ -1,4 +1,4 @@
-"""Collect FOFA / X-intel fingerprints: lab, source, or web — stored once per project."""
+"""Collect FOFA / X-intel fingerprints: lab, source, or web - stored once per project."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from ..i18n import project_language
 from ..models import Project, SessionLocal
 from .ingest import IGNORE_DIR_NAMES
 from .lab import load_env
@@ -1074,6 +1075,7 @@ def overlay_project_fingerprints(text: str, project_id: int) -> str:
         text or "",
         fofa=cache.get("fofa"),
         x=cache.get("x"),
+        language=project_language(project_id),
     )
 
 
@@ -1263,6 +1265,7 @@ def apply_asset_proof(
         path,
         fofa=fofa_query or current_fofa,
         x=x_query or current_x,
+        language=project_language(project_id),
     )
     return {
         "ok": True,

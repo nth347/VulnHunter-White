@@ -1023,6 +1023,7 @@ def update_project(project_id: int, body: ProjectUpdate) -> ProjectOut:
         and body.worker_hint is None
         and body.recon_hint is None
         and body.max_token_usage is None
+        and body.language is None
     ):
         raise HTTPException(400, "没有需要更新的字段")
     mode = None
@@ -1206,6 +1207,8 @@ def update_project(project_id: int, body: ProjectUpdate) -> ProjectOut:
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
+        if body.language is not None:
+            p.language = body.language
         db.commit()
         db.refresh(p)
         out = _project_out(db, p)

@@ -4,17 +4,17 @@
 
 基于 [debugpy](https://github.com/microsoft/debugpy) 和 [DAP（Debug Adapter Protocol）](https://microsoft.github.io/debug-adapter-protocol/) 的 MCP 调试服务器，为 AI Agent（Claude Code 等）提供 Python 远程调试能力。
 
-提供 18 个 MCP 工具，支持启动、附加、交互式调试 Python 程序 —— 设置断点、单步执行、查看变量、表达式求值等完整调试功能。
+提供 18 个 MCP 工具，支持启动、附加、交互式调试 Python 程序 -- 设置断点、单步执行、查看变量、表达式求值等完整调试功能。
 
 ## 功能特性
 
-- **Launch 模式** — 启动任意 Python 脚本并暂停在入口处，开箱即用
-- **Attach 模式** — 连接到已运行的远程 Python 进程（通过 `debugpy --listen`），支持远程调试
-- **断点管理** — 行断点、条件断点、命中次数断点、日志断点（logpoint）
-- **异常断点** — 捕获所有异常或仅捕获未处理异常
-- **执行控制** — 继续运行、单步跳过（step over）、单步进入（step into）、单步跳出（step out）、暂停
-- **状态检查** — 调用栈、局部变量、变量展开、表达式求值
-- **事件系统** — 完整的事件历史记录，支持增量轮询
+- **Launch 模式** - 启动任意 Python 脚本并暂停在入口处，开箱即用
+- **Attach 模式** - 连接到已运行的远程 Python 进程（通过 `debugpy --listen`），支持远程调试
+- **断点管理** - 行断点、条件断点、命中次数断点、日志断点（logpoint）
+- **异常断点** - 捕获所有异常或仅捕获未处理异常
+- **执行控制** - 继续运行、单步跳过（step over）、单步进入（step into）、单步跳出（step out）、暂停
+- **状态检查** - 调用栈、局部变量、变量展开、表达式求值
+- **事件系统** - 完整的事件历史记录，支持增量轮询
 
 ## 环境要求
 
@@ -154,8 +154,8 @@ debug_detach()
 |------|------|------|
 | `debug_launch` | 启动 Python 脚本并进入调试 | `program`, `args`, `cwd`, `python`, `stop_on_entry` |
 | `debug_attach` | 附加到远程 debugpy 监听端口 | `host`, `port` |
-| `debug_detach` | 断开调试会话并清理资源 | — |
-| `debug_status` | 返回当前会话状态 | — |
+| `debug_detach` | 断开调试会话并清理资源 | - |
+| `debug_status` | 返回当前会话状态 | - |
 
 ### 断点
 
@@ -163,9 +163,9 @@ debug_detach()
 |------|------|------|
 | `debug_set_breakpoint` | 设置断点 | `file`, `line`, `condition`, `hit_condition`, `log_message` |
 | `debug_remove_breakpoint` | 删除断点 | `breakpoint_id`（如 `"bp-1"`） |
-| `debug_list_breakpoints` | 列出所有断点 | — |
+| `debug_list_breakpoints` | 列出所有断点 | - |
 | `debug_set_exception_breakpoints` | 设置异常断点 | `filters`（`"raised"` / `"uncaught"`） |
-| `debug_clear_exception_breakpoints` | 清除所有异常断点 | — |
+| `debug_clear_exception_breakpoints` | 清除所有异常断点 | - |
 
 ### 执行控制
 
@@ -179,7 +179,7 @@ debug_detach()
 
 | 工具 | 说明 | 参数 |
 |------|------|------|
-| `debug_list_threads` | 列出所有线程 | — |
+| `debug_list_threads` | 列出所有线程 | - |
 | `debug_get_stack` | 获取调用栈 | `thread_id`, `max_frames` |
 | `debug_get_locals` | 获取局部变量 | `frame_index`, `thread_id` |
 | `debug_inspect_variable` | 展开复杂变量（对象/列表/字典） | `variables_reference`, `max_children` |
@@ -190,7 +190,7 @@ debug_detach()
 | 工具 | 说明 | 参数 |
 |------|------|------|
 | `debug_get_events` | 获取调试事件历史 | `limit`, `since_id`（增量轮询） |
-| `debug_get_last_stop_event` | 获取最近一次停止事件（含文件/行号/函数名） | — |
+| `debug_get_last_stop_event` | 获取最近一次停止事件（含文件/行号/函数名） | - |
 
 ## 断点类型详解
 
@@ -279,7 +279,7 @@ debug_set_exception_breakpoints(filters=["raised", "uncaught"]) # 两者都捕�
 | `server.py` | 使用 FastMCP 定义 18 个 MCP 工具 |
 | `debug_session.py` | 高层调试会话管理器（断点管理、状态机、事件系统） |
 | `dap_client.py` | 底层 DAP 协议客户端（支持子进程 stdio 和 TCP 两种通信方式） |
-| `sample_debug_target/app.py` | 示例应用 —— 任务处理流水线，用于测试调试功能 |
+| `sample_debug_target/app.py` | 示例应用 -- 任务处理流水线，用于测试调试功能 |
 | `tests/test_integration.py` | 集成测试（26 个用例） |
 
 ### Launch vs Attach 实现差异
@@ -295,10 +295,10 @@ debug_set_exception_breakpoints(filters=["raised", "uncaught"]) # 两者都捕�
 
 `sample_debug_target/app.py` 是一个任务处理流水线，包含多种可调试的代码结构：
 
-- **函数调用链** — `main()` → `run_pipeline()` → `process_task()` → `fibonacci()` / `factorial()` / `is_prime()`
-- **循环处理** — 遍历任务队列逐个处理
-- **类与对象** — `Task`、`TaskQueue` 数据模型
-- **异常处理** — 模拟任务失败的 `ValueError`
+- **函数调用链** - `main()` → `run_pipeline()` → `process_task()` → `fibonacci()` / `factorial()` / `is_prime()`
+- **循环处理** - 遍历任务队列逐个处理
+- **类与对象** - `Task`、`TaskQueue` 数据模型
+- **异常处理** - 模拟任务失败的 `ValueError`
 
 ```bash
 # 直接运行
@@ -320,12 +320,12 @@ pytest tests/test_integration.py -v
 
 测试覆盖范围：
 
-- **生命周期** — 启动、附加、断开
-- **断点操作** — 增删查、条件断点、多断点
-- **执行控制** — 继续、单步跳过/进入/跳出、运行到结束
-- **状态检查** — 线程列表、调用栈、局部变量、表达式求值、变量展开
-- **事件系统** — 事件记录、增量轮询
-- **错误处理** — 非法状态转换、无效参数
+- **生命周期** - 启动、附加、断开
+- **断点操作** - 增删查、条件断点、多断点
+- **执行控制** - 继续、单步跳过/进入/跳出、运行到结束
+- **状态检查** - 线程列表、调用栈、局部变量、表达式求值、变量展开
+- **事件系统** - 事件记录、增量轮询
+- **错误处理** - 非法状态转换、无效参数
 
 ## License
 

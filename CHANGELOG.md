@@ -4,7 +4,23 @@
 
 版本号形如 `V主.次.补`：初始为 **V1.0.0**；小改动 `+0.0.1`；新功能或架构调整 `+0.1`。同一批改动只升一次，取最高档。
 
-## V1.3.0 - 2026-09-18
+## V1.4.0 - 2026-10-05
+
+### Added
+
+- End-to-end English support on top of the upstream feature set. The backend now emits English for an English project: prompts, user messages, vulnerability reports, and error messages all follow the project `language` (default `en`).
+- Every prompt under `backend/app/prompts/` (system prompts, `initial/` user messages, modes, verify, target_kinds, and the new `discover-*` / `vuln_dedup` prompts) has an English `.en.md` sibling, kept in sync with the latest Chinese content (CVSS 4.0, output dedup vs public CVEs, FOFA IP-dedup, admin-registered attacker-source scoring, object-key gate, MarkCodeIntel, C-harness, split-privilege lab accounts). `load_prompt(name, language=)` selects the sibling; `pipeline` loads by project language.
+- `backend/app/prompts/language/{en,zh}.md` output-language contract is appended to every system prompt and injects the canonical report outline from `report_sections.py`.
+- `backend/app/report_sections.py` bilingual report-heading registry; the report parsers in `report.py` / `exposure_mode.py` / `compression.py` / `api/vulns.py` match headings in either language so an English report passes the Confirm gates.
+- `backend/app/i18n.py` backend message catalog with a localized `HTTPException` handler (translates by request `Accept-Language`).
+- Frontend defaults to English (`frontend/src/i18n/locale.ts`), with a one-time migration that clears a stale cached locale.
+
+### Changed
+
+- Title-language and `submission_reason` gates follow the project language instead of requiring Chinese.
+- Em dashes replaced with hyphens across the app.
+
+
 
 ### 新增
 

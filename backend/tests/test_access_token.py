@@ -84,7 +84,7 @@ def test_settings_override_env_and_require_current(tmp_env, monkeypatch):
             headers=db_hdr,
         )
         assert wrong_current.status_code == 403
-        assert "当前令牌" in wrong_current.json()["detail"]
+        assert "Current token is incorrect" in wrong_current.json()["detail"]
 
         too_short = client.post(
             "/api/settings/access-token",

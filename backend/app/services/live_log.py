@@ -1,4 +1,4 @@
-"""Live event log — aligned with AutoPoc live_log shapes."""
+"""Live event log - aligned with AutoPoc live_log shapes."""
 
 from __future__ import annotations
 

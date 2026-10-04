@@ -703,7 +703,7 @@ def test_put_settings_rejects_metadata_base_url(tmp_env):
             json={"default_base_url": "http://169.254.169.254/latest/meta-data"},
         )
     assert r.status_code == 400
-    assert "云元数据" in r.json()["detail"]
+    assert "cloud metadata" in r.json()["detail"]
 
 
 def test_merge_providers_rejects_metadata_base_url():

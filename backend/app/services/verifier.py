@@ -165,7 +165,7 @@ def format_verifier_report(
 
 
 def _md_cell(text: str) -> str:
-    return (text or "").replace("|", "\\|").replace("\n", " ").strip() or "—"
+    return (text or "").replace("|", "\\|").replace("\n", " ").strip() or "-"
 
 
 def target_status_counts(targets: list[dict[str, Any]] | None) -> tuple[int, int, int]:

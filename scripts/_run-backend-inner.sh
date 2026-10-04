@@ -28,7 +28,7 @@ write_log() {
 
 cd "$ROOT/backend"
 if [ ! -x "$ROOT/backend/.venv/bin/uvicorn" ]; then
-  write_log "[VulnHunter] missing backend/.venv — run sh start.sh first"
+  write_log "[VulnHunter] missing backend/.venv - run sh start.sh first"
   exit 1
 fi
 

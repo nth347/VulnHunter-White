@@ -1,5 +1,5 @@
 # VulnHunter-White Docker edition (Windows Docker Desktop / Linux Engine).
-# Run via start.cmd or start.sh in this directory — do not place compose at repo root.
+# Run via start.cmd or start.sh in this directory - do not place compose at repo root.
 services:
   vulnhunter:
     build:

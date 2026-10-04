@@ -85,8 +85,8 @@ Connection: close
 
 ## 同根因受影响点
 
-- `src/board/engine.py:79` `ping_host` — `getoutput` 拼接 shell（代表点）
-- `src/app.py:97` `api_ping` — 把用户可控 `host` 传入 sink 并返回输出
+- `src/board/engine.py:79` `ping_host` - `getoutput` 拼接 shell（代表点）
+- `src/app.py:97` `api_ping` - 把用户可控 `host` 传入 sink 并返回输出
 
 ## 复现证明
 
@@ -173,5 +173,5 @@ def ping_host(host: str) -> str:
 - CVSS 4.0：8.6
 - CVSS 4.0 向量：CVSS:4.0/AV:N/AC:L/AT:N/PR:H/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N
 - 价值分层：有 CVE 价值（cve_candidate）
-- 分层理由：Authenticated admin can inject shell metacharacters into the ping host parameter, achieving full RCE with command output echoed back in the HTTP response. The admin session is obtainable via the unauthenticated SQLi on /api/users (chained attack), making this reachable from anonymous access. Classic command injection with clear RCE impact — CVE-worthy.
+- 分层理由：Authenticated admin can inject shell metacharacters into the ping host parameter, achieving full RCE with command output echoed back in the HTTP response. The admin session is obtainable via the unauthenticated SQLi on /api/users (chained attack), making this reachable from anonymous access. Classic command injection with clear RCE impact - CVE-worthy.
 - 根因合并键：rce:ping_host

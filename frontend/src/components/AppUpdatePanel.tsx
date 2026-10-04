@@ -28,7 +28,7 @@ function versionLabel(
   sha: string,
   kind: 'current' | 'remote',
 ): string {
-  const short = sha || '—'
+  const short = sha || '-'
   if (version) return t(`settings.update.${kind}`, { version, sha: short })
   return t('settings.update.shaOnly', { sha: short })
 }

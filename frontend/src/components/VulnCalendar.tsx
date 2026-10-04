@@ -222,7 +222,7 @@ export default function VulnCalendar({
                       ) : null}
                     </div>
                   ) : (
-                    <div className="mt-auto pt-1 text-[10px] text-slate-600">—</div>
+                    <div className="mt-auto pt-1 text-[10px] text-slate-600">-</div>
                   )}
                 </button>
               )

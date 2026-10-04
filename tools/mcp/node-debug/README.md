@@ -2,7 +2,7 @@
 
 基于 [Chrome DevTools Protocol (CDP)](https://chromedevtools.github.io/devtools-protocol/) 的 MCP 调试服务器，为 AI Agent（Claude Code 等）提供 Node.js 远程调试能力。
 
-连接到以 `--inspect` 启动的 Node.js 进程，通过 20 个 MCP 工具实现完整的交互式调试 —— 断点管理、单步执行、变量检查、表达式求值、脚本搜索等。
+连接到以 `--inspect` 启动的 Node.js 进程，通过 20 个 MCP 工具实现完整的交互式调试 -- 断点管理、单步执行、变量检查、表达式求值、脚本搜索等。
 
 ## 架构
 
@@ -96,10 +96,10 @@ node dist/index.js
 ### 1. 启动目标 Node.js 应用
 
 ```bash
-# 普通模式 — 应用正常运行，可随时附加调试
+# 普通模式 - 应用正常运行，可随时附加调试
 node --inspect app.js
 
-# 暂停模式 — 在第一行暂停，等待调试器连接后再执行
+# 暂停模式 - 在第一行暂停，等待调试器连接后再执行
 node --inspect-brk app.js
 
 # 自定义端口
@@ -201,8 +201,8 @@ debug_disconnect()
 | 工具 | 参数 | 说明 |
 |------|------|------|
 | `debug_connect` | `host?` (默认 127.0.0.1), `port?` (默认 9229) | 连接到 Node.js 调试端口 |
-| `debug_disconnect` | — | 断开调试会话 |
-| `debug_status` | — | 返回当前会话状态（连接信息、断点数、最后停止原因） |
+| `debug_disconnect` | - | 断开调试会话 |
+| `debug_status` | - | 返回当前会话状态（连接信息、断点数、最后停止原因） |
 
 ### 脚本检索
 
@@ -218,14 +218,14 @@ debug_disconnect()
 |------|------|------|
 | `debug_set_breakpoint` | `lineNumber`, `url?` / `scriptId?`, `columnNumber?`, `condition?` | 设置断点；url 支持智能匹配（绝对路径、相对路径、file:// URL）|
 | `debug_remove_breakpoint` | `breakpointId` (如 `"bp-1"`) | 移除断点 |
-| `debug_list_breakpoints` | — | 列出所有活跃断点 |
+| `debug_list_breakpoints` | - | 列出所有活跃断点 |
 
 ### 执行控制
 
 | 工具 | 参数 | 说明 |
 |------|------|------|
 | `debug_wait_for_pause` | `waitTimeoutMs?` (默认 30000) | 被动等待下一次暂停事件（断点命中、异常等） |
-| `debug_pause` | — | 强制暂停执行 |
+| `debug_pause` | - | 强制暂停执行 |
 | `debug_resume` | `waitTimeoutMs?` (默认 30000) | 恢复执行，阻塞等待下一次断点命中或超时 |
 | `debug_step` | `kind` (`"into"` / `"over"` / `"out"`), `waitTimeoutMs?` | 单步执行 |
 
@@ -234,17 +234,17 @@ debug_disconnect()
 | 工具 | 参数 | 说明 |
 |------|------|------|
 | `debug_evaluate` | `expression`, `frameIndex?` | 求值 JS 表达式；暂停时在调用帧上下文执行，运行时在全局执行（支持 await） |
-| `debug_get_call_stack` | — | 获取当前调用栈（仅暂停时） |
+| `debug_get_call_stack` | - | 获取当前调用栈（仅暂停时） |
 | `debug_get_scope_variables` | `frameIndex?` (默认 0), `scopeIndex?` | 获取作用域变量，默认跳过 global scope |
 | `debug_get_object_properties` | `objectId`, `ownOnly?` (默认 true) | 展开对象属性，使用 evaluate 或 scope variables 返回的 objectId |
-| `debug_get_runtime_info` | — | 获取 Node.js 运行时信息（内存、版本、PID、argv 等） |
+| `debug_get_runtime_info` | - | 获取 Node.js 运行时信息（内存、版本、PID、argv 等） |
 
 ### 事件
 
 | 工具 | 参数 | 说明 |
 |------|------|------|
 | `debug_get_events` | `limit?` (默认 50), `sinceId?` | 获取调试事件历史，sinceId 支持增量轮询 |
-| `debug_get_last_stop_event` | — | 获取最近一次暂停事件的完整上下文 |
+| `debug_get_last_stop_event` | - | 获取最近一次暂停事件的完整上下文 |
 
 ## `--inspect` vs `--inspect-brk`
 
@@ -319,8 +319,8 @@ Node.js 的 V8 Inspector 通过 WebSocket 暴露 Chrome DevTools Protocol，本�
 - **事件**：`{ method: "Domain.event", params: {...} }`
 
 主要使用的 CDP 域：
-- `Debugger` — 断点、暂停、单步、脚本管理
-- `Runtime` — 表达式求值、对象检查、堆信息
+- `Debugger` - 断点、暂停、单步、脚本管理
+- `Runtime` - 表达式求值、对象检查、堆信息
 
 ### Promise 阻塞式执行控制
 
@@ -381,11 +381,11 @@ node-debug-mcp/
 # 构建
 npm run build
 
-# 单元测试 — 启动测试目标，然后运行
+# 单元测试 - 启动测试目标，然后运行
 node --inspect test/target-app.mjs &
 node test/test.mjs
 
-# MCP 端到端测试 — 启动漏洞应用，然后运行
+# MCP 端到端测试 - 启动漏洞应用，然后运行
 node --inspect demo/vuln-app/app.mjs &
 node test/mcp-e2e.mjs
 ```

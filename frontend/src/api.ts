@@ -245,17 +245,17 @@ export type Vuln = {
   upstream_chain_proven?: boolean
   submission_tier: string | null
   submission_reason: string | null
-  /** heuristic | fast | bypass | unconstrained — which mining path submitted this vuln */
+  /** heuristic | fast | bypass | unconstrained - which mining path submitted this vuln */
   mining_path?: string | null
   /** Reviewer-judged RCE effect; required for unconstrained vulns */
   rce_effect?: boolean | null
-  /** default | specific — default config vs specific app config */
+  /** default | specific - default config vs specific app config */
   config_premise?: string | null
   root_cause_key: string | null
   merged_into_id: number | null
   review_rounds: number
   return_reason: string | null
-  /** timeout — closed after review timeouts; empty/null — reviewer-judged FP */
+  /** timeout - closed after review timeouts; empty/null - reviewer-judged FP */
   fp_kind?: string | null
   intended_behavior: boolean
   report_path: string | null

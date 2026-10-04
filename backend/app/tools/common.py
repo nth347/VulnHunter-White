@@ -562,7 +562,7 @@ def _grep_handler(ctx, args: dict[str, Any]) -> dict[str, Any]:
             "并按需调大 max_total_bytes。"
         )
     elif skipped_binary or skipped_size:
-        # Default-scoped only — tell the caller what got skipped.
+        # Default-scoped only - tell the caller what got skipped.
         if not skip_text_ext_filter:
             out["hint"] = (
                 f"已默认跳过 {skipped_binary} 个非文本扩展名与 {skipped_size} 个超大文件"

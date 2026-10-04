@@ -92,7 +92,7 @@ export function DynamicVerifyToggle({
   enabled?: boolean
   onModeChange?: (mode: DynamicVerifyMode) => void
   onEnabledChange?: (enabled: boolean) => void
-  /** False in Docker Desktop edition — hide auto Docker lab, show 人工靶场. */
+  /** False in Docker Desktop edition - hide auto Docker lab, show 人工靶场. */
   dockerLabBuildEnabled?: boolean
 }) {
   const { t } = useI18n()

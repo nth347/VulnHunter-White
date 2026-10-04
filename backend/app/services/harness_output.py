@@ -22,7 +22,7 @@ HARNESS_JS_MSGS_ERROR = (
 )
 
 _JS_LANGS = frozenset({"javascript", "js", "node"})
-# Object/assignment value `( "en", "zh" )` — comma operator, not a 2-tuple.
+# Object/assignment value `( "en", "zh" )` - comma operator, not a 2-tuple.
 _JS_COMMA_I18N_PAIR_RE = re.compile(
     r"""
     [=:]\s*\(\s*

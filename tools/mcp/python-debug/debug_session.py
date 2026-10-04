@@ -685,7 +685,7 @@ class DebugSessionManager:
                 except Exception:
                     continue
 
-        raise ValueError(f"Could not set variable '{name}' — not found in local scopes")
+        raise ValueError(f"Could not set variable '{name}' - not found in local scopes")
 
     async def evaluate_expression(
         self,
@@ -931,7 +931,7 @@ def _format_variable(v: dict[str, Any]) -> dict[str, Any]:
 def _enrich_bytes_variable(result: dict[str, Any]) -> None:
     value = result.get("value", "")
     try:
-        raw = eval(value)  # noqa: S307 — safe: debugpy-provided bytes repr
+        raw = eval(value)  # noqa: S307 - safe: debugpy-provided bytes repr
         if isinstance(raw, bytes):
             result["length"] = len(raw)
             hex_str = raw[:128].hex()
