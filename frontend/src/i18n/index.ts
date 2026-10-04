@@ -7,7 +7,7 @@ import zh from './locales/zh.json'
 
 export const SUPPORTED_LOCALES = ['zh', 'en'] as const
 export type Locale = (typeof SUPPORTED_LOCALES)[number]
-export const DEFAULT_LOCALE: Locale = 'zh'
+export const DEFAULT_LOCALE: Locale = 'en'
 export const LOCALE_STORAGE_KEY = 'vulnhunter.locale'
 
 export const LOCALE_LABELS: Record<Locale, string> = {
@@ -32,7 +32,9 @@ void i18n
     load: 'languageOnly',
     interpolation: { escapeValue: false },
     detection: {
-      order: ['localStorage', 'navigator'],
+      // English is the default; a saved toggle wins, but the browser language
+      // does not override it (that would flip a zh browser back to Chinese).
+      order: ['localStorage'],
       lookupLocalStorage: LOCALE_STORAGE_KEY,
       caches: ['localStorage'],
     },
