@@ -9,10 +9,24 @@ export const SUPPORTED_LOCALES = ['zh', 'en'] as const
 export type Locale = (typeof SUPPORTED_LOCALES)[number]
 export const DEFAULT_LOCALE: Locale = 'en'
 export const LOCALE_STORAGE_KEY = 'vulnhunter.locale'
+const LOCALE_MIGRATED_KEY = 'vulnhunter.locale.migrated'
 
 export const LOCALE_LABELS: Record<Locale, string> = {
   zh: '中文',
   en: 'English',
+}
+
+// Older builds auto-detected the browser language and cached it under
+// LOCALE_STORAGE_KEY, so existing browsers can be stuck on zh even though en is
+// now the default. Clear that stale value once so those browsers fall through
+// to en; an explicit toggle made after this still persists normally.
+try {
+  if (localStorage.getItem(LOCALE_MIGRATED_KEY) !== '1') {
+    localStorage.removeItem(LOCALE_STORAGE_KEY)
+    localStorage.setItem(LOCALE_MIGRATED_KEY, '1')
+  }
+} catch {
+  // localStorage unavailable (private mode / blocked): nothing to migrate.
 }
 
 // zh is the source locale (the whole repo is authored in Chinese); en is a translation.
